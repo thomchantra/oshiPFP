@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pipeline, type CropRect } from './pipeline'
+import type { HslParams, MaximizerParams } from '../types'
 
 export function usePipeline() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -35,5 +36,31 @@ export function usePipeline() {
     pipelineRef.current?.setCropRect(rect)
   }, [])
 
-  return { canvasRef, error, sourceSize, loadFile, setCropRect }
+  const setCurveLut = useCallback((lut: Uint8Array) => {
+    pipelineRef.current?.setCurveLut(lut)
+  }, [])
+
+  const setHsl = useCallback((hsl: HslParams) => {
+    pipelineRef.current?.setHsl(hsl)
+  }, [])
+
+  const setMaximizerParams = useCallback((params: MaximizerParams) => {
+    pipelineRef.current?.setMaximizerParams(params)
+  }, [])
+
+  const readFinalPixels = useCallback(() => {
+    return pipelineRef.current?.readFinalPixels() ?? null
+  }, [])
+
+  return {
+    canvasRef,
+    error,
+    sourceSize,
+    loadFile,
+    setCropRect,
+    setCurveLut,
+    setHsl,
+    setMaximizerParams,
+    readFinalPixels,
+  }
 }

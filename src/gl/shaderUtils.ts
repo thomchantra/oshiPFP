@@ -30,25 +30,27 @@ export function createProgram(gl: WebGL2RenderingContext, vertSource: string, fr
 }
 
 /**
- * Two triangles covering clip space [-1,1], with UV in [0,1].
- * Layout per vertex: position.xy, uv.xy (stride 16 bytes).
- *
- * V is flipped relative to the "textbook" mapping (screen-top samples v=0,
- * not v=1): verified empirically that Chrome uploads ImageBitmap sources
- * ignoring UNPACK_FLIP_Y_WEBGL, so texture row 0 (image's top row) sits at
- * v=0 — this mapping is what renders right-side-up given that.
+ * Two triangles covering clip space [-1,1], with UV in [0,1] using the
+ * standard mapping (clip-top -> v=1). Every render-to-texture pass uses
+ * this same mapping, so chaining stages is self-consistent (a stage's
+ * output texture always has v=1 at "whatever was at clip-top" when it was
+ * rendered). The one anomaly is the raw ImageBitmap source texture, whose
+ * v=0 is empirically the image's top row (Chrome ignores
+ * UNPACK_FLIP_Y_WEBGL for ImageBitmap uploads) — that gets corrected once,
+ * locally, wherever uSource is actually sampled (see crop.frag.ts), not
+ * baked into this shared quad.
  */
 export function createFullscreenQuad(gl: WebGL2RenderingContext): WebGLBuffer {
   const buf = gl.createBuffer()
   if (!buf) throw new Error('Failed to create buffer')
   gl.bindBuffer(gl.ARRAY_BUFFER, buf)
   const verts = new Float32Array([
-    -1, -1, 0, 1,
-    1, -1, 1, 1,
-    -1, 1, 0, 0,
-    -1, 1, 0, 0,
-    1, -1, 1, 1,
-    1, 1, 1, 0,
+    -1, -1, 0, 0,
+    1, -1, 1, 0,
+    -1, 1, 0, 1,
+    -1, 1, 0, 1,
+    1, -1, 1, 0,
+    1, 1, 1, 1,
   ])
   gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW)
   gl.bindBuffer(gl.ARRAY_BUFFER, null)
