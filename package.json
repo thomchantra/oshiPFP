@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "clipper2-ts": "^2.0.1-18",
+    "imagetracerjs": "^1.2.6",
     "pica": "^10.0.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

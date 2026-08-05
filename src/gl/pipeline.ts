@@ -262,7 +262,12 @@ export class Pipeline {
     gl.bindTexture(gl.TEXTURE_2D, this.growVTarget.texture)
     gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uMask'), 1)
 
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uOpacity'), this.maximizer.layerOpacity)
+    // Every slot gets the same scalar — shared-layer-controls design (one
+    // opacity for all stacked layers), see composite.frag.ts.
+    gl.uniform1fv(
+      gl.getUniformLocation(this.compositeProgram, 'uOpacities'),
+      new Float32Array(4).fill(this.maximizer.layerOpacity),
+    )
     gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBlendMode'), BLEND_MODE_ID[this.maximizer.blendMode])
     gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uLayerCount'), this.maximizer.layerCount)
     drawFullscreenQuad(gl)
