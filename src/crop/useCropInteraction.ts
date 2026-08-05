@@ -9,6 +9,8 @@ const WHEEL_ZOOM_SPEED = 0.0015
 interface UseCropInteractionArgs {
   enabled: boolean
   sourceSize: { width: number; height: number } | null
+  /** Target crop rect aspect ratio (width/height) — 1 for square, or a live-measured container aspect for free-form "original" mode. */
+  aspect: number
   onRectChange: (rect: CropRect) => void
 }
 
@@ -18,7 +20,7 @@ interface UseCropInteractionArgs {
  * pointer handlers regardless of which tab currently owns the shared
  * preview canvas (`enabled` gates whether gestures actually take effect).
  */
-export function useCropInteraction({ enabled, sourceSize, onRectChange }: UseCropInteractionArgs) {
+export function useCropInteraction({ enabled, sourceSize, aspect, onRectChange }: UseCropInteractionArgs) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const [transform, setTransform] = useState<CropTransform>(defaultCropTransform())
   const transformRef = useRef(transform)
@@ -30,19 +32,20 @@ export function useCropInteraction({ enabled, sourceSize, onRectChange }: UseCro
     transformRef.current = transform
   }, [transform])
 
-  // Reset to a centered, fully-covering crop whenever a new image loads.
+  // Reset to a centered, fully-covering crop whenever a new image loads or the target aspect changes.
   useEffect(() => {
     if (sourceSize) {
-      setTransform(clampCropTransform(defaultCropTransform(), sourceSize.width, sourceSize.height))
+      setTransform(clampCropTransform(defaultCropTransform(), sourceSize.width, sourceSize.height, aspect))
     }
-  }, [sourceSize])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceSize, aspect])
 
   useEffect(() => {
     if (!sourceSize) return
-    onRectChange(cropTransformToRect(transform, sourceSize.width, sourceSize.height))
+    onRectChange(cropTransformToRect(transform, sourceSize.width, sourceSize.height, aspect))
     // onRectChange identity is stable from usePipeline; only re-run on data changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transform, sourceSize])
+  }, [transform, sourceSize, aspect])
 
   const scheduleTransform = useCallback((next: CropTransform) => {
     transformRef.current = next
@@ -82,7 +85,7 @@ export function useCropInteraction({ enabled, sourceSize, onRectChange }: UseCro
       if (pointers.current.size === 1) {
         const dx = p.x - prev.x
         const dy = p.y - prev.y
-        scheduleTransform(panBy(transformRef.current, dx, dy, p.size, sourceSize.width, sourceSize.height))
+        scheduleTransform(panBy(transformRef.current, dx, dy, p.size, sourceSize.width, sourceSize.height, aspect))
       } else if (pointers.current.size === 2) {
         const pts = Array.from(pointers.current.values())
         const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
@@ -99,13 +102,14 @@ export function useCropInteraction({ enabled, sourceSize, onRectChange }: UseCro
               midX,
               midY,
               transformRef.current.scale * factor,
+              aspect,
             ),
           )
         }
         pinchStartDist.current = dist
       }
     },
-    [enabled, sourceSize, getLocalPoint, scheduleTransform],
+    [enabled, sourceSize, aspect, getLocalPoint, scheduleTransform],
   )
 
   const endPointer = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -134,13 +138,14 @@ export function useCropInteraction({ enabled, sourceSize, onRectChange }: UseCro
           p.x,
           p.y,
           transformRef.current.scale * factor,
+          aspect,
         ),
       )
     }
 
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [enabled, sourceSize, getLocalPoint, scheduleTransform])
+  }, [enabled, sourceSize, aspect, getLocalPoint, scheduleTransform])
 
   return { viewportRef, transform, handlePointerDown, handlePointerMove, endPointer }
 }

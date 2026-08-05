@@ -12,16 +12,37 @@ export function defaultCropTransform(): CropTransform {
 }
 
 /**
- * Clamps scale to [MIN_SCALE, MAX_SCALE] and offsets so the crop square never
- * exceeds the source image bounds — the viewport always shows a fully
- * covering square crop, no letterboxing.
+ * Normalized (sw, sh) size of the cover-fit crop rect at scale 1 for a given
+ * target aspect ratio (width/height) — the largest rect of that aspect that
+ * fits fully inside the source with no letterboxing.
  */
-export function clampCropTransform(t: CropTransform, sourceWidth: number, sourceHeight: number): CropTransform {
+function baseCoverSize(sourceWidth: number, sourceHeight: number, aspect: number): { sw: number; sh: number } {
+  const sourceAspect = sourceWidth / sourceHeight
+  if (sourceAspect >= aspect) {
+    const baseH = sourceHeight
+    const baseW = baseH * aspect
+    return { sw: baseW / sourceWidth, sh: baseH / sourceHeight }
+  }
+  const baseW = sourceWidth
+  const baseH = baseW / aspect
+  return { sw: baseW / sourceWidth, sh: baseH / sourceHeight }
+}
+
+/**
+ * Clamps scale to [MIN_SCALE, MAX_SCALE] and offsets so the crop rect (at the
+ * given target aspect ratio) never exceeds the source image bounds — the
+ * viewport always shows a fully covering crop, no letterboxing.
+ */
+export function clampCropTransform(
+  t: CropTransform,
+  sourceWidth: number,
+  sourceHeight: number,
+  aspect: number,
+): CropTransform {
   const scale = clamp(t.scale, MIN_SCALE, MAX_SCALE)
-  const minDim = Math.min(sourceWidth, sourceHeight)
-  const side = minDim / scale
-  const maxOffsetX = Math.max(0, (sourceWidth - side) / 2 / sourceWidth)
-  const maxOffsetY = Math.max(0, (sourceHeight - side) / 2 / sourceHeight)
+  const { sw, sh } = baseCoverSize(sourceWidth, sourceHeight, aspect)
+  const maxOffsetX = Math.max(0, (1 - sw / scale) / 2)
+  const maxOffsetY = Math.max(0, (1 - sh / scale) / 2)
   return {
     scale,
     offsetX: clamp(t.offsetX, -maxOffsetX, maxOffsetX),
@@ -37,11 +58,11 @@ export function cropTransformToRect(
   t: CropTransform,
   sourceWidth: number,
   sourceHeight: number,
+  aspect: number,
 ): [number, number, number, number] {
-  const minDim = Math.min(sourceWidth, sourceHeight)
-  const side = minDim / t.scale
-  const sw = side / sourceWidth
-  const sh = side / sourceHeight
+  const { sw: baseSw, sh: baseSh } = baseCoverSize(sourceWidth, sourceHeight, aspect)
+  const sw = baseSw / t.scale
+  const sh = baseSh / t.scale
   const sx = 0.5 + t.offsetX - sw / 2
   const sy = 0.5 + t.offsetY - sh / 2
   return [sx, sy, sw, sh]
@@ -59,14 +80,16 @@ export function panBy(
   viewportPx: number,
   sourceWidth: number,
   sourceHeight: number,
+  aspect: number,
 ): CropTransform {
-  const [, , sw, sh] = cropTransformToRect(t, sourceWidth, sourceHeight)
+  const [, , sw, sh] = cropTransformToRect(t, sourceWidth, sourceHeight, aspect)
   const dOffsetX = -(dxPx / viewportPx) * sw
   const dOffsetY = -(dyPx / viewportPx) * sh
   return clampCropTransform(
     { scale: t.scale, offsetX: t.offsetX + dOffsetX, offsetY: t.offsetY + dOffsetY },
     sourceWidth,
     sourceHeight,
+    aspect,
   )
 }
 
@@ -83,16 +106,16 @@ export function zoomAtPoint(
   anchorXPx: number,
   anchorYPx: number,
   newScale: number,
+  aspect: number,
 ): CropTransform {
-  const [sx, sy, sw, sh] = cropTransformToRect(t, sourceWidth, sourceHeight)
+  const [sx, sy, sw, sh] = cropTransformToRect(t, sourceWidth, sourceHeight, aspect)
   const anchorU = sx + (anchorXPx / viewportPx) * sw
   const anchorV = sy + (anchorYPx / viewportPx) * sh
 
   const clampedScale = clamp(newScale, MIN_SCALE, MAX_SCALE)
-  const minDim = Math.min(sourceWidth, sourceHeight)
-  const side = minDim / clampedScale
-  const newSw = side / sourceWidth
-  const newSh = side / sourceHeight
+  const { sw: baseSw, sh: baseSh } = baseCoverSize(sourceWidth, sourceHeight, aspect)
+  const newSw = baseSw / clampedScale
+  const newSh = baseSh / clampedScale
 
   const newSx = anchorU - (anchorXPx / viewportPx) * newSw
   const newSy = anchorV - (anchorYPx / viewportPx) * newSh
@@ -100,5 +123,5 @@ export function zoomAtPoint(
   const offsetX = newSx + newSw / 2 - 0.5
   const offsetY = newSy + newSh / 2 - 0.5
 
-  return clampCropTransform({ scale: clampedScale, offsetX, offsetY }, sourceWidth, sourceHeight)
+  return clampCropTransform({ scale: clampedScale, offsetX, offsetY }, sourceWidth, sourceHeight, aspect)
 }

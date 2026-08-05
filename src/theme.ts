@@ -1,10 +1,10 @@
 export type Theme = 'dark' | 'light'
 
 export function getTheme(): Theme {
-  return document.documentElement.classList.contains('light') ? 'light' : 'dark'
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
 }
 
 export function toggleTheme(): Theme {
-  const isLight = document.documentElement.classList.toggle('light')
-  return isLight ? 'light' : 'dark'
+  const isDark = document.documentElement.classList.toggle('dark')
+  return isDark ? 'dark' : 'light'
 }

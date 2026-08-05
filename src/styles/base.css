@@ -1,12 +1,25 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Pin to the visual viewport like a native app shell — no page-level scroll,
+   the tab bar stays put at the bottom instead of requiring a scroll to reveal.
+   100dvh (not 100vh) so mobile Safari's collapsing browser chrome doesn't
+   leave a scrollable gap below the fold. */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  /* iOS Safari's rubber-band bounce can still engage on a swipe even with
+     overflow:hidden set — this is the standard belt-and-suspenders fix. */
+  overscroll-behavior: none;
+}
+
 body, #root {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Hanken Grotesk', sans-serif;
+  background: var(--bg-light);
+  color: var(--accent-dark);
+  font-family: 'Fredoka', sans-serif;
+  font-variation-settings: 'wdth' 100;
   font-size: 14px;
   line-height: 1.5;
-  min-height: 100vh;
+  height: 100dvh;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -14,84 +27,217 @@ button, input {
   font-family: inherit;
 }
 
+.font-title {
+  font-family: 'Dela Gothic One', sans-serif;
+  font-size: 24px;
+}
+.font-param-label {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+}
+.font-button-label {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+}
+.font-tab-label {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
+  font-size: 15px;
+}
+.font-value {
+  font-family: 'Questrial', sans-serif;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
 .app {
   max-width: 680px;
   margin: 0 auto;
-  padding: 0 0 5rem;
-  position: relative;
-}
-
-.app-header {
+  padding: 12px 0;
+  height: 100%;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 1.5rem 1.25rem 1rem;
-  border-bottom: 1px solid var(--line);
-}
-.eyebrow {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 3px;
-}
-.app-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.02em;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
 }
 
 .theme-btn {
-  width: 34px;
-  height: 34px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  border: 1px solid var(--line2);
-  background: var(--bg2);
-  color: var(--text2);
-  font-size: 15px;
+  border: none;
+  background: transparent;
+  color: var(--accent-title);
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   touch-action: manipulation;
+  margin-left: auto;
 }
-.theme-btn:hover { background: var(--bg3); color: var(--text); }
+
+/* Header bar */
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+.header-bar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.header-bar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.header-bar-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar-corner-preview {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border: 2px solid var(--white);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--white-50);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+/* Blank state */
+.blank-state-area {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+.blank-state-uploadbox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--white-50);
+  border: 2px dashed var(--accent-light);
+  border-radius: 20px;
+  cursor: pointer;
+  text-align: center;
+  padding: 0 20px;
+}
+.blank-state-uploadbox.drag-over { background: var(--accent-lighter); }
+
+/* Preview viewport area — 10px side gutter, matching the header/tabbar inset */
+.viewport-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 0 10px;
+}
+.preview-viewport {
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  background: var(--white-50);
+  border-radius: 20px;
+  position: relative;
+  /* Long-press/selection gestures fight with pan/pinch-crop on mobile —
+     kill the native text-selection and iOS "save image" callout menu here. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.preview-viewport canvas {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+
+/* Crop tab chrome */
+.crop-topcontent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.crop-debug-info {
+  color: var(--accent-title);
+  opacity: 0.7;
+  padding: 0 2px;
+}
+.zoom-pill {
+  background: var(--white-50);
+  border: none;
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  color: var(--accent-title);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.crop-bottomcontent {
+  display: flex;
+  gap: 10px;
+}
+.pill-toggle-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--white-50);
+  color: var(--accent-title);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pill-toggle-btn.active {
+  background: var(--accent-title);
+  color: var(--bg-light);
+}
 
 .tab-nav {
   display: flex;
-  gap: 2px;
-  padding: 8px 1.25rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  align-items: center;
+  gap: 0;
+  padding: 0 10px;
+  width: 100%;
 }
 .tab-btn {
   flex: 1;
-  padding: 7px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: var(--radius);
+  border: none;
   background: transparent;
-  color: var(--text3);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--accent-dark);
   cursor: pointer;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  transition: all 0.15s;
   touch-action: manipulation;
 }
-.tab-btn:hover { color: var(--text2); background: var(--bg3); }
+.tab-btn:disabled { opacity: 0.4; cursor: default; }
 .tab-btn.active {
-  color: var(--blue);
-  background: var(--blue-bg);
-  border-color: var(--blue-br);
+  background: var(--tab-active-bg);
+  color: var(--tab-active-text);
 }
+.tab-btn .font-tab-label { font-size: 12px; }
 
 .tool-panel { padding: 1.25rem; }
 
@@ -184,45 +330,258 @@ button, input {
 .stepper-btn.dec { border-right: 1px solid var(--line); }
 .stepper-btn.inc { border-left:  1px solid var(--line); }
 
-/* iOS-style toggle switch — ported from bearhunt-calc-v3 */
+/* iOS-style toggle switch */
 .toggle-switch {
   position: relative;
   width: 44px;
-  height: 26px;
-  border-radius: 13px;
-  background: var(--bg4);
-  border: 1px solid var(--line2);
+  height: 24px;
+  border-radius: 9999px;
+  background: var(--white-50);
+  border: none;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.2s;
   flex-shrink: 0;
-  padding: 0;
+  padding: 2px;
   touch-action: manipulation;
 }
 .toggle-switch::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--text3);
-  transition: transform 0.2s, background 0.2s;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
 }
 .toggle-switch.on {
-  background: var(--green-bg);
-  border-color: var(--green);
+  background: var(--accent-title);
 }
 .toggle-switch.on::after {
-  transform: translateX(18px);
-  background: var(--green);
+  transform: translateX(20px);
+}
+
+/* Gradient/fill slider (GradientSlider.tsx). The hit zone is the whole
+   .gradient-slider-hitzone row (label included) — pointer handlers live
+   there now, so no margin/overlap trick is needed on the wrap itself, and
+   adjacent sliders can't steal each other's touch area. */
+.gradient-slider-hitzone {
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.gradient-slider-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  touch-action: pan-y;
+}
+.gradient-slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.gradient-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-title);
+  border-radius: 9999px;
+}
+.gradient-slider-input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  /* GradientSlider.tsx drives value changes itself via pointer handlers on
+     the wrap — this native input is kept only for its visual thumb (via the
+     controlled `value` prop) and keyboard arrow-key accessibility, not for
+     receiving pointer/touch input directly (that's what left native
+     click-to-jump unreliable at the edges of the enlarged hit zone). */
+  pointer-events: none;
+}
+.gradient-slider-input::-webkit-slider-runnable-track { background: transparent; height: 8px; }
+.gradient-slider-input::-moz-range-track { background: transparent; height: 8px; }
+.gradient-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid var(--accent-title);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.gradient-slider-input:active::-webkit-slider-thumb { transform: scale(1.25); }
+.gradient-slider-input::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid var(--accent-title);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.gradient-slider-input:active::-moz-range-thumb { transform: scale(1.25);
+}
+
+/* Segmented control (SegmentedControl.tsx) */
+.segmented-control {
+  display: flex;
+  width: 100%;
+  background: var(--white-50);
+  border-radius: var(--radius);
+  padding: 0;
+}
+.segmented-button {
+  flex: 1;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  color: var(--accent-title);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.segmented-button.active {
+  background: var(--accent-title);
+  color: var(--bg-light);
+}
+
+/* 2-icon pill toggle (IconToggle2.tsx) — single tap target, cycles state */
+.icon-toggle-2 {
+  display: flex;
+  align-items: center;
+  background: var(--accent-dark);
+  border-radius: var(--radius);
+  border: none;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  min-height: 34px;
+}
+.icon-toggle-2-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+}
+.icon-toggle-2-btn.active { background: var(--accent-lighter); }
+
+/* Icon pill buttons (IconButton.tsx) */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.icon-button-primary { background: var(--accent-lighter); color: var(--accent-title); }
+.icon-button-secondary { background: var(--white-50); color: var(--accent-title); }
+.icon-button-secondary.active { background: var(--accent-title); color: var(--bg-light); }
+
+/* Bottom sheet (BottomSheet.tsx) */
+.bottom-sheet {
+  position: relative;
+  width: 100%;
+  background: var(--bg-light);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* Height is fully explicit (driven by drag state) — must not participate
+     in the parent flex column's shrink distribution, or the layout engine
+     silently compresses it back down whenever the viewport above it doesn't
+     also shrink enough, making drags feel like they only "half work." */
+  flex: 0 0 auto;
+}
+.bottom-sheet-handle-row {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.bottom-sheet-handle {
+  width: 49px;
+  height: 5px;
+  border-radius: 100px;
+  background: var(--accent-lighter);
+}
+.bottom-sheet-content {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* No horizontal padding here — .viewport-area (the sheet's parent) already
+     gives every tab's content the same 10px inset; adding more here doubled
+     it just for Line Art, so its content sat further in than Crop's. */
+  padding: 0 0 20px;
+}
+
+/* Line Art panel */
+.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.lineart-algoselector-header { display: flex; align-items: center; justify-content: space-between; }
+.lineart-algoselector-header-label { display: flex; align-items: center; gap: 8px; }
+.lineart-algoselector-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.lineart-preprocessing-header { display: flex; align-items: center; justify-content: space-between; }
+.text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; }
+.lineart-preprocessing-toggles { display: flex; gap: 5px; }
+.lineart-preprocessing-toggles .pill-toggle-btn { background: var(--white-50); }
+.lineart-preprocessing-toggles .pill-toggle-btn.active {
+  background: var(--accent-title);
+  color: var(--bg-light);
+}
+.lineart-slidergroup-stack { display: flex; flex-direction: column; gap: 8px; }
+/* field-row's own margin-bottom is for contexts with no flex gap (old
+   panels) — redundant here since the stack already gaps. */
+.lineart-slidergroup-stack .field-row { margin-bottom: 0; }
+.lineart-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.lineart-divider { border-top: 1px dashed var(--accent-light); margin: 4px 0; }
+.tint-color-input {
+  width: 100%;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
 }
 
 /* Slider row: label + value + native range input, styled to match tokens */
 .field-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   margin-bottom: 16px;
 }
 .field-row:last-child { margin-bottom: 0; }
@@ -311,4 +670,90 @@ button, input {
 }
 @media (max-width: 480px) {
   .two-col { grid-template-columns: 1fr; }
+}
+
+/* Modal (Modal.tsx) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+.modal-card {
+  background: var(--bg-light);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.modal-close-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--white-50);
+  color: var(--accent-title);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+.algo-info-entry { margin-bottom: 20px; }
+.algo-info-entry:last-child { margin-bottom: 0; }
+.algo-info-entry-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.algo-info-entry-title .icon { align-self: center; }
+/* Fredoka (label) and Questrial (technique) don't share cap-height/baseline
+   metrics even at align-items:baseline — Questrial sits slightly high by
+   comparison, so nudge it down a hair to read as sharing the label's line. */
+.algo-info-entry-technique { position: relative; top: 1px; }
+.algo-info-entry-body {
+  color: var(--accent-dark);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.info-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-title);
+  background: transparent;
+  color: var(--accent-title);
+  font-family: 'Questrial', sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }

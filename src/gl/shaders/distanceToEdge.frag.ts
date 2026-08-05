@@ -5,25 +5,30 @@
  * separable min filter's square/Chebyshev shape), with antialiasing and a
  * floor falling out of the smoothstep for free.
  *
- * Two output modes, switched by uColorExpansion:
- * - Off (default): grayscale grow-mask convention (0=line/black,
- *   1=fill/white), matching v1, for multiply compositing (see
- *   labPipeline.ts's MASK_MODES) — validated as viable as-is; the solid
- *   black patches read as an intentional "textured" look on real art.
- * - On: instead of driving toward flat black, resolves each grown pixel
- *   toward the *actual source color* of the nearest line pixel (sampled
- *   from uOriginal at the seed's stored position) — Path A's "floor at a
- *   real neighborhood value instead of synthetic black" idea, applied to
- *   Path B's true-circular grow instead of separable erosion. Output is
- *   then a complete replacement color image, not a mask, so it's
- *   crossfade- (not multiply-) composited by labPipeline.ts.
+ * Outputs straight (non-premultiplied) ink color in .rgb and how much ink
+ * is here in .a (1.0 at the seed/line core, 0.0 once past uRadius+uFeather)
+ * — composite.frag.ts is what actually combines this with the base image
+ * (blend mode + opacity), so this pass doesn't need to know or care what
+ * blend mode is selected; alpha=0 pixels always resolve back to the
+ * untouched base regardless of blend mode, since compositing is a
+ * `mix(base, blendLayer(base, ink, mode), alpha * opacity)`, not a
+ * pre-baked fade into any particular "no-op" color here.
  *
- * uGamma reshapes the same falloff (t) that drives both branches via
+ * Two ways to resolve the ink color, switched by uColorExpansion:
+ * - Off (default): a flat, user-picked uLineColor (defaults to black — the
+ *   original solid-black look).
+ * - On: instead of flat black, resolves each grown pixel toward the
+ *   *actual source color* of the nearest line pixel (sampled from
+ *   uOriginal at the seed's stored position) — Path A's "floor at a real
+ *   neighborhood value instead of synthetic black" idea, applied to Path
+ *   B's true-circular grow instead of separable erosion.
+ *
+ * uGamma reshapes the same falloff (t) that drives alpha via
  * pow(t, gamma) — gamma > 1 pushes t down (more of the grown region stays
- * close to the seed/line color, blobs read darker/larger); gamma < 1
- * pushes it up (blobs read lighter/smaller). One contrast knob for the
- * grown regions' *spatial extent* (how far the effect reaches), independent
- * of radius/feather.
+ * close to full ink, blobs read darker/larger); gamma < 1 pushes it up
+ * (blobs read lighter/smaller). One contrast knob for the grown regions'
+ * *spatial extent* (how far the effect reaches), independent of
+ * radius/feather.
  *
  * uColorContrast is a separate knob, only meaningful in color-expansion
  * mode: a standard contrast curve (pivoted at 0.5) applied to the sampled
@@ -49,6 +54,7 @@ uniform float uFeather;
 uniform float uGamma;
 uniform float uColorContrast;
 uniform int uColorExpansion;
+uniform vec3 uLineColor;
 out vec4 outColor;
 
 void main() {
@@ -57,13 +63,14 @@ void main() {
   float dist = hasSeed ? distance(gl_FragCoord.xy, seed.xy) : 1.0e10;
   float t = pow(clamp(smoothstep(uRadius - uFeather, uRadius + uFeather, dist), 0.0, 1.0), uGamma);
 
+  vec3 seedColor;
   if (uColorExpansion == 1) {
     vec3 base = texture(uOriginal, vUV).rgb;
-    vec3 seedColor = hasSeed ? texture(uOriginal, seed.xy / uTexSize).rgb : base;
+    seedColor = hasSeed ? texture(uOriginal, seed.xy / uTexSize).rgb : base;
     seedColor = clamp((seedColor - 0.5) * uColorContrast + 0.5, 0.0, 1.0);
-    outColor = vec4(mix(seedColor, base, t), 1.0);
   } else {
-    outColor = vec4(t, t, t, 1.0);
+    seedColor = uLineColor;
   }
+  outColor = vec4(seedColor, 1.0 - t);
 }
 `

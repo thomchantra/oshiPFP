@@ -1,48 +1,75 @@
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Fredoka:wght@400;500;600&family=Questrial&display=swap');
 
+/* oshiPFP v0.2.1 palette — peach/accent theme, light is now the default look */
 :root {
-  --bg:        #141414;
-  --bg2:       #1e1e1e;
-  --bg3:       #252525;
-  --bg4:       #2e2e2e;
-  --bg5:       #383838;
-  --line:      rgba(255,255,255,0.07);
-  --line2:     rgba(255,255,255,0.12);
-  --line3:     rgba(255,255,255,0.20);
-  --text:      #ebebeb;
-  --text2:     #9a9a9a;
-  --text3:     #555;
-  --green:     #4ade80;
-  --green-bg:  rgba(74,222,128,0.08);
-  --green-br:  rgba(74,222,128,0.22);
-  --blue:      #60a5fa;
-  --blue-bg:   rgba(96,165,250,0.08);
-  --blue-br:   rgba(96,165,250,0.22);
-  --amber:     #fbbf24;
-  --amber-bg:  rgba(251,191,36,0.08);
-  --amber-br:  rgba(251,191,36,0.22);
-  --red:       #f87171;
-  --red-bg:    rgba(248,113,113,0.08);
-  --red-br:    rgba(248,113,113,0.22);
-  --radius:    10px;
-  --radius-sm: 7px;
-  --radius-xs: 5px;
-}
+  /* Named tokens, straight from Figma (get_variable_defs) */
+  --white:          #ffffff;
+  --white-50:       rgba(255,255,255,0.5);
+  --bg-light:       #fae8db;
+  --accent-title:   #b06026;
+  --accent-dark:    #764018;
+  --accent-light:   #f09d61;
+  --accent-lighter: #f8c199;
 
-/* Light mode — class swap on <html>, ported from bearhunt-calc-v3 */
-html.light {
-  --bg:        #ececec;
-  --bg2:       #e2e2e2;
-  --bg3:       #d8d8d8;
-  --bg4:       #cccccc;
-  --bg5:       #bfbfbf;
-  --line:      rgba(0,0,0,0.08);
-  --line2:     rgba(0,0,0,0.13);
-  --line3:     rgba(0,0,0,0.22);
-  --text:      #171717;
-  --text2:     #5f5f5f;
-  --text3:     #9f9f9f;
+  /* Legacy semantic aliases — old components (Card/Stepper/Slider/etc.) still
+     read these; new components should prefer the named tokens above directly. */
+  --bg:        var(--bg-light);
+  --bg2:       var(--white-50);
+  --bg3:       var(--white);
+  --bg4:       var(--accent-lighter);
+  --bg5:       var(--accent-light);
+  --line:      rgba(118,64,24,0.12);
+  --line2:     rgba(118,64,24,0.22);
+  --line3:     rgba(118,64,24,0.35);
+  --text:      var(--accent-dark);
+  --text2:     var(--accent-title);
+  --text3:     rgba(118,64,24,0.5);
   --green:     #16a34a;
   --green-bg:  rgba(22,163,74,0.1);
   --green-br:  rgba(22,163,74,0.3);
+  --blue:      var(--accent-title);
+  --blue-bg:   rgba(176,96,38,0.1);
+  --blue-br:   rgba(176,96,38,0.3);
+  --amber:     #c2760f;
+  --amber-bg:  rgba(194,118,15,0.08);
+  --amber-br:  rgba(194,118,15,0.22);
+  --red:       #d1453d;
+  --red-bg:    rgba(209,69,61,0.08);
+  --red-br:    rgba(209,69,61,0.22);
+  --radius:    10px;
+  --radius-sm: 7px;
+  --radius-xs: 5px;
+
+  /* Active-tab is the one spot where light/dark aren't a simple value swap
+     (dark mode's active pill uses accent-title as the background *and*
+     switches the label/icon to literal black, not the usual white) — see
+     the override in html.dark below. */
+  --tab-active-bg:   var(--accent-dark);
+  --tab-active-text: var(--white);
+}
+
+/* Dark mode — from Figma's dark-mode color mapping (node 34:3725). Named
+   tokens only; the legacy --bg/--text/--blue/etc. aliases above are all
+   expressed via var(...) so they cascade automatically once these change —
+   no need to redeclare them here. Exception: --line/--line2/--line3/--text3
+   were hardcoded rgba(accent-dark-light-mode-rgb, ...) rather than var()-
+   derived, so they do need an explicit dark override. */
+html.dark {
+  --white-50:       rgba(0,0,0,0.7);
+  --bg-light:       #27282f;
+  --accent-title:   #869eff;
+  --accent-dark:    #abbeed;
+  --accent-lighter: #45495b;
+  /* Not present in the fetched dark frame (only shows up as a blank-state
+     dashed border in light mode, not exercised in this screen) — estimated
+     by interpolating between accent-lighter and accent-title/dark. */
+  --accent-light:   #5c6479;
+
+  --line:      rgba(171,190,237,0.12);
+  --line2:     rgba(171,190,237,0.20);
+  --line3:     rgba(171,190,237,0.32);
+  --text3:     rgba(171,190,237,0.5);
+
+  --tab-active-bg:   var(--accent-title);
+  --tab-active-text: #000000;
 }

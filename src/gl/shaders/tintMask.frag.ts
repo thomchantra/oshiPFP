@@ -7,11 +7,14 @@
  * F's findEdges.frag.ts mask is genuinely colored per-channel, so `.r`
  * alone would read the wrong "how much ink here" signal.
  *
+ * Outputs straight ink color (.rgb = tint) and how much ink is here
+ * (.a = 1.0 - m) rather than pre-mixing the tint toward white at low mask
+ * strength — composite.frag.ts does that mixing now (blend mode +
+ * opacity), so low-mask pixels resolve back to the untouched base
+ * regardless of which blend mode is selected.
+ *
  * Two tint sources, picked by uVividMode:
- * - Off: a single flat uTintColor everywhere — `mix(uTintColor, white, m)`.
- *   At uTintColor = black this is exactly the identity `vec3(m)` an
- *   untinted grayscale mask already produces, so it's a safe no-op
- *   default; Path D runs this pass unconditionally on that basis.
+ * - Off: a single flat uTintColor everywhere.
  * - On ("vivid mode"): per-pixel, not a single global swatch — sample the
  *   real source color at uOriginal, and if its saturation clears
  *   uDeadzone (grayish pixels are left alone, not forced colorful),
@@ -63,6 +66,6 @@ void main() {
     tint = hsv2rgb(vec3(hsv.x, boostedSat, hsv.z));
   }
 
-  outColor = vec4(mix(tint, vec3(1.0), m), 1.0);
+  outColor = vec4(tint, 1.0 - m);
 }
 `

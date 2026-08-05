@@ -5,11 +5,16 @@
  * instead of two — see docs/oshipfp-v0.2-lineart-expansion-spec.md Path C.
  *
  * Compares luminance before/after erosion; where erosion darkened a pixel
- * meaningfully (a real stroke edge), the eroded color is let through via
- * a smoothstep gate. Where erosion barely changed luminance (flat shading,
- * gentle gradients), the gate stays near 0 and the original color passes
- * through mostly unchanged — directly targeting Path A's known risk of
- * over-thickening shading fills that aren't line strokes.
+ * meaningfully (a real stroke edge), the gate opens. Where erosion barely
+ * changed luminance (flat shading, gentle gradients), the gate stays near
+ * 0 — directly targeting Path A's known risk of over-thickening shading
+ * fills that aren't line strokes.
+ *
+ * Outputs straight ink color (.rgb = eroded) and how much ink is here
+ * (.a = gate) rather than pre-mixing toward the original at low gate —
+ * composite.frag.ts does that mixing now (blend mode + opacity), so
+ * gate=0 pixels resolve back to the untouched base regardless of which
+ * blend mode is selected.
  */
 export const erosionGateFrag = `#version 300 es
 precision highp float;
@@ -27,6 +32,6 @@ void main() {
   float erodedLum = dot(eroded, vec3(0.2126, 0.7152, 0.0722));
   float edgeStrength = origLum - erodedLum;
   float gate = smoothstep(uGateThreshold - uFeather, uGateThreshold + uFeather, edgeStrength);
-  outColor = vec4(mix(orig, eroded, gate), 1.0);
+  outColor = vec4(eroded, gate);
 }
 `

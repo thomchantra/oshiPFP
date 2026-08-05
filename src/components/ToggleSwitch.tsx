@@ -1,18 +1,18 @@
 interface ToggleSwitchProps {
   on: boolean
-  onChange: (on: boolean) => void
   label: string
 }
 
-export default function ToggleSwitch({ on, onChange, label }: ToggleSwitchProps) {
+/** Purely visual — click handling lives on the containing row (e.g.
+    `.lineart-toggle-row`) so the whole row is tappable, not just this
+    small control. See LineArtPanel.tsx's usage. */
+export default function ToggleSwitch({ on, label }: ToggleSwitchProps) {
   return (
-    <button
-      type="button"
+    <span
       role="switch"
       aria-checked={on}
       aria-label={label}
       className={`toggle-switch${on ? ' on' : ''}`}
-      onClick={() => onChange(!on)}
     />
   )
 }
