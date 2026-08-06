@@ -63,8 +63,24 @@ export function sampleCurveLUT(points: CurvePoint[]): Uint8Array {
     }
   }
 
+  // Endpoints can now be dragged inward on x (see CurveEditor.tsx — used to
+  // be pinned to 0/255), which is meant to behave like a Levels-style
+  // black/white point crush: flat all the way out to the image edge, then
+  // a clean line from there. Before this, x outside [xs[0], xs[n-1]]
+  // extrapolated the boundary segment's slope instead of clamping flat —
+  // mathematically fine (still monotonic) but reads as a sloped ramp
+  // sliding down to 0/up to 255 rather than the sharp flat-then-line elbow
+  // curve tools are expected to show here.
   let seg = 0
   for (let x = 0; x < 256; x++) {
+    if (x <= xs[0]) {
+      lut[x] = clampByte(Math.round(ys[0]))
+      continue
+    }
+    if (x >= xs[n - 1]) {
+      lut[x] = clampByte(Math.round(ys[n - 1]))
+      continue
+    }
     while (seg < n - 2 && x > xs[seg + 1]) seg++
     const x0 = xs[seg]
     const x1 = xs[seg + 1]
@@ -110,6 +126,24 @@ export function buildRgbLutBuffer(curve: Uint8Array): Uint8Array {
     buf[x * 3] = curve[x]
     buf[x * 3 + 1] = curve[x]
     buf[x * 3 + 2] = curve[x]
+  }
+  return buf
+}
+
+/**
+ * Composes the master (RGB) curve with independent per-channel curves —
+ * standard photo-editing curve stacking (Photoshop/Lightroom convention):
+ * the master curve runs first, then each channel's own curve is applied to
+ * that already-master-curved value. Lets the Color tab's RGB/R/G/B tabs
+ * layer instead of override one another.
+ */
+export function buildChannelLutBuffer(master: Uint8Array, r: Uint8Array, g: Uint8Array, b: Uint8Array): Uint8Array {
+  const buf = new Uint8Array(256 * 3)
+  for (let x = 0; x < 256; x++) {
+    const m = master[x]
+    buf[x * 3] = r[m]
+    buf[x * 3 + 1] = g[m]
+    buf[x * 3 + 2] = b[m]
   }
   return buf
 }

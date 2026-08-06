@@ -1,6 +1,20 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { useDoubleTapReset } from './useDoubleTapReset'
 
+/**
+ * Value <-> slider-position (0-1) taper: a value of `breakpoint` sits at
+ * `breakpointPosition` fraction of the track instead of wherever it'd fall
+ * linearly, with the two flanking ranges each linear in their own
+ * value-space segment. Used to give a "hot spot" range more scrubbing
+ * room — e.g. line-art Radius sliders, whose useful values are almost
+ * always 0-3px within a 0-20px range, so 0-3 gets 40% of the track instead
+ * of the 15% linear mapping would give it.
+ */
+export interface SliderCurve {
+  breakpoint: number
+  breakpointPosition: number
+}
+
 interface GradientSliderProps {
   label: string
   value: number
@@ -10,6 +24,7 @@ interface GradientSliderProps {
   defaultValue: number
   /** CSS gradient (e.g. 'linear-gradient(90deg, #FF9547, #5297FF)') for parameters with a directional gradient track. Omit for a plain accent-fill track. */
   trackGradient?: string
+  curve?: SliderCurve
   formatValue?: (value: number) => string
   onChange: (value: number) => void
 }
@@ -19,6 +34,20 @@ const DIRECTION_DEADZONE_PX = 6
 function snap(raw: number, min: number, max: number, step: number): number {
   const stepped = Math.round((raw - min) / step) * step + min
   return Math.min(max, Math.max(min, stepped))
+}
+
+function valueToPos(value: number, min: number, max: number, curve?: SliderCurve): number {
+  if (!curve) return (value - min) / (max - min)
+  const { breakpoint, breakpointPosition } = curve
+  if (value <= breakpoint) return ((value - min) / (breakpoint - min)) * breakpointPosition
+  return breakpointPosition + ((value - breakpoint) / (max - breakpoint)) * (1 - breakpointPosition)
+}
+
+function posToValue(pos: number, min: number, max: number, curve?: SliderCurve): number {
+  if (!curve) return min + pos * (max - min)
+  const { breakpoint, breakpointPosition } = curve
+  if (pos <= breakpointPosition) return min + (pos / breakpointPosition) * (breakpoint - min)
+  return breakpoint + ((pos - breakpointPosition) / (1 - breakpointPosition)) * (max - breakpoint)
 }
 
 type DragState = { startX: number; startY: number; startValue: number; mode: 'pending' | 'dragging' | 'scrolling' }
@@ -31,11 +60,12 @@ export default function GradientSlider({
   step = 0.01,
   defaultValue,
   trackGradient,
+  curve,
   formatValue,
   onChange,
 }: GradientSliderProps) {
   const handleDoubleTap = useDoubleTapReset(defaultValue, onChange)
-  const fillPct = ((value - min) / (max - min)) * 100
+  const fillPct = valueToPos(value, min, max, curve) * 100
   const dragRef = useRef<DragState | null>(null)
 
   // Relative drag, not absolute jump-to-touch-point: touching down anywhere
@@ -74,8 +104,9 @@ export default function GradientSlider({
 
     e.preventDefault()
     const rect = e.currentTarget.getBoundingClientRect()
-    const deltaValue = (dx / rect.width) * (max - min)
-    onChange(snap(state.startValue + deltaValue, min, max, step))
+    const deltaPos = dx / rect.width
+    const startPos = valueToPos(state.startValue, min, max, curve)
+    onChange(snap(posToValue(startPos + deltaPos, min, max, curve), min, max, step))
   }
 
   const endDrag = () => {
@@ -103,16 +134,34 @@ export default function GradientSlider({
             <div className="gradient-slider-fill" style={{ width: `${fillPct}%` }} />
           )}
         </div>
-        <input
-          type="range"
-          className="gradient-slider-input"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          aria-label={label}
-        />
+        {curve ? (
+          // Tapered sliders drive the native input in slider-position space
+          // (0-1000, not real units) so its browser-rendered thumb tracks
+          // the same nonlinear position as gradient-slider-fill above —
+          // real min/max/value would visually desync the two once value
+          // and position stop being proportional.
+          <input
+            type="range"
+            className="gradient-slider-input"
+            min={0}
+            max={1000}
+            step={1}
+            value={Math.round(valueToPos(value, min, max, curve) * 1000)}
+            onChange={(e) => onChange(snap(posToValue(Number(e.target.value) / 1000, min, max, curve), min, max, step))}
+            aria-label={label}
+          />
+        ) : (
+          <input
+            type="range"
+            className="gradient-slider-input"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            aria-label={label}
+          />
+        )}
       </div>
     </div>
   )

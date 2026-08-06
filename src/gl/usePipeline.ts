@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pipeline, type CropRect } from './pipeline'
-import type { EnhanceParams, HslParams, LineArtParams } from '../types'
+import type { ColorAdjustParams, EnhanceParams, HslByBand, InvertParams, LightParams, LineArtParams } from '../types'
 
 export function usePipeline() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -8,11 +8,13 @@ export function usePipeline() {
   const [error, setError] = useState<string | null>(null)
   const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null)
   const [fileInfo, setFileInfo] = useState<{ name: string; type: string; size: number } | null>(null)
+  const [cropSize, setCropSize] = useState<{ width: number; height: number } | null>(null)
 
   useEffect(() => {
     if (!canvasRef.current) return
     try {
       pipelineRef.current = new Pipeline(canvasRef.current)
+      pipelineRef.current.setCropSizeListener(setCropSize)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -42,8 +44,20 @@ export function usePipeline() {
     pipelineRef.current?.setCurveLut(lut)
   }, [])
 
-  const setHsl = useCallback((hsl: HslParams) => {
-    pipelineRef.current?.setHsl(hsl)
+  const setHsl = useCallback((hslByBand: HslByBand) => {
+    pipelineRef.current?.setHsl(hslByBand)
+  }, [])
+
+  const setInvert = useCallback((invert: InvertParams) => {
+    pipelineRef.current?.setInvert(invert)
+  }, [])
+
+  const setLight = useCallback((light: LightParams) => {
+    pipelineRef.current?.setLight(light)
+  }, [])
+
+  const setColorAdjust = useCallback((colorAdjust: ColorAdjustParams) => {
+    pipelineRef.current?.setColorAdjust(colorAdjust)
   }, [])
 
   const setEnhanceParams = useCallback((params: EnhanceParams) => {
@@ -58,6 +72,10 @@ export function usePipeline() {
     pipelineRef.current?.setLineArtActive(active)
   }, [])
 
+  const setPreviewMode = useCallback((mode: 'original' | 'result') => {
+    pipelineRef.current?.setPreviewMode(mode)
+  }, [])
+
   const readFinalPixels = useCallback(() => {
     return pipelineRef.current?.readFinalPixels() ?? null
   }, [])
@@ -66,14 +84,19 @@ export function usePipeline() {
     canvasRef,
     error,
     sourceSize,
+    cropSize,
     fileInfo,
     loadFile,
     setCropRect,
     setCurveLut,
     setHsl,
+    setInvert,
+    setLight,
+    setColorAdjust,
     setEnhanceParams,
     setLineArtParams,
     setLineArtActive,
+    setPreviewMode,
     readFinalPixels,
   }
 }

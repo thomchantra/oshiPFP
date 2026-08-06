@@ -1,5 +1,5 @@
 import pica from 'pica'
-import type { ResampleMode } from '../types'
+import type { ExportFormat, ResampleMode } from '../types'
 
 export interface FinalPixels {
   data: Uint8ClampedArray
@@ -28,14 +28,31 @@ function toImageData({ data, width, height }: FinalPixels): ImageData {
   return new ImageData(flipped, width, height)
 }
 
+/** JPG has no alpha channel — canvas toBlob('image/jpeg') already flattens onto black by default, but this makes the (near-universally-expected) white backing explicit rather than relying on that default. */
+function flattenOntoWhite(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  ctx.globalCompositeOperation = 'destination-over'
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(0, 0, width, height)
+  ctx.globalCompositeOperation = 'source-over'
+}
+
+/** JPG quality per docs/oshiPFP-v0.2.1-UIspecs.md's Export Tab spec: "JPG HD, quality level 8, good compression" / "JPG Tiny, focus on small size, use good quality compression if possible". Canvas toBlob quality is 0-1; "level 8" maps to the common 0-10 quality-slider convention (Photoshop/GIMP-style), i.e. 0.8. */
+const JPEG_QUALITY: Record<'jpegHd' | 'jpegTiny', number> = { jpegHd: 0.8, jpegTiny: 0.5 }
+
 /**
- * pica's filter set (box/hamming/lanczos2/lanczos3/mks2013) has no literal
- * nearest-neighbor or bilinear option — both are simple enough to do
- * directly via canvas 2D, which gives genuinely distinct results per mode
- * rather than approximating through an unrelated pica filter. Only
- * Lanczos3 (pica's strength) actually goes through pica.
+ * Target width/height are independent (not a single square `targetSize`)
+ * so non-square crops (Crop tab's 'original' aspect mode) and the Export
+ * tab's Custom width x height fields both resolve correctly — resizing to
+ * a forced square regardless of source aspect was the old MVP-era
+ * behavior, wrong now that non-square export targets are a real option.
  */
-export async function exportPng(pixels: FinalPixels, targetSize: number, resampleMode: ResampleMode): Promise<Blob> {
+export async function exportImage(
+  pixels: FinalPixels,
+  targetWidth: number,
+  targetHeight: number,
+  resampleMode: ResampleMode,
+  format: ExportFormat,
+): Promise<Blob> {
   const sourceCanvas = document.createElement('canvas')
   sourceCanvas.width = pixels.width
   sourceCanvas.height = pixels.height
@@ -44,8 +61,8 @@ export async function exportPng(pixels: FinalPixels, targetSize: number, resampl
   sourceCtx.putImageData(toImageData(pixels), 0, 0)
 
   const destCanvas = document.createElement('canvas')
-  destCanvas.width = targetSize
-  destCanvas.height = targetSize
+  destCanvas.width = targetWidth
+  destCanvas.height = targetHeight
 
   if (resampleMode === 'lanczos3') {
     await getPica().resize(sourceCanvas, destCanvas, { filter: 'lanczos3' })
@@ -54,14 +71,27 @@ export async function exportPng(pixels: FinalPixels, targetSize: number, resampl
     if (!destCtx) throw new Error('Failed to acquire 2D context for export')
     destCtx.imageSmoothingEnabled = resampleMode === 'bilinear'
     if (resampleMode === 'bilinear') destCtx.imageSmoothingQuality = 'low'
-    destCtx.drawImage(sourceCanvas, 0, 0, targetSize, targetSize)
+    destCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight)
   }
 
+  if (format !== 'png') {
+    const destCtx = destCanvas.getContext('2d')
+    if (!destCtx) throw new Error('Failed to acquire 2D context for export')
+    flattenOntoWhite(destCtx, targetWidth, targetHeight)
+  }
+
+  const mimeType = format === 'png' ? 'image/png' : 'image/jpeg'
+  const quality = format === 'png' ? undefined : JPEG_QUALITY[format]
+
   return new Promise((resolve, reject) => {
-    destCanvas.toBlob((blob) => {
-      if (blob) resolve(blob)
-      else reject(new Error('Failed to encode PNG'))
-    }, 'image/png')
+    destCanvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob)
+        else reject(new Error(`Failed to encode ${format}`))
+      },
+      mimeType,
+      quality,
+    )
   })
 }
 

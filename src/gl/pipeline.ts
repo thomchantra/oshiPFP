@@ -4,6 +4,7 @@ import { createTargetTexture, createFloatTargetTexture, disposeTargetTexture, ty
 import { passthroughVert } from './shaders/passthrough.vert'
 import { cropFrag } from './shaders/crop.frag'
 import { curvesHslFrag } from './shaders/curvesHsl.frag'
+import { lightColorCorrectFrag } from './shaders/lightColorCorrect.frag'
 import { colorCorrectFrag } from './shaders/colorCorrect.frag'
 import { denoiseFrag } from './shaders/denoise.frag'
 import { thresholdFrag } from './shaders/threshold.frag'
@@ -16,6 +17,8 @@ import { distanceToEdgeFrag } from './shaders/distanceToEdge.frag'
 import { findEdgesFrag } from './shaders/findEdges.frag'
 import { boxBlurFrag } from './shaders/boxBlur.frag'
 import { unsharpMaskFrag } from './shaders/unsharpMask.frag'
+import { saturationAdjustFrag } from './shaders/saturationAdjust.frag'
+import { colorLiftFrag } from './shaders/colorLift.frag'
 import { alphaOverWhiteFrag } from './shaders/alphaOverWhite.frag'
 import { compositeFrag } from './shaders/composite.frag'
 import { tintMaskFrag } from './shaders/tintMask.frag'
@@ -23,20 +26,37 @@ import { blitFrag } from './shaders/blit.frag'
 import { createSourceTexture, createLutTexture, updateLutTexture } from './texture'
 import { loadSourceBitmap } from '../imageLoad'
 import { identityLutBuffer } from '../curve/spline'
-import type { EnhanceParams, HslParams, LineArtParams } from '../types'
+import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, HslByBand, HslShift, InvertParams, LightParams, LineArtParams } from '../types'
+import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 
 export type CropRect = [number, number, number, number]
 
-const IDENTITY_HSL: HslParams = { hue: 0, saturation: 0, lightness: 0 }
+const IDENTITY_HSL_SHIFT: HslShift = { hue: 0, saturation: 0, lightness: 0 }
+export const IDENTITY_HSL_BY_BAND: HslByBand = {
+  master: IDENTITY_HSL_SHIFT,
+  red: IDENTITY_HSL_SHIFT,
+  orange: IDENTITY_HSL_SHIFT,
+  yellow: IDENTITY_HSL_SHIFT,
+  green: IDENTITY_HSL_SHIFT,
+  teal: IDENTITY_HSL_SHIFT,
+  blue: IDENTITY_HSL_SHIFT,
+  purple: IDENTITY_HSL_SHIFT,
+  magenta: IDENTITY_HSL_SHIFT,
+}
+export const IDENTITY_INVERT: InvertParams = { rgb: false, r: false, g: false, b: false }
+export const IDENTITY_LIGHT: LightParams = { exposure: 0, contrast: 0, brilliance: 0, whites: 0, highlights: 0, shadows: 0, blacks: 0 }
+export const IDENTITY_COLOR_ADJUST: ColorAdjustParams = { temperature: 0, tint: 0, vibrance: 0 }
 const IDENTITY_ENHANCE: EnhanceParams = { smooth: 0, sharpen: 0 }
+export const IDENTITY_COLOR_LIFT: ColorLiftParams = {
+  red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0,
+}
 
 const IDENTITY_LINE_ART: LineArtParams = {
   mode: 'pathB',
   displayMode: 'composite',
-  toneShapingEnabled: false,
   toneShaping: { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 },
-  denoiseEnabled: false,
   denoise: { intensity: 0, threshold: 0 },
+  colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
   blendMode: 'multiply',
   threshold: 0,
@@ -96,9 +116,12 @@ export class Pipeline {
   private findEdgesProgram: WebGLProgram
   private boxBlurProgram: WebGLProgram
   private unsharpMaskProgram: WebGLProgram
+  private saturationAdjustProgram: WebGLProgram
+  private colorLiftProgram: WebGLProgram
   private alphaOverWhiteProgram: WebGLProgram
   private compositeProgram: WebGLProgram
   private tintMaskProgram: WebGLProgram
+  private lightColorProgram: WebGLProgram
   private colorProgram: WebGLProgram
   private blitProgram: WebGLProgram
   private quadBuffer: WebGLBuffer
@@ -113,6 +136,7 @@ export class Pipeline {
   private sharpenTarget: TargetTexture | null = null
   private enhanceTarget: TargetTexture | null = null
   private correctedTarget: TargetTexture | null = null
+  private colorLiftTarget: TargetTexture | null = null
   private denoisedTarget: TargetTexture | null = null
   private maskTarget: TargetTexture | null = null
   private growHTarget: TargetTexture | null = null
@@ -127,9 +151,11 @@ export class Pipeline {
   private blurHTarget: TargetTexture | null = null
   private blurVTarget: TargetTexture | null = null
   private tintTarget: TargetTexture | null = null
+  private saturationTarget: TargetTexture | null = null
   private lineArtBlendTarget: TargetTexture | null = null
   private lineArtOverlayPreviewTarget: TargetTexture | null = null
   private lineArtOutputTarget: TargetTexture | null = null
+  private lightColorTarget: TargetTexture | null = null
   private colorTarget: TargetTexture | null = null
 
   private cropDirty = true
@@ -138,6 +164,8 @@ export class Pipeline {
   private colorDirty = true
   /** See setLineArtActive — true by default so the very first render (before App.tsx's tab-driven call lands) still shows Botan. */
   private lineArtActive = true
+  /** Fullscreen-preview A/B toggle (App.tsx renders it only while no tab is selected) — 'original' blits cropTarget (post-crop, pre-Enhancement/Line Art/Color) instead of the fully-processed colorTarget. Only affects the on-screen canvas; Export always reads the full colorTarget regardless. */
+  private previewMode: 'original' | 'result' = 'result'
   /**
    * Botan's JFA seed (threshold -> distanceSeed -> ~11 flood-fill passes)
    * only depends on `threshold` and the detection source (crop/tone-shaping/
@@ -149,13 +177,19 @@ export class Pipeline {
    */
   private botanSeedDirty = true
   private botanSeedTarget: TargetTexture | null = null
+  /** Notified with cropTarget's pixel dimensions whenever a crop recompute resolves — cheap (no GPU readback, just the already-known width/height), lets the Export tab show/compute against the real crop output size without needing a full readFinalPixels() call just to read two numbers. */
+  private onCropSizeChange: ((size: { width: number; height: number }) => void) | null = null
 
   private cropRect: CropRect = [0, 0, 1, 1]
-  private hsl: HslParams = IDENTITY_HSL
+  private hslByBand: HslByBand = IDENTITY_HSL_BY_BAND
+  private invert: InvertParams = IDENTITY_INVERT
+  private light: LightParams = IDENTITY_LIGHT
+  private colorAdjust: ColorAdjustParams = IDENTITY_COLOR_ADJUST
   private lineArt: LineArtParams = IDENTITY_LINE_ART
   private enhance: EnhanceParams = IDENTITY_ENHANCE
 
   private disposeContextHandlers: () => void
+  private canvasResizeObserver: ResizeObserver
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -174,9 +208,12 @@ export class Pipeline {
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
+    this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
+    this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
     this.tintMaskProgram = createProgram(this.gl, passthroughVert, tintMaskFrag)
+    this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
     this.quadBuffer = createFullscreenQuad(this.gl)
@@ -186,6 +223,14 @@ export class Pipeline {
       () => this.handleContextLost(),
       () => this.handleContextRestored(),
     )
+    // render() only runs when scheduleRender() is called by a param/data
+    // setter — nothing previously re-ran it when the canvas's own CSS-driven
+    // clientWidth/clientHeight changed (e.g. a layout reflow crossing the
+    // desktop breakpoint, or any other window resize), so the backing-store
+    // resize logic at the top of render() went stale until some unrelated
+    // setter happened to fire next (switching tabs, nudging a slider).
+    this.canvasResizeObserver = new ResizeObserver(() => this.scheduleRender())
+    this.canvasResizeObserver.observe(canvas)
   }
 
   private handleContextLost(): void {
@@ -198,10 +243,10 @@ export class Pipeline {
     this.botanSeedDirty = true
     for (const key of [
       'cropTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
-      'correctedTarget', 'denoisedTarget', 'maskTarget', 'growHTarget', 'growVTarget',
+      'correctedTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget', 'growHTarget', 'growVTarget',
       'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
-      'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'lineArtBlendTarget',
-      'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'colorTarget',
+      'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
+      'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
     ] as const) {
       this[key] = null
     }
@@ -223,9 +268,12 @@ export class Pipeline {
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
+    this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
+    this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
     this.tintMaskProgram = createProgram(this.gl, passthroughVert, tintMaskFrag)
+    this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
     this.quadBuffer = createFullscreenQuad(this.gl)
@@ -267,8 +315,26 @@ export class Pipeline {
     this.scheduleRender()
   }
 
-  setHsl(hsl: HslParams): void {
-    this.hsl = hsl
+  setHsl(hslByBand: HslByBand): void {
+    this.hslByBand = hslByBand
+    this.colorDirty = true
+    this.scheduleRender()
+  }
+
+  setInvert(invert: InvertParams): void {
+    this.invert = invert
+    this.colorDirty = true
+    this.scheduleRender()
+  }
+
+  setLight(light: LightParams): void {
+    this.light = light
+    this.colorDirty = true
+    this.scheduleRender()
+  }
+
+  setColorAdjust(colorAdjust: ColorAdjustParams): void {
+    this.colorAdjust = colorAdjust
     this.colorDirty = true
     this.scheduleRender()
   }
@@ -286,15 +352,20 @@ export class Pipeline {
     if (
       params.mode !== prev.mode ||
       params.threshold !== prev.threshold ||
-      params.toneShapingEnabled !== prev.toneShapingEnabled ||
-      params.denoiseEnabled !== prev.denoiseEnabled ||
-      (params.toneShapingEnabled &&
-        (params.toneShaping.exposure !== prev.toneShaping.exposure ||
-          params.toneShaping.contrast !== prev.toneShaping.contrast ||
-          params.toneShaping.blackClip !== prev.toneShaping.blackClip ||
-          params.toneShaping.whiteClip !== prev.toneShaping.whiteClip)) ||
-      (params.denoiseEnabled &&
-        (params.denoise.intensity !== prev.denoise.intensity || params.denoise.threshold !== prev.denoise.threshold))
+      params.toneShaping.exposure !== prev.toneShaping.exposure ||
+      params.toneShaping.contrast !== prev.toneShaping.contrast ||
+      params.toneShaping.blackClip !== prev.toneShaping.blackClip ||
+      params.toneShaping.whiteClip !== prev.toneShaping.whiteClip ||
+      params.denoise.intensity !== prev.denoise.intensity ||
+      params.denoise.threshold !== prev.denoise.threshold ||
+      params.colorLift.red !== prev.colorLift.red ||
+      params.colorLift.orange !== prev.colorLift.orange ||
+      params.colorLift.yellow !== prev.colorLift.yellow ||
+      params.colorLift.green !== prev.colorLift.green ||
+      params.colorLift.teal !== prev.colorLift.teal ||
+      params.colorLift.blue !== prev.colorLift.blue ||
+      params.colorLift.purple !== prev.colorLift.purple ||
+      params.colorLift.magenta !== prev.colorLift.magenta
     ) {
       this.botanSeedDirty = true
     }
@@ -319,6 +390,20 @@ export class Pipeline {
       this.lineArtDirty = true
       this.scheduleRender()
     }
+  }
+
+  setCropSizeListener(cb: ((size: { width: number; height: number }) => void) | null): void {
+    this.onCropSizeChange = cb
+    if (cb && this.cropTarget) cb({ width: this.cropTarget.width, height: this.cropTarget.height })
+  }
+
+  setPreviewMode(mode: 'original' | 'result'): void {
+    if (this.previewMode === mode) return
+    this.previewMode = mode
+    // No stage is actually dirty — cropTarget/colorTarget are both already
+    // current — this just needs the blit (Present) step at the end of
+    // render() to re-run and pick the other texture.
+    this.scheduleRender()
   }
 
   private renderScheduled = false
@@ -388,6 +473,7 @@ export class Pipeline {
   }
 
   private runDenoise(base: TargetTexture, width: number, height: number): TargetTexture {
+    if (this.lineArt.denoise.intensity <= 0) return base
     const gl = this.gl
     this.denoisedTarget = this.ensureTarget(this.denoisedTarget, width, height)
     const kernelSize = Math.min(5, Math.max(1, Math.floor(this.lineArt.denoise.intensity * 5)))
@@ -403,6 +489,34 @@ export class Pipeline {
   }
 
   /**
+   * Line Art pre-processing "Color Lift" — see colorLift.frag.ts. Runs on
+   * correctedTarget (post tone-shaping), before denoise, so it only ever
+   * affects the line-processor's detection input, never Color/Export's
+   * base image. Skipped entirely when every band is at 0 (identity), same
+   * "no-op costs nothing" convention as runEnhance's smooth/sharpen steps.
+   */
+  private runColorLift(base: TargetTexture, cl: ColorLiftParams, width: number, height: number): TargetTexture {
+    if (
+      cl.red === 0 && cl.orange === 0 && cl.yellow === 0 && cl.green === 0 &&
+      cl.teal === 0 && cl.blue === 0 && cl.purple === 0 && cl.magenta === 0
+    ) {
+      return base
+    }
+    const gl = this.gl
+    this.colorLiftTarget = this.ensureTarget(this.colorLiftTarget, width, height)
+    this.runPass(this.colorLiftProgram, this.colorLiftTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, base.texture)
+      gl.uniform1i(gl.getUniformLocation(this.colorLiftProgram, 'uSource'), 0)
+      gl.uniform1fv(
+        gl.getUniformLocation(this.colorLiftProgram, 'uLift'),
+        new Float32Array([cl.red, cl.orange, cl.yellow, cl.green, cl.teal, cl.blue, cl.purple, cl.magenta]),
+      )
+    })
+    return this.colorLiftTarget
+  }
+
+  /**
    * Crop-tab enhancement: Smooth (the same edge-aware range filter as
    * LineArtParams.denoise, reused here rather than duplicated — see
    * runDenoise/denoise.frag.ts, with a fixed mid-range threshold since this
@@ -414,6 +528,16 @@ export class Pipeline {
    * with LineArtParams.denoise, which never touches the visible output).
    * Either step is skipped entirely at 0 (returns the input unchanged) so
    * the identity/default case costs nothing extra.
+   *
+   * Smooth's slider range (0-3, was 0-1) needed more than a bigger number
+   * to actually do more: the range filter's spatial kernel already
+   * saturates at 5 texels (MAX_KERNEL in denoise.frag.ts) by slider value
+   * 1, so past that point only uThreshold (the range-filter's color-
+   * distance gate) has any further room to push — widening it lets the
+   * filter blend across the small color jumps a JPEG block edge produces,
+   * which is exactly the "won't budge on real artifacts" case that
+   * prompted the higher ceiling (see changelog). Kernel size still caps
+   * at slider value 1; only the threshold keeps climbing above it.
    */
   private runEnhance(source: TargetTexture, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -422,14 +546,15 @@ export class Pipeline {
 
     if (this.enhance.smooth > 0) {
       this.smoothTarget = this.ensureTarget(this.smoothTarget, width, height)
-      const kernelSize = Math.min(5, Math.max(1, Math.round(this.enhance.smooth * 5)))
+      const kernelSize = Math.min(5, Math.max(1, Math.round(Math.min(this.enhance.smooth, 1) * 5)))
+      const threshold = 0.15 + Math.min(this.enhance.smooth, 1) * 0.15 + Math.max(0, this.enhance.smooth - 1) * 0.35
       this.runPass(this.denoiseProgram, this.smoothTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, current.texture)
         gl.uniform1i(gl.getUniformLocation(this.denoiseProgram, 'uSource'), 0)
         gl.uniform2fv(gl.getUniformLocation(this.denoiseProgram, 'uTexelSize'), texelSize)
         gl.uniform1i(gl.getUniformLocation(this.denoiseProgram, 'uKernelSize'), kernelSize)
-        gl.uniform1f(gl.getUniformLocation(this.denoiseProgram, 'uThreshold'), 0.15)
+        gl.uniform1f(gl.getUniformLocation(this.denoiseProgram, 'uThreshold'), threshold)
       })
       current = this.smoothTarget
     }
@@ -477,7 +602,7 @@ export class Pipeline {
     const texelSize: [number, number] = [1 / width, 1 / height]
 
     this.correctedTarget = this.ensureTarget(this.correctedTarget, width, height)
-    const ts = p.toneShapingEnabled ? p.toneShaping : { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 }
+    const ts = p.toneShaping
     this.runPass(this.colorCorrectProgram, this.correctedTarget, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, base.texture)
@@ -488,7 +613,9 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), ts.whiteClip)
     })
 
-    const detectionSource = p.denoiseEnabled ? this.runDenoise(this.correctedTarget, width, height) : this.correctedTarget
+    const cl = p.colorLift
+    const liftedTarget = this.runColorLift(this.correctedTarget, cl, width, height)
+    const detectionSource = this.runDenoise(liftedTarget, width, height)
 
     let outputTarget: TargetTexture = base
 
@@ -640,7 +767,6 @@ export class Pipeline {
         gl.uniform2fv(gl.getUniformLocation(this.findEdgesProgram, 'uTexelSize'), texelSize)
         gl.uniform1f(gl.getUniformLocation(this.findEdgesProgram, 'uSensitivity'), p.sensitivity)
         gl.uniform1f(gl.getUniformLocation(this.findEdgesProgram, 'uGamma'), p.blobContrast)
-        gl.uniform1f(gl.getUniformLocation(this.findEdgesProgram, 'uSaturation'), p.saturation)
       })
       outputTarget = this.runErosion(this.edgeMapTarget, p.radius, width, height)
 
@@ -660,6 +786,19 @@ export class Pipeline {
         })
         outputTarget = this.tintTarget
       }
+
+      // Master saturation, applied once to the fully-resolved ink layer
+      // (whichever of Find Edge/Tint/Vivid produced it) rather than inside
+      // findEdges.frag.ts — see saturationAdjust.frag.ts's header for why
+      // that used to only affect Find Edge mode.
+      this.saturationTarget = this.ensureTarget(this.saturationTarget, width, height)
+      this.runPass(this.saturationAdjustProgram, this.saturationTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, outputTarget.texture)
+        gl.uniform1i(gl.getUniformLocation(this.saturationAdjustProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.saturationAdjustProgram, 'uSaturation'), p.saturation)
+      })
+      outputTarget = this.saturationTarget
     }
 
     const rawTarget = outputTarget
@@ -740,6 +879,7 @@ export class Pipeline {
       this.cropDirty = false
       this.enhanceDirty = true
       this.botanSeedDirty = true
+      this.onCropSizeChange?.({ width, height })
     }
     if (!this.cropTarget) return
 
@@ -768,6 +908,28 @@ export class Pipeline {
 
     if (this.colorDirty) {
       const { width, height } = this.lineArtOutputTarget
+
+      // Light + Color sub-tabs' basic correction runs first — before Invert/
+      // Curve/HSL below — so a photo's exposure/white-balance correction
+      // applies to the source, not to a creative grade already stacked on
+      // top of it. See lightColorCorrect.frag.ts.
+      this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
+      this.runPass(this.lightColorProgram, this.lightColorTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.lineArtOutputTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.lightColorProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTemperature'), this.colorAdjust.temperature)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTint'), this.colorAdjust.tint)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uExposure'), this.light.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uContrast'), this.light.contrast)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uHighlights'), this.light.highlights)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uShadows'), this.light.shadows)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uWhites'), this.light.whites)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBlacks'), this.light.blacks)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBrilliance'), this.light.brilliance)
+        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
+      })
+
       this.colorTarget = this.ensureTarget(this.colorTarget, width, height)
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorTarget.framebuffer)
@@ -776,16 +938,31 @@ export class Pipeline {
       bindFullscreenQuadAttribs(gl, this.colorProgram, this.quadBuffer)
 
       gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, this.lineArtOutputTarget.texture)
+      gl.bindTexture(gl.TEXTURE_2D, this.lightColorTarget.texture)
       gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uSource'), 0)
 
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, this.lutTexture)
       gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uLut'), 1)
 
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uHue'), this.hsl.hue)
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uSaturation'), this.hsl.saturation)
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uLightness'), this.hsl.lightness)
+      const bandShifts = new Float32Array(8 * 3)
+      HUE_BAND_SWATCHES.forEach((swatch, i) => {
+        const shift = this.hslByBand[swatch.key]
+        bandShifts[i * 3] = shift.hue
+        bandShifts[i * 3 + 1] = shift.saturation
+        bandShifts[i * 3 + 2] = shift.lightness
+      })
+      gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uBandShift'), bandShifts)
+
+      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uHue'), this.hslByBand.master.hue)
+      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uSaturation'), this.hslByBand.master.saturation)
+      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uLightness'), this.hslByBand.master.lightness)
+
+      gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uInvertMask'), [
+        this.invert.rgb || this.invert.r ? 1 : 0,
+        this.invert.rgb || this.invert.g ? 1 : 0,
+        this.invert.rgb || this.invert.b ? 1 : 0,
+      ])
       drawFullscreenQuad(gl)
 
       this.colorDirty = false
@@ -794,7 +971,13 @@ export class Pipeline {
 
     // Present: cheap blit of the native-res result onto the on-screen
     // canvas at display resolution — Export uses the full-res colorTarget
-    // directly, not this downsampled view (see readFinalPixels).
+    // directly, not this downsampled view (see readFinalPixels). In
+    // 'original' preview mode, blits cropTarget instead — post-crop but
+    // before Enhancement/Line Art/Color, since this A/B toggle is meant to
+    // compare "before any line-processing/color work" against the final
+    // result, not audit the crop itself. cropTarget is guaranteed non-null
+    // here (checked earlier in render(), before colorTarget can exist).
+    const previewTarget = this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
     const dpr = window.devicePixelRatio || 1
     const displayWidth = Math.round(this.canvas.clientWidth * dpr)
     const displayHeight = Math.round(this.canvas.clientHeight * dpr)
@@ -808,7 +991,7 @@ export class Pipeline {
     gl.useProgram(this.blitProgram)
     bindFullscreenQuadAttribs(gl, this.blitProgram, this.quadBuffer)
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.colorTarget.texture)
+    gl.bindTexture(gl.TEXTURE_2D, previewTarget.texture)
     gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
     drawFullscreenQuad(gl)
   }
@@ -834,6 +1017,7 @@ export class Pipeline {
   }
 
   destroy(): void {
+    this.canvasResizeObserver.disconnect()
     this.disposeContextHandlers()
     if (this.sourceTexture) this.gl.deleteTexture(this.sourceTexture)
     if (this.sourceBitmap) this.sourceBitmap.close()

@@ -25,15 +25,15 @@
  * blurring can be pushed back toward white (gamma < 1) without touching
  * uSensitivity's edge-detection threshold itself.
  *
- * uSaturation is Path F's analogue of Path B's uColorContrast — a
- * color-quality knob on the output layer, but saturation rather than
- * contrast: this shader's output is inherently colored (the per-channel
- * Sobel magenta/cyan fringing described above), so the more useful lever
- * on it is how vivid vs. desaturated-toward-grayscale that fringing reads,
- * not a brightness-contrast curve. Standard luma-mix saturation: 0 flattens
- * to grayscale (desaturated Find Edges, closer to a traditional flat black
- * line), 1 is a no-op (the original per-channel color), values above 1
- * push the color fringing more vivid.
+ * Saturation used to be applied right here (mixing this shader's per-channel
+ * result toward its own luma), but that only ever touched Find Edge mode's
+ * output — Tint/Vivid completely overwrite this shader's color via
+ * tintMask.frag.ts, so the slider silently did nothing for 2 of the 3 color
+ * modes, and even in Find Edge mode the effect was easy to miss since it
+ * only reweights the thin edge pixels that already carry Sobel fringing.
+ * Moved to saturationAdjust.frag.ts, applied once to the fully-resolved ink
+ * layer right before compositing (see pipeline.ts's pathF branch) so it
+ * reads as one "master saturation" knob across all 3 color modes.
  */
 export const findEdgesFrag = `#version 300 es
 precision highp float;
@@ -42,7 +42,6 @@ uniform sampler2D uSource;
 uniform vec2 uTexelSize;
 uniform float uSensitivity;
 uniform float uGamma;
-uniform float uSaturation;
 out vec4 outColor;
 
 void main() {
@@ -63,9 +62,6 @@ void main() {
   vec3 feather = knee * 0.5;
   vec3 value = vec3(1.0) - smoothstep(knee - feather, knee + feather, mag);
   value = pow(clamp(value, 0.0, 1.0), vec3(uGamma));
-
-  float luma = dot(value, vec3(0.2126, 0.7152, 0.0722));
-  value = clamp(mix(vec3(luma), value, uSaturation), 0.0, 1.0);
 
   outColor = vec4(value, 1.0);
 }

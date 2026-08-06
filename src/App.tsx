@@ -7,15 +7,21 @@ import { CropTopContent, CropDebugInfo } from './components/CropChrome'
 import CropPanel from './components/CropPanel'
 import SegmentedControl from './components/SegmentedControl'
 import ColorPanel from './components/ColorPanel'
+import ColorCurveOverlay from './components/ColorCurveOverlay'
+import ColorCurveTopContent from './components/ColorCurveTopContent'
 import LineArtPanel from './components/LineArtPanel'
 import { LINE_ART_MODE_DEFAULTS } from './lineArtDefaults'
 import ExportPanel from './components/ExportPanel'
+import { useExportSettings } from './export/useExportSettings'
 import { getTheme, toggleTheme } from './theme'
 import { usePipeline } from './gl/usePipeline'
 import { useCropInteraction } from './crop/useCropInteraction'
 import { useElementSize } from './crop/useElementSize'
+import { useColorCurve } from './curve/useColorCurve'
+import { useCropEnhance } from './crop/useCropEnhance'
+import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
-import type { CropMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
+import type { ColorSubTab, CropMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
 
 const TABS: TabDef[] = [
   { id: 'crop', label: 'CROP', icon: 'crop' },
@@ -30,18 +36,21 @@ const DISPLAY_MODE_OPTIONS: { value: LineArtDisplayMode; label: string }[] = [
   { value: 'overlay', label: 'OVERLAY' },
 ]
 
-/** Botan and Chie never produce a separate mask — Botan defaults to (and Chie always uses) a plain crossfade of its own resolved output onto the base, so at the default 100% opacity "Overlay" and "Composite" render identically. Hiding it avoids a confusing no-op toggle. */
-const OVERLAY_HIDDEN_MODES = new Set<LineArtMode>(['pathB', 'pathC'])
+const PREVIEW_MODE_OPTIONS: { value: 'original' | 'result'; label: string }[] = [
+  { value: 'original', label: 'ORIGINAL' },
+  { value: 'result', label: 'RESULT' },
+]
 
 const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF']
+
+const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0 }
 
 const BASE_LINE_ART_PARAMS: LineArtParams = {
   mode: 'pathB',
   displayMode: 'composite',
-  toneShapingEnabled: false,
   toneShaping: { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 },
-  denoiseEnabled: false,
   denoise: { intensity: 0, threshold: 0 },
+  colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
   blendMode: 'multiply',
   threshold: 0,
@@ -78,11 +87,29 @@ export default function App() {
   const [pfpMode, setPfpMode] = useState<PfpMode>('square')
   const [cropMode, setCropMode] = useState<CropMode>('square')
   const [lineArtMode, setLineArtMode] = useState<LineArtMode>('pathB')
+  const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('color')
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
+  const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
   const pipeline = usePipeline()
   const hasImage = pipeline.sourceSize !== null
   const viewportWrapperRef = useRef<HTMLDivElement | null>(null)
+  const colorCurve = useColorCurve(pipeline.setCurveLut)
+  const colorAdjustments = useColorAdjustments(pipeline)
+  const exportSettings = useExportSettings(pipeline.cropSize)
+  const cropEnhance = useCropEnhance(pipeline.setEnhanceParams)
+
+  // Promoted from "reset the curve" to "reset everything in the Color tab" —
+  // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
+  // since it's the only Reset visible regardless of which Color sub-tab is
+  // open (it lives in the top row, above the viewport).
+  const resetColorTab = () => {
+    colorCurve.reset()
+    colorAdjustments.setHslByBand(() => IDENTITY_HSL_BY_BAND)
+    colorAdjustments.setInvert(IDENTITY_INVERT)
+    colorAdjustments.setLight(IDENTITY_LIGHT)
+    colorAdjustments.setColorAdjust(IDENTITY_COLOR_ADJUST)
+  }
 
   const lineArtParams: LineArtParams = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
 
@@ -115,6 +142,14 @@ export default function App() {
         ? { width: wrapperSize.height * sourceAspect, height: wrapperSize.height }
         : { width: wrapperSize.width, height: wrapperSize.width / sourceAspect }
       : undefined
+  // Color tab's curve graph is deliberately NOT sized off the image's own
+  // viewport box (squareSize/originalSize above) — those vary with crop
+  // aspect (especially 'original' mode, which can be a tall/narrow
+  // rectangle), and the curve control needs a stable 1:1 boundary of its
+  // own regardless of what shape the underlying photo happens to be
+  // displayed at right now. Same min(width,height)-of-wrapper approach as
+  // squareSize, just decoupled from cropMode.
+  const colorCurveSize = wrapperSize ? Math.min(wrapperSize.width, wrapperSize.height) : undefined
 
   // 'original' means "show the whole image, uncropped" — it's a fixed,
   // non-repositionable framing (fill-width/fill-height at native aspect),
@@ -139,20 +174,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
+  // The Original/Result A/B toggle only applies to the deselected
+  // (tab === null) fullscreen preview — any active tab always shows the
+  // real, fully-processed result regardless of what previewMode was last
+  // set to, so switching back to a tab doesn't leave the canvas silently
+  // stuck on the pre-processing view.
+  useEffect(() => {
+    pipeline.setPreviewMode(tab === null ? previewMode : 'result')
+    // pipeline identity is stable; only re-run when tab or previewMode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, previewMode])
+
   useEffect(() => {
     pipeline.setLineArtParams({ ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode })
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsByMode, lineArtMode, lineArtDisplayMode])
-
-  // Botan/Chie don't have a meaningful Overlay view (see OVERLAY_HIDDEN_MODES) —
-  // if the user was on Overlay and switches into one of those algorithms, fall
-  // back to Composite rather than leaving a hidden option selected.
-  useEffect(() => {
-    if (OVERLAY_HIDDEN_MODES.has(lineArtMode) && lineArtDisplayMode === 'overlay') {
-      setLineArtDisplayMode('composite')
-    }
-  }, [lineArtMode, lineArtDisplayMode])
 
   // Fumiko's "Find Edge" color mode only supports Multiply (see pipeline.ts's
   // forcedMultiply) — LineArtPanel hides the other two pills for that combo,
@@ -196,21 +233,26 @@ export default function App() {
         onToggleTheme={() => setTheme(toggleTheme())}
       />
 
+      <div className="body-layout">
       <div className="viewport-area">
         {hasImage && tab === 'crop' && <CropTopContent zoom={crop.transform.scale} onZoomReset={() => {}} />}
         {hasImage && tab === 'crop' && (
           <CropDebugInfo sourceSize={pipeline.sourceSize} fileInfo={pipeline.fileInfo} />
         )}
         {hasImage && tab === 'maximizer' && (
-          <SegmentedControl
-            options={
-              OVERLAY_HIDDEN_MODES.has(lineArtMode)
-                ? DISPLAY_MODE_OPTIONS.filter((opt) => opt.value !== 'overlay')
-                : DISPLAY_MODE_OPTIONS
-            }
-            value={lineArtDisplayMode}
-            onChange={setLineArtDisplayMode}
+          <SegmentedControl options={DISPLAY_MODE_OPTIONS} value={lineArtDisplayMode} onChange={setLineArtDisplayMode} />
+        )}
+        {hasImage && tab === 'color' && (
+          <ColorCurveTopContent
+            channel={colorCurve.channel}
+            onChannelChange={colorCurve.setChannel}
+            visible={colorCurve.visible}
+            onVisibleChange={colorCurve.setVisible}
+            onResetAll={resetColorTab}
           />
+        )}
+        {hasImage && tab === null && (
+          <SegmentedControl options={PREVIEW_MODE_OPTIONS} value={previewMode} onChange={setPreviewMode} />
         )}
 
         {/* The canvas/Pipeline must stay mounted regardless of hasImage — loadFile()
@@ -224,6 +266,7 @@ export default function App() {
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 0,
+            minWidth: 0,
             flex: '1 1 auto',
           }}
         >
@@ -241,23 +284,108 @@ export default function App() {
             onPointerUp={crop.endPointer}
             onPointerCancel={crop.endPointer}
           />
+          {/* Deliberately a sibling of PreviewViewport, not routed through its
+              `overlay` prop — that slot is sized/clipped to the image's own
+              current viewport box (.preview-viewport), which varies with crop
+              aspect. The curve control needs to always draw on top of the
+              viewport at its own stable 1:1 size (colorCurveSize above),
+              independent of whatever shape the photo underneath happens to
+              be at the moment. */}
+          {hasImage && tab === 'color' && colorCurve.visible && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+              }}
+            >
+              <div
+                style={{
+                  width: colorCurveSize,
+                  height: colorCurveSize,
+                  pointerEvents: 'auto',
+                  // Without these, iOS's long-press callout (image save/copy
+                  // menu) and text/image selection compete with grabbing a
+                  // curve point — the corner points sit right where a photo
+                  // is most likely to trigger it, so a drag can take several
+                  // attempts to register instead of the callout's touch-hold
+                  // timer winning the race the first try or two. Set
+                  // redundantly at every layer down to the svg itself
+                  // (CurveEditor.tsx) — Safari's touch-callout suppression
+                  // has historically been inconsistent about which ancestor
+                  // "counts" for a given descendant, especially for SVG.
+                  WebkitTouchCallout: 'none',
+                  WebkitUserSelect: 'none',
+                  userSelect: 'none',
+                  touchAction: 'none',
+                }}
+              >
+                <ColorCurveOverlay
+                  channel={colorCurve.channel}
+                  curves={colorCurve.curves}
+                  onChangeActive={colorCurve.setActivePoints}
+                />
+              </div>
+            </div>
+          )}
           {pipeline.error && (
             <p style={{ color: 'var(--red)', marginTop: 10, fontSize: 12 }}>{pipeline.error}</p>
           )}
         </div>
 
+      </div>
+
+      {/* Order within this column is CSS-controlled (see .panel-col rules in
+          base.css): mobile keeps the tab bar pinned below the panel/sheet
+          (its historical position as a trailing sibling of .viewport-area),
+          desktop's two-column layout puts the tab row above the drawer
+          content instead, matching the Figma desktop reference. DOM order
+          here doesn't need to match either — `order` handles both. */}
+      <div className="panel-col">
+        <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />
+
         {hasImage && tab === 'crop' && (
-          <CropPanel mode={cropMode} onModeChange={setCropMode} onEnhanceChange={pipeline.setEnhanceParams} />
+          <CropPanel mode={cropMode} onModeChange={setCropMode} enhance={cropEnhance.enhance} setEnhance={cropEnhance.setEnhance} />
         )}
 
-        {hasImage && tab === 'color' && <ColorPanel onCurveChange={pipeline.setCurveLut} onHslChange={pipeline.setHsl} />}
+        {hasImage && tab === 'color' && (
+          <ColorPanel
+            subTab={colorSubTab}
+            onSubTabChange={setColorSubTab}
+            hslByBand={colorAdjustments.hslByBand}
+            setHslByBand={colorAdjustments.setHslByBand}
+            activeBand={colorAdjustments.activeBand}
+            setActiveBand={colorAdjustments.setActiveBand}
+            invert={colorAdjustments.invert}
+            setInvert={colorAdjustments.setInvert}
+            light={colorAdjustments.light}
+            setLight={colorAdjustments.setLight}
+            colorAdjust={colorAdjustments.colorAdjust}
+            setColorAdjust={colorAdjustments.setColorAdjust}
+          />
+        )}
         {hasImage && tab === 'maximizer' && (
           <LineArtPanel params={lineArtParams} onChange={handleLineArtChange} onReset={handleLineArtReset} />
         )}
-        {hasImage && tab === 'export' && <ExportPanel sourceSize={pipeline.sourceSize} readFinalPixels={pipeline.readFinalPixels} />}
+        {hasImage && tab === 'export' && (
+          <ExportPanel
+            cropSize={pipeline.cropSize}
+            readFinalPixels={pipeline.readFinalPixels}
+            resolutionMode={exportSettings.resolutionMode}
+            setResolutionMode={exportSettings.setResolutionMode}
+            customSize={exportSettings.customSize}
+            setCustomSize={exportSettings.setCustomSize}
+            resampleMode={exportSettings.resampleMode}
+            setResampleMode={exportSettings.setResampleMode}
+            format={exportSettings.format}
+            setFormat={exportSettings.setFormat}
+          />
+        )}
       </div>
-
-      <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />
+      </div>
     </div>
   )
 }

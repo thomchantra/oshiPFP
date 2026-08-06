@@ -1,11 +1,12 @@
 {
-  "name": "pfp-maximizer",
+  "name": "oshipfp",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:with-lab": "tsc -b && INCLUDE_LAB=true vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

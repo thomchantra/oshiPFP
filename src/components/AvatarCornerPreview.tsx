@@ -16,6 +16,14 @@ const SIZE = 60
  * approximation; revisit for pixel-exact export matching in the backend
  * sweep if "original crop" framing needs its own fill-width/fill-height
  * logic independent of the main crop rect (see plan notes).
+ *
+ * Deliberately follows the Original/Result A/B toggle (App.tsx's
+ * previewMode) exactly like the main canvas does, rather than freezing on
+ * "Result" — a prior round paused this mirror during 'original' preview on
+ * the assumption this corner preview should always show the true final
+ * result, but the user explicitly wants the toggle to drive this preview
+ * too (useful for seeing how a before/after actually reads in the real PFP
+ * frame's cover-fit crop, which differs from the main square viewport's).
  */
 export default function AvatarCornerPreview({ sourceCanvasRef, hasImage, circle }: AvatarCornerPreviewProps) {
   const previewRef = useRef<HTMLCanvasElement | null>(null)

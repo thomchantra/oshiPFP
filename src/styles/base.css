@@ -141,6 +141,53 @@ button, input {
 }
 .blank-state-uploadbox.drag-over { background: var(--accent-lighter); }
 
+/* Desktop first pass (see docs/oshiPFP-v0.2.1-UIspecs.md Figma desktop
+   reference, node 26:3204): below this width the app stays the original
+   single-column mobile shell (.body-layout just stacks its two children
+   like plain block flow). At/above it, .body-layout switches to a row —
+   viewport on the left, the tab bar + tool panel in a fixed-width right
+   column sized to match the mobile layout's own frame width (390px, the
+   Figma reference's literal mobile width), not derived from .app's
+   680px mobile max-width. */
+.body-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Mobile: tab bar pinned below the panel/sheet — its historical position
+   as a trailing sibling of .viewport-area, now reproduced with `order`
+   since TabNav and the panel are DOM/JSX siblings inside .panel-col.
+   .panel-col itself carries no horizontal padding at either breakpoint —
+   .tab-nav insets itself via its own `padding: 0 10px` (unchanged from
+   before this column existed) and .bottom-sheet-content does the same for
+   the panel content below, so neither breakpoint needs panel-col to
+   supply it (and doubling it here on desktop, where panel-col's own
+   padding used to duplicate tab-nav's, is exactly what made the tab row
+   sit narrower than the panel below it). */
+.panel-col .tab-nav { order: 2; }
+.panel-col .bottom-sheet { order: 1; }
+
+@media (min-width: 900px) {
+  .app { max-width: 1280px; }
+  .body-layout { flex-direction: row; gap: 10px; }
+  .viewport-area { flex: 1 1 auto; }
+  .panel-col {
+    flex: 0 0 390px;
+    width: 390px;
+    gap: 10px;
+  }
+  /* Desktop: tab row sits above the drawer content instead (matches the
+     Figma desktop reference's right-column ordering). */
+  .panel-col .tab-nav { order: 1; }
+  .panel-col .bottom-sheet { order: 2; flex: 1 1 auto; min-height: 0; }
+}
+
 /* Preview viewport area — 10px side gutter, matching the header/tabbar inset */
 .viewport-area {
   flex: 1;
@@ -148,6 +195,14 @@ button, input {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  /* Load-bearing for the desktop row layout: a flex item's automatic
+     min-width defaults to its content's intrinsic size, not 0. The
+     viewport's own width is pinned by a JS-computed square size (see
+     App.tsx's squareSize/PreviewViewport), so without this override that
+     old pixel width became a floor this column could never shrink below —
+     it could grow past it (fine) but never shrink back on a narrower
+     resize, which read as "the sidebar only grows, never shrinks". */
+  min-width: 0;
   padding: 0 10px;
 }
 .preview-viewport {
@@ -170,6 +225,42 @@ button, input {
   user-select: none;
   -webkit-touch-callout: none;
   pointer-events: none;
+}
+
+/* Color tab: channel selector row (ColorCurveTopContent, positioned like
+   Line Art's display-mode SegmentedControl) — the curve graph itself draws
+   directly on the viewport with no card backing, see CurveEditor's
+   `opaque` prop and its drop-shadow filter. */
+.curve-overlay-channels {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.curve-channel-btn {
+  /* Explicit height, not content-driven — the icon-only visibility toggle
+     (a 14px icon) rendered several px shorter than the text (RGB/R/G/B)
+     pills sitting right next to it, since font-button-label's line-height
+     is taller than the icon's own box. display:flex centers whichever
+     content (icon or text) sits inside this fixed height. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 3px 9px;
+  background: var(--bg2);
+  cursor: pointer;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+.curve-hint {
+  margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Crop tab chrome */
@@ -209,6 +300,18 @@ button, input {
 .pill-toggle-btn.active {
   background: var(--accent-title);
   color: var(--bg-light);
+}
+.modified-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-title);
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.pill-toggle-btn.active .modified-dot {
+  background: var(--bg-light);
 }
 
 .tab-nav {
@@ -533,10 +636,19 @@ button, input {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* No horizontal padding here — .viewport-area (the sheet's parent) already
-     gives every tab's content the same 10px inset; adding more here doubled
-     it just for Line Art, so its content sat further in than Crop's. */
-  padding: 0 0 20px;
+  /* Sheet's own 10px horizontal inset — it used to rely on .viewport-area
+     (its parent, pre-desktop-layout) for this, but the sheet now lives in
+     .panel-col instead, which deliberately carries no horizontal padding
+     of its own (see the comment on .panel-col .tab-nav above), so content
+     sat flush against the edge with nothing supplying an inset. Matches
+     .tab-nav's own `padding: 0 10px` right above it in the same column. */
+  padding: 0 10px 20px;
+}
+/* Desktop: no drag handle, no JS-driven fixed height — the sheet just fills
+   its column (.panel-col gives it flex: 1 1 auto) and scrolls internally. */
+.bottom-sheet-desktop {
+  height: auto;
+  min-height: 0;
 }
 
 /* Line Art panel */
@@ -553,6 +665,37 @@ button, input {
   background: var(--accent-title);
   color: var(--bg-light);
 }
+/* Color tab HSL sub-tab: master + 8-band swatch selector (HslBandSelector.tsx) */
+/* flex:1 + space-between spreads the 9 swatches evenly across whatever
+   width the row's Reset button (fixed-width sibling) leaves it — see
+   ColorPanel.tsx's crop-topcontent row. */
+.hsl-band-row { display: flex; flex: 1 1 auto; justify-content: space-between; align-items: center; min-width: 0; }
+.hsl-swatch {
+  /* -webkit-appearance/appearance: none is load-bearing on iOS Safari —
+     without it, a <button>'s default chrome has been known to ignore
+     border-radius clipping on its background, which is what caused the
+     master swatch's gradient to show square corners peeking out past the
+     circle. */
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+.hsl-swatch.active {
+  border-width: 3px;
+  border-color: #FFFFFF;
+  box-shadow: 0 0 0 1px var(--accent-title);
+}
+
 .lineart-slidergroup-stack { display: flex; flex-direction: column; gap: 8px; }
 /* field-row's own margin-bottom is for contexts with no flex gap (old
    panels) — redundant here since the stack already gaps. */

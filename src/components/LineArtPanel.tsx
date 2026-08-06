@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import BottomSheet from './BottomSheet'
 import IconButton from './IconButton'
-import GradientSlider from './GradientSlider'
+import GradientSlider, { type SliderCurve } from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
 import Modal from './Modal'
 import Icon from './Icon'
+import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import type { BlendMode, ColorMode, LineArtMode, LineArtParams } from '../types'
 
 interface LineArtPanelProps {
@@ -58,6 +59,14 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
 
 const IDENTITY_TONE_SHAPING = { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 }
 const IDENTITY_DENOISE = { intensity: 0, threshold: 0 }
+const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0 }
+
+/** Radius sliders' hot spot is almost always 0-3px within a 0-20px range — see CLAUDE.md-adjacent feedback: taper so 0-3 gets 40% of the track instead of linear's ~15%. */
+const RADIUS_CURVE: SliderCurve = { breakpoint: 3, breakpointPosition: 0.4 }
+
+function isModified<T extends Record<string, number>>(current: T, identity: T): boolean {
+  return (Object.keys(identity) as (keyof T)[]).some((k) => current[k] !== identity[k])
+}
 
 function rgbToHex([r, g, b]: [number, number, number]): string {
   const c = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0')
@@ -68,9 +77,23 @@ function hexToRgb(hex: string): [number, number, number] {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
 }
 
+const COLOR_LIFT_SWATCHES = HUE_BAND_SWATCHES
+
+/** Small accent-color dot shown next to a pre-processing submodule's pill label when its params have drifted from identity — lets the user spot which submodules have edits without expanding each one (see App.tsx-adjacent feedback: expand/collapse is tray-appearance-only now, so this is the only at-a-glance signal left). */
+function ModifiedDot({ show }: { show: boolean }) {
+  if (!show) return null
+  return <span className="modified-dot" aria-hidden="true" />
+}
+
 /** Controlled by App.tsx (params live there, not locally) so slider values survive switching away from and back to the Line Art tab — this component used to own the state itself and reset to defaults on every remount. */
 export default function LineArtPanel({ params, onChange, onReset }: LineArtPanelProps) {
   const [infoOpen, setInfoOpen] = useState(false)
+  // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
+  // always apply (their identity defaults are no-ops), so this no longer
+  // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
+  const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
+  const [denoiseExpanded, setDenoiseExpanded] = useState(false)
+  const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
 
   const set = <K extends keyof LineArtParams>(key: K, value: LineArtParams[K]) =>
     onChange({ ...params, [key]: value })
@@ -126,8 +149,9 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
 
       {/* Chie (pathC) erodes the raw crop directly (see pipeline.ts's pathC
           branch) rather than reading colorCorrect/denoise's output like every
-          other mode — Tone Shaping/Denoise are real no-ops here, so hide them
-          rather than leave dead controls the user can fiddle with for nothing. */}
+          other mode — Tone Lift/Denoise/Color Lift are real no-ops here, so
+          hide them rather than leave dead controls the user can fiddle with
+          for nothing. */}
       {params.mode !== 'pathC' && (
       <div className="lineart-preprocessing">
         <div className="lineart-preprocessing-header">
@@ -138,10 +162,9 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             onClick={() =>
               onChange({
                 ...params,
-                toneShapingEnabled: false,
                 toneShaping: IDENTITY_TONE_SHAPING,
-                denoiseEnabled: false,
                 denoise: IDENTITY_DENOISE,
+                colorLift: IDENTITY_COLOR_LIFT,
               })
             }
           >
@@ -151,21 +174,31 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
         <div className="lineart-preprocessing-toggles">
           <button
             type="button"
-            className={`pill-toggle-btn font-button-label${params.toneShapingEnabled ? ' active' : ''}`}
-            onClick={() => set('toneShapingEnabled', !params.toneShapingEnabled)}
+            className={`pill-toggle-btn font-button-label${toneLiftExpanded ? ' active' : ''}`}
+            onClick={() => setToneLiftExpanded((v) => !v)}
           >
-            Tone Shaping
+            <ModifiedDot show={isModified(params.toneShaping, IDENTITY_TONE_SHAPING)} />
+            Tone Lift
           </button>
           <button
             type="button"
-            className={`pill-toggle-btn font-button-label${params.denoiseEnabled ? ' active' : ''}`}
-            onClick={() => set('denoiseEnabled', !params.denoiseEnabled)}
+            className={`pill-toggle-btn font-button-label${colorLiftExpanded ? ' active' : ''}`}
+            onClick={() => setColorLiftExpanded((v) => !v)}
           >
+            <ModifiedDot show={isModified(params.colorLift, IDENTITY_COLOR_LIFT)} />
+            Color Lift
+          </button>
+          <button
+            type="button"
+            className={`pill-toggle-btn font-button-label${denoiseExpanded ? ' active' : ''}`}
+            onClick={() => setDenoiseExpanded((v) => !v)}
+          >
+            <ModifiedDot show={isModified(params.denoise, IDENTITY_DENOISE)} />
             Denoise
           </button>
         </div>
 
-        {params.toneShapingEnabled && (
+        {toneLiftExpanded && (
           <div className="lineart-slidergroup-stack">
             <GradientSlider
               label="Exposure" value={params.toneShaping.exposure} min={-3} max={3} defaultValue={0}
@@ -177,16 +210,35 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             />
             <GradientSlider
               label="Black Clip" value={params.toneShaping.blackClip} min={0} max={0.5} defaultValue={0}
+              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
               onChange={(v) => set('toneShaping', { ...params.toneShaping, blackClip: v })}
             />
             <GradientSlider
               label="White Clip" value={params.toneShaping.whiteClip} min={0.5} max={1} defaultValue={1}
+              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
               onChange={(v) => set('toneShaping', { ...params.toneShaping, whiteClip: v })}
             />
           </div>
         )}
-        {params.toneShapingEnabled && params.denoiseEnabled && <div className="lineart-divider" />}
-        {params.denoiseEnabled && (
+        {toneLiftExpanded && colorLiftExpanded && <div className="lineart-divider" />}
+        {colorLiftExpanded && (
+          <div className="lineart-slidergroup-stack">
+            {COLOR_LIFT_SWATCHES.map((swatch) => (
+              <GradientSlider
+                key={swatch.key}
+                label={`${swatch.label} Lift`}
+                value={params.colorLift[swatch.key]}
+                min={-1}
+                max={1}
+                defaultValue={0}
+                trackGradient={`linear-gradient(90deg, #000000, ${swatch.hex}, #FFFFFF)`}
+                onChange={(v) => set('colorLift', { ...params.colorLift, [swatch.key]: v })}
+              />
+            ))}
+          </div>
+        )}
+        {(toneLiftExpanded || colorLiftExpanded) && denoiseExpanded && <div className="lineart-divider" />}
+        {denoiseExpanded && (
           <div className="lineart-slidergroup-stack">
             <GradientSlider
               label="Intensity" value={params.denoise.intensity} min={0} max={1} defaultValue={0}
@@ -219,7 +271,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
         {params.mode === 'pathB' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (px)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (px)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
             <GradientSlider label="Blob Contrast" value={params.blobContrast} min={0.2} max={5} defaultValue={1} onChange={(v) => set('blobContrast', v)} />
             <div className="lineart-divider" />
@@ -249,8 +301,8 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
 
         {params.mode === 'pathC' && (
           <>
-            <GradientSlider label="Gate Threshold" value={params.gateThreshold} min={0} max={1} defaultValue={0} onChange={(v) => set('gateThreshold', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Gate Threshold" value={params.gateThreshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('gateThreshold', v)} />
+            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
           </>
         )}
@@ -258,7 +310,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
         {params.mode === 'pathD' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1.5} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <div className="lineart-divider" />
             <ColorModeRow mode={params.colorMode} options={['tint', 'vivid']} onChange={(v) => set('colorMode', v)} />
             {params.colorMode === 'tint' && (
@@ -276,7 +328,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
         {params.mode === 'pathF' && (
           <>
             <GradientSlider label="Sensitivity" value={params.sensitivity} min={0.5} max={20} defaultValue={3} onChange={(v) => set('sensitivity', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={3} defaultValue={0.5} step={0.1} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={3} defaultValue={0.2} step={0.01} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Saturation" value={params.saturation} min={0} max={2} defaultValue={0.5} onChange={(v) => set('saturation', v)} />
             <div className="lineart-divider" />
             <ColorModeRow mode={params.colorMode} options={['findEdge', 'tint', 'vivid']} onChange={(v) => set('colorMode', v)} />

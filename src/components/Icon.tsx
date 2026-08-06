@@ -2,6 +2,7 @@ import circle from '../assets/icons/circle.svg'
 import circlefill from '../assets/icons/circlefill.svg'
 import color from '../assets/icons/color.svg'
 import crop from '../assets/icons/crop.svg'
+import curve from '../assets/icons/curve.svg'
 import diamond from '../assets/icons/diamond.svg'
 import download from '../assets/icons/download.svg'
 import lineart from '../assets/icons/lineart.svg'
@@ -21,6 +22,7 @@ const ICONS = {
   circlefill,
   color,
   crop,
+  curve,
   diamond,
   download,
   lineart,

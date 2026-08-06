@@ -8,9 +8,35 @@ const MAX_HEIGHT_FRACTION = 0.8
 // measured content height below to get the sheet's true full-content height.
 const HANDLE_ROW_HEIGHT_PX = 21
 const CONTENT_BOTTOM_PADDING_PX = 20
+const DESKTOP_QUERY = '(min-width: 900px)'
+
+/** Matches base.css's desktop breakpoint. The drag-to-resize sheet only
+ * makes sense in the mobile layout, where it shares screen space with the
+ * viewport above it — desktop's two-column layout gives the panel its own
+ * full-height column instead (see .panel-col in base.css), so there's
+ * nothing to drag against. */
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches)
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY)
+    const onChange = () => setIsDesktop(mql.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+  return isDesktop
+}
 
 interface BottomSheetProps {
   children: ReactNode
+  /**
+   * Overrides the default 0.8 max-height-of-window fraction. The Color
+   * tab passes 0.5 so the sheet can never crowd the curve/viewport below
+   * half the screen even if a sub-tab's content (e.g. HSL's 3 sliders)
+   * would otherwise want more room than that — the sheet still caps DOWN
+   * to its actual content height first (see below), this only lowers the
+   * ceiling for when content is tall enough to hit it.
+   */
+  maxHeightFraction?: number
 }
 
 /**
@@ -28,7 +54,8 @@ interface BottomSheetProps {
  * defaulted) past its actual content height; this makes "all rows
  * visible, no more" the hard ceiling instead.
  */
-export default function BottomSheet({ children }: BottomSheetProps) {
+export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_FRACTION }: BottomSheetProps) {
+  const isDesktop = useIsDesktop()
   const [height, setHeight] = useState(() =>
     Math.round(window.innerHeight * DEFAULT_HEIGHT_FRACTION),
   )
@@ -50,8 +77,8 @@ export default function BottomSheet({ children }: BottomSheetProps) {
 
   const maxHeight =
     contentHeight > 0
-      ? Math.min(window.innerHeight * MAX_HEIGHT_FRACTION, contentHeight + HANDLE_ROW_HEIGHT_PX + CONTENT_BOTTOM_PADDING_PX)
-      : window.innerHeight * MAX_HEIGHT_FRACTION
+      ? Math.min(window.innerHeight * maxHeightFraction, contentHeight + HANDLE_ROW_HEIGHT_PX + CONTENT_BOTTOM_PADDING_PX)
+      : window.innerHeight * maxHeightFraction
   const effectiveHeight = Math.max(MIN_HEIGHT_PX, Math.min(height, maxHeight))
 
   const handlePointerDown = (e: ReactPointerEvent) => {
@@ -68,6 +95,14 @@ export default function BottomSheet({ children }: BottomSheetProps) {
   const endDrag = () => {
     dragStartY.current = null
     setDragging(false)
+  }
+
+  if (isDesktop) {
+    return (
+      <div className="bottom-sheet bottom-sheet-desktop">
+        <div className="bottom-sheet-content">{children}</div>
+      </div>
+    )
   }
 
   return (

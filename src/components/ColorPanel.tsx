@@ -1,85 +1,245 @@
-import { useEffect, useState } from 'react'
-import Card from './Card'
-import CurveEditor from '../curve/CurveEditor'
-import { buildRgbLutBuffer, defaultCurvePoints, sampleCurveLUT } from '../curve/spline'
-import type { CurvePoint, HslParams } from '../types'
+import BottomSheet from './BottomSheet'
+import SegmentedControl from './SegmentedControl'
+import GradientSlider from './GradientSlider'
+import HslBandSelector from './HslBandSelector'
+import { HUE_BAND_SWATCHES } from '../color/hslPalette'
+import { IDENTITY_HSL_SHIFT, IDENTITY_INVERT } from '../color/useColorAdjustments'
+import type { ColorAdjustParams, ColorSubTab, HslBand, HslByBand, HslShift, InvertParams, LightParams } from '../types'
 
 interface ColorPanelProps {
-  onCurveChange: (lut: Uint8Array) => void
-  onHslChange: (hsl: HslParams) => void
+  subTab: ColorSubTab
+  onSubTabChange: (tab: ColorSubTab) => void
+  hslByBand: HslByBand
+  setHslByBand: (updater: (prev: HslByBand) => HslByBand) => void
+  activeBand: HslBand
+  setActiveBand: (band: HslBand) => void
+  invert: InvertParams
+  setInvert: (updater: InvertParams | ((prev: InvertParams) => InvertParams)) => void
+  light: LightParams
+  setLight: (light: LightParams) => void
+  colorAdjust: ColorAdjustParams
+  setColorAdjust: (colorAdjust: ColorAdjustParams) => void
 }
 
-const DEFAULT_HSL: HslParams = { hue: 0, saturation: 0, lightness: 0 }
+/** Per docs/oshiPFP-v0.2.1-UIspecs.md's Slider Background Gradient list. */
+const BLACK_WHITE_GRADIENT = 'linear-gradient(90deg, #000000 0%, #FFFFFF 100%)'
 
-export default function ColorPanel({ onCurveChange, onHslChange }: ColorPanelProps) {
-  const [points, setPoints] = useState<CurvePoint[]>(defaultCurvePoints())
-  const [hsl, setHsl] = useState<HslParams>(DEFAULT_HSL)
+const SUB_TAB_OPTIONS: { value: ColorSubTab; label: string }[] = [
+  { value: 'light', label: 'LIGHT' },
+  { value: 'color', label: 'COLOR' },
+  { value: 'hsl', label: 'HSL' },
+]
 
-  useEffect(() => {
-    onCurveChange(buildRgbLutBuffer(sampleCurveLUT(points)))
-    // onCurveChange identity is stable from usePipeline; only re-run when points change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points])
+/**
+ * "Invert Colors" toggle click logic — RGB (full invert) and the 3 R/G/B
+ * per-channel toggles are mutually exclusive UI states, not independent
+ * booleans: clicking RGB while any per-channel toggles are on replaces them
+ * with a full invert; clicking a channel while RGB is on switches out of
+ * full-invert mode into per-channel mode starting with just that channel;
+ * selecting all 3 of R/G/B individually collapses to the RGB state instead
+ * (same visual result, no reason to represent it two ways). Clicking an
+ * already-active toggle always turns it off.
+ */
+function toggleInvertRgb(prev: InvertParams): InvertParams {
+  return prev.rgb ? IDENTITY_INVERT : { rgb: true, r: false, g: false, b: false }
+}
+function toggleInvertChannel(prev: InvertParams, channel: 'r' | 'g' | 'b'): InvertParams {
+  if (prev.rgb) return { rgb: false, r: channel === 'r', g: channel === 'g', b: channel === 'b' }
+  const next = { ...prev, [channel]: !prev[channel] }
+  if (next.r && next.g && next.b) return { rgb: true, r: false, g: false, b: false }
+  return next
+}
 
-  useEffect(() => {
-    onHslChange(hsl)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hsl])
+/**
+ * HSL slider track gradients, responsive to the active band — per
+ * docs/oshiPFP-v0.2.1-UIspecs.md's "HSL Background Slider Gradient"
+ * convention: Hue runs [prev-neighbor] -> [band color] -> [next-neighbor]
+ * (the spec's own Red example is literally Magenta -> Red -> Orange, which
+ * is exactly Red's neighbors in HUE_BAND_SWATCHES with wraparound — this
+ * generalizes that to all 8 bands instead of hardcoding Red's case),
+ * Saturation runs neutral gray -> [band color], Lightness runs
+ * black -> [band color] -> white. Master has no single hue, so it gets a
+ * full spectrum for Hue and the neutral accent-title brand color as its
+ * Saturation/Lightness pivot instead — not spec'd (master is this app's
+ * own addition to the Figma reference), but keeps the same visual language.
+ */
+const MASTER_HUE_GRADIENT = 'linear-gradient(90deg, #FF0000, #FF8000, #FFFF00, #00FF00, #00FFFF, #0000FF, #FF00FF, #FF0000)'
+function hslGradients(band: HslBand): { hue: string; saturation: string; lightness: string } {
+  if (band === 'master') {
+    return {
+      hue: MASTER_HUE_GRADIENT,
+      saturation: 'linear-gradient(90deg, #8D8D8D 0%, var(--accent-title) 100%)',
+      lightness: 'linear-gradient(90deg, #000000 0%, var(--accent-title) 50%, #FFFFFF 100%)',
+    }
+  }
+  const i = HUE_BAND_SWATCHES.findIndex((s) => s.key === band)
+  const prev = HUE_BAND_SWATCHES[(i - 1 + HUE_BAND_SWATCHES.length) % HUE_BAND_SWATCHES.length].hex
+  const hex = HUE_BAND_SWATCHES[i].hex
+  const next = HUE_BAND_SWATCHES[(i + 1) % HUE_BAND_SWATCHES.length].hex
+  return {
+    hue: `linear-gradient(90deg, ${prev} 0%, ${hex} 50%, ${next} 100%)`,
+    saturation: `linear-gradient(90deg, #8D8D8D 0%, ${hex} 100%)`,
+    lightness: `linear-gradient(90deg, #000000 0%, ${hex} 50%, #FFFFFF 100%)`,
+  }
+}
+
+/**
+ * Color tab's sheet — Curve (the "Color" sub-tab) is deliberately mostly
+ * absent here: per the UI spec it floats on top of the viewport instead
+ * (see ColorCurveOverlay.tsx, rendered by App.tsx), not in this sheet like
+ * every other tab's controls. HSL is the real targeted-HSL panel per the
+ * Figma "Colordrawer" component (node 26-2353): a swatch row (9 bands —
+ * the Figma's 8 targeted hue bands plus a "master"/global one added on the
+ * left, see HslBandSelector.tsx) with one shared Hue/Saturation/Lightness
+ * slider trio whose bound values switch based on which swatch is selected.
+ *
+ * All state here (hslByBand/invert/light/colorAdjust/activeBand) is owned
+ * by App.tsx via useColorAdjustments, not locally — this component only
+ * renders while `tab === 'color'`, so state that lived here got wiped on
+ * every tab switch (a real bug caught via testing: the invert toggle
+ * "switching off by itself" was actually this component remounting).
+ */
+export default function ColorPanel({
+  subTab, onSubTabChange,
+  hslByBand, setHslByBand, activeBand, setActiveBand,
+  invert, setInvert,
+  light, setLight,
+  colorAdjust, setColorAdjust,
+}: ColorPanelProps) {
+  const setLightField = <K extends keyof LightParams>(key: K, value: LightParams[K]) =>
+    setLight({ ...light, [key]: value })
+  const setColorAdjustField = <K extends keyof ColorAdjustParams>(key: K, value: ColorAdjustParams[K]) =>
+    setColorAdjust({ ...colorAdjust, [key]: value })
+
+  const activeShift = hslByBand[activeBand]
+  const setActiveShift = <K extends keyof HslShift>(key: K, value: HslShift[K]) =>
+    setHslByBand((prev) => ({ ...prev, [activeBand]: { ...prev[activeBand], [key]: value } }))
+  const gradients = hslGradients(activeBand)
 
   return (
-    <>
-      <Card title="Curve" dot="dim" meta="Master">
-        <CurveEditor points={points} onChange={setPoints} />
-        <p style={{ color: 'var(--text3)', fontSize: 11, marginTop: 8, textAlign: 'center' }}>
-          Drag points to adjust · double-click to add/remove
-        </p>
-      </Card>
-      <Card title="HSL" dot="dim">
-        <div className="field-row">
-          <div className="field-row-label">
-            <span>Hue</span>
-            <span className="value">{hsl.hue}°</span>
-          </div>
-          <input
-            type="range"
-            className="slider"
-            min={-180}
-            max={180}
-            value={hsl.hue}
-            onChange={(e) => setHsl((h) => ({ ...h, hue: Number(e.target.value) }))}
+    <BottomSheet maxHeightFraction={0.5}>
+      <div style={{ marginBottom: 24 }}>
+        <SegmentedControl options={SUB_TAB_OPTIONS} value={subTab} onChange={onSubTabChange} />
+      </div>
+
+      {subTab === 'light' && (
+        <div className="lineart-slidergroup-stack">
+          <GradientSlider
+            label="Exposure" value={light.exposure} min={-3} max={3} defaultValue={0}
+            trackGradient={BLACK_WHITE_GRADIENT}
+            onChange={(v) => setLightField('exposure', v)}
+          />
+          <GradientSlider label="Contrast" value={light.contrast} min={-0.8} max={2} defaultValue={0} onChange={(v) => setLightField('contrast', v)} />
+          <GradientSlider label="Brilliance" value={light.brilliance} min={-1} max={1} defaultValue={0} onChange={(v) => setLightField('brilliance', v)} />
+          <GradientSlider
+            label="Whites" value={light.whites} min={-1} max={1} defaultValue={0}
+            trackGradient={BLACK_WHITE_GRADIENT}
+            onChange={(v) => setLightField('whites', v)}
+          />
+          <GradientSlider
+            label="Highlights" value={light.highlights} min={-1} max={1} defaultValue={0}
+            trackGradient={BLACK_WHITE_GRADIENT}
+            onChange={(v) => setLightField('highlights', v)}
+          />
+          <GradientSlider
+            label="Shadows" value={light.shadows} min={-1} max={1} defaultValue={0}
+            trackGradient={BLACK_WHITE_GRADIENT}
+            onChange={(v) => setLightField('shadows', v)}
+          />
+          <GradientSlider
+            label="Blacks" value={light.blacks} min={-1} max={1} defaultValue={0}
+            trackGradient={BLACK_WHITE_GRADIENT}
+            onChange={(v) => setLightField('blacks', v)}
           />
         </div>
-        <div className="field-row">
-          <div className="field-row-label">
-            <span>Saturation</span>
-            <span className="value">{hsl.saturation.toFixed(2)}</span>
+      )}
+
+      {subTab === 'color' && (
+        <div className="lineart-slidergroup-stack">
+          <GradientSlider
+            label="Temperature" value={colorAdjust.temperature} min={-1} max={1} defaultValue={0}
+            trackGradient="linear-gradient(90deg, #5297FF 0%, #FF9547 100%)"
+            onChange={(v) => setColorAdjustField('temperature', v)}
+          />
+          <GradientSlider
+            label="Tint" value={colorAdjust.tint} min={-1} max={1} defaultValue={0}
+            trackGradient="linear-gradient(90deg, #FF52EE 0%, #51FF47 100%)"
+            onChange={(v) => setColorAdjustField('tint', v)}
+          />
+          <GradientSlider
+            label="Vibrance" value={colorAdjust.vibrance} min={-1} max={1} defaultValue={0}
+            trackGradient="linear-gradient(90deg, #8D8D8D 0%, #C144C8 51.923%, #FF0000 100%)"
+            onChange={(v) => setColorAdjustField('vibrance', v)}
+          />
+          <div className="lineart-divider" />
+          <div className="field-row">
+            <div className="field-row-label">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Colors</span>
+            </div>
+            <div className="crop-bottomcontent" style={{ padding: 0 }}>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${invert.rgb ? ' active' : ''}`}
+                onClick={() => setInvert(toggleInvertRgb)}
+              >
+                RGB
+              </button>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${invert.r ? ' active' : ''}`}
+                onClick={() => setInvert((prev) => toggleInvertChannel(prev, 'r'))}
+              >
+                R
+              </button>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${invert.g ? ' active' : ''}`}
+                onClick={() => setInvert((prev) => toggleInvertChannel(prev, 'g'))}
+              >
+                G
+              </button>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${invert.b ? ' active' : ''}`}
+                onClick={() => setInvert((prev) => toggleInvertChannel(prev, 'b'))}
+              >
+                B
+              </button>
+            </div>
           </div>
-          <input
-            type="range"
-            className="slider"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={hsl.saturation}
-            onChange={(e) => setHsl((h) => ({ ...h, saturation: Number(e.target.value) }))}
+        </div>
+      )}
+
+      {subTab === 'hsl' && (
+        <div className="lineart-slidergroup-stack">
+          <div className="crop-topcontent" style={{ gap: 10 }}>
+            <HslBandSelector active={activeBand} onChange={setActiveBand} />
+            <button
+              type="button"
+              className="text-reset-btn font-value"
+              onClick={() => setHslByBand((prev) => ({ ...prev, [activeBand]: IDENTITY_HSL_SHIFT }))}
+            >
+              Reset
+            </button>
+          </div>
+          <GradientSlider
+            label="Hue" value={activeShift.hue} min={-180} max={180} defaultValue={0} step={1}
+            formatValue={(v) => `${v}°`}
+            trackGradient={gradients.hue}
+            onChange={(v) => setActiveShift('hue', v)}
+          />
+          <GradientSlider
+            label="Saturation" value={activeShift.saturation} min={-1} max={1} defaultValue={0}
+            trackGradient={gradients.saturation}
+            onChange={(v) => setActiveShift('saturation', v)}
+          />
+          <GradientSlider
+            label="Lightness" value={activeShift.lightness} min={-1} max={1} defaultValue={0}
+            trackGradient={gradients.lightness}
+            onChange={(v) => setActiveShift('lightness', v)}
           />
         </div>
-        <div className="field-row">
-          <div className="field-row-label">
-            <span>Lightness</span>
-            <span className="value">{hsl.lightness.toFixed(2)}</span>
-          </div>
-          <input
-            type="range"
-            className="slider"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={hsl.lightness}
-            onChange={(e) => setHsl((h) => ({ ...h, lightness: Number(e.target.value) }))}
-          />
-        </div>
-      </Card>
-    </>
+      )}
+    </BottomSheet>
   )
 }
