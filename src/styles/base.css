@@ -509,6 +509,11 @@ button, input {
   cursor: pointer;
   touch-action: pan-y;
 }
+.gradient-slider-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
 .gradient-slider-wrap {
   position: relative;
   display: flex;
@@ -553,32 +558,40 @@ button, input {
 }
 .gradient-slider-input::-webkit-slider-runnable-track { background: transparent; height: 8px; }
 .gradient-slider-input::-moz-range-track { background: transparent; height: 8px; }
+/* Native thumb rendering disabled (fully transparent, zero footprint) — GradientSlider.tsx
+   renders its own .gradient-slider-thumb instead, see that component's comment for why. The
+   native input itself is kept only for keyboard accessibility. */
 .gradient-slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 20px;
   height: 20px;
-  margin-top: -6px;
-  border-radius: 50%;
-  background: var(--white);
-  border: 2px solid var(--accent-title);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
-  transition: transform 0.1s;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
-.gradient-slider-input:active::-webkit-slider-thumb { transform: scale(1.25); }
 .gradient-slider-input::-moz-range-thumb {
   width: 20px;
   height: 20px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.gradient-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-top: -1px;
   border-radius: 50%;
   background: var(--white);
   border: 2px solid var(--accent-title);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
   transition: transform 0.1s;
 }
-.gradient-slider-input:active::-moz-range-thumb { transform: scale(1.25);
-}
+.gradient-slider-hitzone:active .gradient-slider-thumb { transform: translate(-50%, -50%) scale(1.25); }
 
 /* Segmented control (SegmentedControl.tsx) */
 .segmented-control {
@@ -771,6 +784,53 @@ button, input {
   color: var(--text2);
 }
 .field-row-label .value { color: var(--text); font-variant-numeric: tabular-nums; }
+.field-row-right { display: flex; align-items: center; gap: 6px; }
+
+/* Luminance Ramp eyedropper (v0.3 tuning) */
+.eyedropper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.eyedropper-btn.active { filter: drop-shadow(0 0 2px var(--accent-title)); }
+.eyedropper-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--white-50);
+  flex-shrink: 0;
+}
+.eyedropper-swatch.empty {
+  background:
+    linear-gradient(to top left, transparent calc(50% - 0.75px), #e0374a calc(50% - 0.75px), #e0374a calc(50% + 0.75px), transparent calc(50% + 0.75px)),
+    #fff;
+}
+.eyedropper-tooltip {
+  position: fixed;
+  z-index: 50;
+  transform: translate(16px, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg4);
+  color: var(--text);
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.eyedropper-tooltip-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--white-50);
+  flex-shrink: 0;
+}
 
 .slider {
   -webkit-appearance: none;

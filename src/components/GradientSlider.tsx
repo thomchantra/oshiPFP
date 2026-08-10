@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useDoubleTapReset } from './useDoubleTapReset'
 
 /**
@@ -26,6 +26,10 @@ interface GradientSliderProps {
   trackGradient?: string
   curve?: SliderCurve
   formatValue?: (value: number) => string
+  /** Rendered between the label and the numeric value, e.g. the Luminance Ramp eyedropper's icon+swatch — see LineArtPanel.tsx. */
+  rightAccessory?: ReactNode
+  /** Greys the row out and ignores pointer/keyboard input — for params that are currently a structural no-op (e.g. Gumi's Floor/Ceiling when Feather is 0, see LineArtPanel.tsx) rather than just "not yet touched." */
+  disabled?: boolean
   onChange: (value: number) => void
 }
 
@@ -62,6 +66,8 @@ export default function GradientSlider({
   trackGradient,
   curve,
   formatValue,
+  rightAccessory,
+  disabled,
   onChange,
 }: GradientSliderProps) {
   const handleDoubleTap = useDoubleTapReset(defaultValue, onChange)
@@ -81,6 +87,7 @@ export default function GradientSlider({
   // gesture — via setPointerCapture + preventDefault — once it's confirmed
   // horizontal, so vertical scrolls starting on a slider still scroll.
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (disabled) return
     handleDoubleTap(e)
     if (e.defaultPrevented) return // double-tap reset just fired
     dragRef.current = { startX: e.clientX, startY: e.clientY, startValue: value, mode: 'pending' }
@@ -115,7 +122,7 @@ export default function GradientSlider({
 
   return (
     <div
-      className="field-row gradient-slider-hitzone"
+      className={`field-row gradient-slider-hitzone${disabled ? ' gradient-slider-disabled' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={endDrag}
@@ -123,7 +130,10 @@ export default function GradientSlider({
     >
       <div className="field-row-label">
         <span className="font-param-label">{label}</span>
-        <span className="value font-value">{formatValue ? formatValue(value) : value.toFixed(2)}</span>
+        <span className="field-row-right">
+          {rightAccessory}
+          <span className="value font-value">{formatValue ? formatValue(value) : value.toFixed(2)}</span>
+        </span>
       </div>
       <div className="gradient-slider-wrap">
         <div
@@ -134,6 +144,15 @@ export default function GradientSlider({
             <div className="gradient-slider-fill" style={{ width: `${fillPct}%` }} />
           )}
         </div>
+        {/* Custom thumb, positioned directly from the same fillPct the fill bar already uses
+           — the native input below is kept only for keyboard accessibility (pointer-events:
+           none, see its own comment); its *visual* thumb was found to occasionally lag a
+           repaint on fresh mount (e.g. switching Line Art algorithms swaps the whole slider
+           set) even though the underlying DOM value was already correct — a native range
+           thumb positioned by the browser after a scripted (non-gesture) value change,
+           confirmed via direct DOM inspection, not a data/logic bug. Rendering the visible
+           thumb ourselves sidesteps that timing dependency entirely. */}
+        <div className="gradient-slider-thumb" style={{ left: `${fillPct}%` }} />
         {curve ? (
           // Tapered sliders drive the native input in slider-position space
           // (0-1000, not real units) so its browser-rendered thumb tracks
@@ -148,6 +167,7 @@ export default function GradientSlider({
             step={1}
             value={Math.round(valueToPos(value, min, max, curve) * 1000)}
             onChange={(e) => onChange(snap(posToValue(Number(e.target.value) / 1000, min, max, curve), min, max, step))}
+            disabled={disabled}
             aria-label={label}
           />
         ) : (
@@ -159,6 +179,7 @@ export default function GradientSlider({
             step={step}
             value={value}
             onChange={(e) => onChange(Number(e.target.value))}
+            disabled={disabled}
             aria-label={label}
           />
         )}

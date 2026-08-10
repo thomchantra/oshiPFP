@@ -101,11 +101,23 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   vividBoost: 1,
   gumiContrastBoost: 1,
   blobMaxDt: 8,
+  gumiOverdrive: 0,
+  gumiLineFillType: 'solid',
+  gumiLineSolidColor: [0, 0, 0],
+  gumiLineInvert: false,
+  gumiGapClosing: true,
+  gumiBlobGamma: 1,
   gumiColorBleed: false,
   gumiBleedFeather: 1.5,
+  gumiBleedRadius: 8,
   gumiSoftDetection: false,
   gumiSoftness: 0.1,
   gumiFillMode: false,
+  gumiFillRadius: 8,
+  gumiFillInvert: false,
+  gumiFillType: 'image',
+  gumiFillSolidColor: [0, 0, 0],
+  gumiFillPixelThreshold: false,
   gumiGradientMap: false,
   gumiGradientShadow: [0, 0, 0],
   gumiGradientMid: [0.5, 0.5, 0.5],
@@ -213,7 +225,7 @@ export default function App() {
       },
       view: { pfpMode, theme, previewMode, dualPaneEnabled, dualPaneMode },
     })
-    downloadBlob(new Blob([text], { type: 'text/plain' }), `oshipfp-state-${Date.now()}.txt`)
+    downloadBlob(new Blob([text], { type: 'application/json' }), `oshipfp-state-${Date.now()}.json`)
   }
 
   // Measured from the wrapper (a pure CSS-layout box) rather than the canvas
@@ -330,6 +342,12 @@ export default function App() {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: buildDefaultParams(lineArtMode) }))
     setLineArtDisplayMode('composite')
   }
+
+  // Gumi's Luminance Ramp calibration picker (v0.3 tuning) — shelved out of the UI
+  // for now (real clickzone issues surfaced in testing, needs its own dedicated
+  // session). Pipeline.sampleEnhancePixel/usePipeline's wrapper/this hook are left
+  // in place unchanged so the next pass can pick it back up without re-deriving the
+  // enhanceTarget-sourcing work; see changelog. Not instantiated here anymore.
 
   const selectTab = (id: string) => setTab((current) => (current === id ? null : id))
 
@@ -511,7 +529,10 @@ export default function App() {
         {hasImage && tab === 'export' && (
           <ExportPanel
             cropSize={pipeline.cropSize}
-            readFinalPixels={pipeline.readFinalPixels}
+            fileName={pipeline.fileInfo?.name ?? null}
+            readExportPixels={pipeline.readExportPixels}
+            exportDisplayMode={exportSettings.exportDisplayMode}
+            setExportDisplayMode={exportSettings.setExportDisplayMode}
             resolutionMode={exportSettings.resolutionMode}
             setResolutionMode={exportSettings.setResolutionMode}
             customSize={exportSettings.customSize}

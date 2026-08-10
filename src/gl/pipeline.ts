@@ -16,6 +16,7 @@ import { jfaStepFrag } from './shaders/jfaStep.frag'
 import { distanceToEdgeFrag } from './shaders/distanceToEdge.frag'
 import { findEdgesFrag } from './shaders/findEdges.frag'
 import { boxBlurFrag } from './shaders/boxBlur.frag'
+import { mixBlendFrag } from './shaders/mixBlend.frag'
 import { unsharpMaskFrag } from './shaders/unsharpMask.frag'
 import { saturationAdjustFrag } from './shaders/saturationAdjust.frag'
 import { colorLiftFrag } from './shaders/colorLift.frag'
@@ -28,6 +29,7 @@ import { plateauRampFrag } from './shaders/plateauRamp.frag'
 import { softThresholdFrag } from './shaders/softThreshold.frag'
 import { fillMaskFrag } from './shaders/fillMask.frag'
 import { blobMaskFrag } from './shaders/blobMask.frag'
+import { lineFillColorFrag } from './shaders/lineFillColor.frag'
 import { gradientMapFrag } from './shaders/gradientMap.frag'
 import { highPassDiffFrag } from './shaders/highPassDiff.frag'
 import { laplacianFrag } from './shaders/laplacian.frag'
@@ -94,11 +96,23 @@ const IDENTITY_LINE_ART: LineArtParams = {
   vividBoost: 1,
   gumiContrastBoost: 1,
   blobMaxDt: 8,
+  gumiOverdrive: 0,
+  gumiLineFillType: 'solid',
+  gumiLineSolidColor: [0, 0, 0],
+  gumiLineInvert: false,
+  gumiGapClosing: true,
+  gumiBlobGamma: 1,
   gumiColorBleed: false,
   gumiBleedFeather: 1.5,
+  gumiBleedRadius: 8,
   gumiSoftDetection: false,
   gumiSoftness: 0.1,
   gumiFillMode: false,
+  gumiFillRadius: 8,
+  gumiFillInvert: false,
+  gumiFillType: 'image',
+  gumiFillSolidColor: [0, 0, 0],
+  gumiFillPixelThreshold: false,
   gumiGradientMap: false,
   gumiGradientShadow: [0, 0, 0],
   gumiGradientMid: [0.5, 0.5, 0.5],
@@ -130,12 +144,16 @@ function hardnessToFeather(hardness: number, base: number): number {
 }
 
 /** uBlendMode ints for composite.frag.ts's blendLayer. */
-const BLEND_MODE_INT: Record<LineArtParams['blendMode'], number> = { multiply: 1, screen: 2, overlay: 3 }
+const BLEND_MODE_INT: Record<LineArtParams['blendMode'], number> = { overwrite: 0, multiply: 1, screen: 2, overlay: 3 }
 
 /** Dual Pane "which pane is canonical" priority — composite beats overlay beats original. Mirrors
  * App.tsx's DUAL_PANE_PRIORITY_INDEX (UI-side precedent for the corner preview); kept here as the
  * source of truth for readFinalPixels()/the final blit's own pane-selection needs. */
 const DISPLAY_MODE_PRIORITY: Record<LineArtDisplayMode, number> = { composite: 2, overlay: 1, original: 0 }
+/** Fixed radius for the Gap Closing prototype (LineArtParams.gumiGapClosing) — see its doc comment. Not yet a user-facing slider; this is the one value being validated before promoting it to a real param. */
+const GUMI_GAP_CLOSING_RADIUS = 2
+/** fillMask.frag.ts's uFillType ints. */
+const FILL_TYPE_INT: Record<LineArtParams['gumiFillType'], number> = { image: 0, solid: 1, gradient: 2 }
 
 const ALPHA_OVERDRIVE_LAYERS = 3
 
@@ -169,6 +187,7 @@ export class Pipeline {
   private distanceToEdgeProgram: WebGLProgram
   private findEdgesProgram: WebGLProgram
   private boxBlurProgram: WebGLProgram
+  private mixBlendProgram: WebGLProgram
   private unsharpMaskProgram: WebGLProgram
   private saturationAdjustProgram: WebGLProgram
   private colorLiftProgram: WebGLProgram
@@ -183,6 +202,7 @@ export class Pipeline {
   private softThresholdProgram: WebGLProgram
   private fillMaskProgram: WebGLProgram
   private blobMaskProgram: WebGLProgram
+  private lineFillColorProgram: WebGLProgram
   private gradientMapProgram: WebGLProgram
   private highPassDiffProgram: WebGLProgram
   private laplacianProgram: WebGLProgram
@@ -246,6 +266,17 @@ export class Pipeline {
   private gumiMaskTarget: TargetTexture | null = null
   private gumiMaxHTarget: TargetTexture | null = null
   private gumiMaxVTarget: TargetTexture | null = null
+  /** Gap Closing prototype (v0.3 tuning, gated by LineArtParams.gumiGapClosing) — a separate grow-then-shrink pair applied on top of gumiMaxVTarget, ping-ponging through these two rather than reusing gumiMaxHTarget/gumiMaxVTarget so this pass's own output never aliases the texture it reads as input. */
+  private gumiCloseHTarget: TargetTexture | null = null
+  private gumiCloseVTarget: TargetTexture | null = null
+  /** Gumi Line mode's post-process (v0.3 tuning, see runGumiLinePostProcess) — Overdrive's min-filter dilate ping-pong pair, then Hardness's blur-mix (its own ping-pong pair plus one more target for the mix output). */
+  private gumiOverdriveHTarget: TargetTexture | null = null
+  private gumiOverdriveVTarget: TargetTexture | null = null
+  private gumiHardnessHTarget: TargetTexture | null = null
+  private gumiHardnessVTarget: TargetTexture | null = null
+  private gumiHardnessMixTarget: TargetTexture | null = null
+  /** Line mode's fill-type color resolution output (v0.3 tuning, lineFillColor.frag.ts) — see runGumiLinePostProcess's doc comment for why this is its own final pass instead of folded into blobMaskFrag. */
+  private gumiLineColorTarget: TargetTexture | null = null
   private gumiSeedTargetA: TargetTexture | null = null
   private gumiSeedTargetB: TargetTexture | null = null
   private gumiBlobTarget: TargetTexture | null = null
@@ -271,6 +302,19 @@ export class Pipeline {
   private lineArtActive = true
   /** Fullscreen-preview A/B toggle (App.tsx renders it only while no tab is selected) — 'original' blits cropTarget (post-crop, pre-Enhancement/Line Art/Color) instead of the fully-processed colorTarget. Only affects the on-screen canvas; Export always reads the full colorTarget regardless. */
   private previewMode: 'original' | 'result' = 'result'
+  /**
+   * v0.3 tuning diagnostic (docs/oshiPFP-v0.3-tuningspecs.md): Gumi's
+   * Luminance Ramp module (plateauRamp.frag.ts) feeds a contrast boost and
+   * hard/soft threshold before the user ever sees anything, so there's no
+   * way to visually confirm what Floor/Inner Low/Inner High/Ceiling/Feather
+   * actually select. When true and the active algorithm is pathG, the final
+   * blit shows gumiRampDebugTarget (that module's raw grayscale band-weight
+   * output) directly instead of the fully-processed colorTarget. Preview-only
+   * — never touches colorTarget/Export, same "only affects the on-screen
+   * canvas" convention as previewMode above.
+   */
+  private debugPreviewGumiRamp = false
+  private gumiRampDebugTarget: TargetTexture | null = null
   /**
    * Botan's JFA seed (threshold -> distanceSeed -> ~11 flood-fill passes)
    * only depends on `threshold` and the detection source (crop/tone-shaping/
@@ -319,6 +363,7 @@ export class Pipeline {
     this.distanceToEdgeProgram = createProgram(this.gl, passthroughVert, distanceToEdgeFrag)
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
+    this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
@@ -333,6 +378,7 @@ export class Pipeline {
     this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
     this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
     this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
+    this.lineFillColorProgram = createProgram(this.gl, passthroughVert, lineFillColorFrag)
     this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
     this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
     this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
@@ -379,7 +425,9 @@ export class Pipeline {
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
       'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
-      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiSeedTargetA',
+      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget',
+      'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
+      'gumiSeedTargetA',
       'gumiSeedTargetB', 'gumiBlobTarget', 'gumiBleedTarget', 'gradientMapTarget', 'highPassTarget',
       'laplacianTarget', 'laplacianSharpenTarget', 'hiThreshTarget', 'toneRemapTarget', 'responsiveColorTarget',
       'responsiveWhiteExtractTarget', 'responsiveBlackExtractTarget', 'responsiveGrowWhiteTarget',
@@ -404,6 +452,7 @@ export class Pipeline {
     this.distanceToEdgeProgram = createProgram(this.gl, passthroughVert, distanceToEdgeFrag)
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
+    this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
@@ -418,6 +467,7 @@ export class Pipeline {
     this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
     this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
     this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
+    this.lineFillColorProgram = createProgram(this.gl, passthroughVert, lineFillColorFrag)
     this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
     this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
     this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
@@ -605,6 +655,13 @@ export class Pipeline {
     // No stage is actually dirty — cropTarget/colorTarget are both already
     // current — this just needs the blit (Present) step at the end of
     // render() to re-run and pick the other texture.
+    this.scheduleRender()
+  }
+
+  /** See debugPreviewGumiRamp's doc comment. */
+  setDebugPreviewGumiRamp(show: boolean): void {
+    if (this.debugPreviewGumiRamp === show) return
+    this.debugPreviewGumiRamp = show
     this.scheduleRender()
   }
 
@@ -871,6 +928,101 @@ export class Pipeline {
     this.gumiSeedTargetA = gSrc
     this.gumiSeedTargetB = gDst
     return gSrc
+  }
+
+  /**
+   * Gumi Line mode's optical post-process (v0.3 tuning) — deliberately not touching the
+   * detection/blob-suppression algorithm itself, per product direction: two independent,
+   * skippable-at-default refinements layered on the finished blob mask.
+   *
+   * Overdrive ("expansion"): a true morphological dilate — separable min-filter grow (same
+   * minFilter1D.frag.ts mode=0 mechanism Gap Closing's own grow half and Botan's grow chain
+   * already use), not the box-blur-then-rethreshold this started as. That first version
+   * averaged instead of taking an extremum, which has a real ceiling for thin/sparse strokes:
+   * past a radius where a thin dark line's blurred local average can no longer dip below the
+   * rethreshold cutoff, it doesn't keep growing, it erases (confirmed empirically — read as a
+   * "shrink filter," logged as a candidate for a future erode/fine-detail-removal feature
+   * instead). A min-filter dilate has no such ceiling: it only ever grows monotonically with
+   * radius, since it picks the darkest neighbor rather than averaging. uRadius is rounded to
+   * an int (minFilter1D's own loop bound is `int`, matching gumiRadius's existing convention
+   * elsewhere in this file). 0 = off.
+   *
+   * Hardness: reused from Botan/Chie's shared field with a different meaning here (see
+   * types.ts) — box-blurs the mask (after Overdrive, if any) by a fixed max radius and mixes
+   * it back in via mixBlend.frag.ts, softening the edge instead of leaving it hard-antialiased.
+   * 1 (default) = untouched: hardness < 1 gate skips both blur passes entirely, so nothing runs.
+   */
+  private readonly GUMI_HARDNESS_MAX_BLUR = 6
+
+  private runGumiLinePostProcess(source: TargetTexture, p: LineArtParams, width: number, height: number): TargetTexture {
+    const gl = this.gl
+    const texelSize: [number, number] = [1 / width, 1 / height]
+    let current = source
+
+    if (p.gumiOverdrive > 0) {
+      const overdriveRadius = Math.round(p.gumiOverdrive)
+      this.gumiOverdriveHTarget = this.ensureTarget(this.gumiOverdriveHTarget, width, height)
+      this.gumiOverdriveVTarget = this.ensureTarget(this.gumiOverdriveVTarget, width, height)
+      // minFilterProgram is a shared GL program reused across many call sites in the same
+      // render() pass, including Gap Closing's own shrink-back half earlier in this branch
+      // (uMode=1/max) — uMode is explicitly set to 0 (min = grow ink in this polarity) on
+      // both passes below rather than relying on the implicit unset-uniform default, per the
+      // exact lesson learned from Overdrive's own uInvert bug on thresholdProgram.
+      this.runPass(this.minFilterProgram, this.gumiOverdriveHTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, current.texture)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), overdriveRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+      })
+      this.runPass(this.minFilterProgram, this.gumiOverdriveVTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.gumiOverdriveHTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), overdriveRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+      })
+      current = this.gumiOverdriveVTarget
+    }
+
+    if (p.hardness < 1) {
+      this.gumiHardnessHTarget = this.ensureTarget(this.gumiHardnessHTarget, width, height)
+      this.gumiHardnessVTarget = this.ensureTarget(this.gumiHardnessVTarget, width, height)
+      const blurRadius = this.GUMI_HARDNESS_MAX_BLUR * (1 - p.hardness)
+      this.runPass(this.boxBlurProgram, this.gumiHardnessHTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, current.texture)
+        gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+      })
+      this.runPass(this.boxBlurProgram, this.gumiHardnessVTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.gumiHardnessHTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+      })
+      this.gumiHardnessMixTarget = this.ensureTarget(this.gumiHardnessMixTarget, width, height)
+      this.runPass(this.mixBlendProgram, this.gumiHardnessMixTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, current.texture)
+        gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uBase'), 0)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, this.gumiHardnessVTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uOverlay'), 1)
+        gl.uniform1f(gl.getUniformLocation(this.mixBlendProgram, 'uOpacity'), 1 - p.hardness)
+      })
+      current = this.gumiHardnessMixTarget
+    }
+
+    return current
   }
 
   /** Composite-readiness remap for Path H/I's raw output — see toneRemap.frag.ts. */
@@ -1156,6 +1308,8 @@ export class Pipeline {
       // by gumiColorBleed — see labPipeline.ts's pathG branch for the full
       // rationale, ported 1:1 here.
       const gumiRamp = this.runPlateauRamp(detectionSource, p, width, height)
+      // Captured for setDebugPreviewGumiRamp's diagnostic preview — see its doc comment.
+      this.gumiRampDebugTarget = gumiRamp
 
       this.gumiBoostTarget = this.ensureTarget(this.gumiBoostTarget, width, height)
       this.runPass(this.colorCorrectProgram, this.gumiBoostTarget, width, height, () => {
@@ -1208,8 +1362,60 @@ export class Pipeline {
         gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
       })
 
+      // Gap Closing prototype: a proper morphological closing (grow by a fixed small
+      // radius, then shrink back by the same amount) on top of the grow pass above —
+      // ping-pongs through its own gumiCloseH/VTarget pair rather than gumiMaxHTarget,
+      // so this pass's own writes never alias the texture it reads from mid-pass. The
+      // shrink-back cancels the grow everywhere except where it caused two separate ink
+      // regions to actually touch and merge — exactly what's needed to bridge small gaps
+      // at V/Y stroke intersections without uniformly thickening straight runs, unlike
+      // just cranking `radius` above. Written into a local var, not back onto
+      // this.gumiMaxVTarget, so downstream reads pick this up explicitly.
+      let closedMaskTarget = this.gumiMaxVTarget
+      if (p.gumiGapClosing) {
+        this.gumiCloseHTarget = this.ensureTarget(this.gumiCloseHTarget, width, height)
+        this.gumiCloseVTarget = this.ensureTarget(this.gumiCloseVTarget, width, height)
+        this.runPass(this.minFilterProgram, this.gumiCloseHTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxVTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+        })
+        this.runPass(this.minFilterProgram, this.gumiCloseVTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiCloseHTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+        })
+        this.runPass(this.minFilterProgram, this.gumiCloseHTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiCloseVTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+        })
+        this.runPass(this.minFilterProgram, this.gumiCloseVTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiCloseHTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+        })
+        closedMaskTarget = this.gumiCloseVTarget
+      }
+
       if (p.gumiColorBleed) {
-        const gumiSeed = this.runGumiDistanceTransform(this.gumiMaxVTarget, false, width, height)
+        const gumiSeed = this.runGumiDistanceTransform(closedMaskTarget, false, width, height)
         this.gumiBleedTarget = this.ensureTarget(this.gumiBleedTarget, width, height)
         this.runPass(this.distanceToEdgeProgram, this.gumiBleedTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
@@ -1219,7 +1425,7 @@ export class Pipeline {
           gl.bindTexture(gl.TEXTURE_2D, base.texture)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uOriginal'), 1)
           gl.uniform2fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uTexSize'), [width, height])
-          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.blobMaxDt)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.gumiBleedRadius)
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), p.gumiBleedFeather)
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
@@ -1227,35 +1433,73 @@ export class Pipeline {
           gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
         })
         outputTarget = this.gumiBleedTarget
-      } else {
-        const gumiSeed = this.runGumiDistanceTransform(this.gumiMaxVTarget, true, width, height)
+      } else if (p.gumiFillMode) {
+        // Fill's own distance transform, seeded from whichever side uInvert below is NOT
+        // targeting — gumiFillInvert=false (default) measures depth into the *ink* region, so
+        // it's seeded from background (invert=true), matching blob's own seeding; true measures
+        // depth into the *background* region instead, so it's seeded from ink (invert=false,
+        // same seeding bleed already uses). Computed separately from blob's own seed below since
+        // the two can now point in opposite directions.
+        const fillSeed = this.runGumiDistanceTransform(closedMaskTarget, !p.gumiFillInvert, width, height)
         this.gumiBlobTarget = this.ensureTarget(this.gumiBlobTarget, width, height)
-        if (p.gumiFillMode) {
-          this.runPass(this.fillMaskProgram, this.gumiBlobTarget, width, height, () => {
-            gl.activeTexture(gl.TEXTURE0)
-            gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
-            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uSeed'), 0)
-            gl.activeTexture(gl.TEXTURE1)
-            gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxVTarget!.texture)
-            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uMask'), 1)
-            gl.activeTexture(gl.TEXTURE2)
-            gl.bindTexture(gl.TEXTURE_2D, base.texture)
-            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uOriginal'), 2)
-            gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uBlobMaxDt'), p.blobMaxDt)
-          })
-        } else {
-          this.runPass(this.blobMaskProgram, this.gumiBlobTarget, width, height, () => {
-            gl.activeTexture(gl.TEXTURE0)
-            gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
-            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSeed'), 0)
-            gl.activeTexture(gl.TEXTURE1)
-            gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxVTarget!.texture)
-            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uMask'), 1)
-            gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uBlobMaxDt'), p.blobMaxDt)
-            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSoftOutput'), p.gumiSoftDetection ? 1 : 0)
-          })
-        }
+        this.runPass(this.fillMaskProgram, this.gumiBlobTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, fillSeed.texture)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uSeed'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, closedMaskTarget.texture)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uMask'), 1)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uOriginal'), 2)
+          gl.activeTexture(gl.TEXTURE3)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uDetectionSource'), 3)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uBlobMaxDt'), p.gumiFillRadius)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uGamma'), p.gumiBlobGamma)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uInvert'), p.gumiFillInvert ? 1 : 0)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uPixelThreshold'), p.gumiFillPixelThreshold ? 1 : 0)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uFillType'), FILL_TYPE_INT[p.gumiFillType])
+          gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uSolidColor'), p.gumiFillSolidColor)
+          gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uShadowColor'), p.gumiGradientShadow)
+          gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uMidColor'), p.gumiGradientMid)
+          gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+        })
         outputTarget = this.gumiBlobTarget
+      } else {
+        const gumiSeed = this.runGumiDistanceTransform(closedMaskTarget, true, width, height)
+        this.gumiBlobTarget = this.ensureTarget(this.gumiBlobTarget, width, height)
+        this.runPass(this.blobMaskProgram, this.gumiBlobTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
+          gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSeed'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, closedMaskTarget.texture)
+          gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uMask'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uBlobMaxDt'), p.blobMaxDt)
+          gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uGamma'), p.gumiBlobGamma)
+          gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSoftOutput'), p.gumiSoftDetection ? 1 : 0)
+        })
+        const linePostProcessed = this.runGumiLinePostProcess(this.gumiBlobTarget, p, width, height)
+        this.gumiLineColorTarget = this.ensureTarget(this.gumiLineColorTarget, width, height)
+        this.runPass(this.lineFillColorProgram, this.gumiLineColorTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, linePostProcessed.texture)
+          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uMask'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uOriginal'), 1)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uDetectionSource'), 2)
+          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uFillType'), FILL_TYPE_INT[p.gumiLineFillType])
+          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uSolidColor'), p.gumiLineSolidColor)
+          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uShadowColor'), p.gumiGradientShadow)
+          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uMidColor'), p.gumiGradientMid)
+          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uInvert'), p.gumiLineInvert ? 1 : 0)
+        })
+        outputTarget = this.gumiLineColorTarget
       }
     } else if (p.mode === 'pathH' && p.highPassResponsiveColor) {
       // Dual-polarity litmus test (see responsiveEdgeColor.frag.ts):
@@ -1711,7 +1955,19 @@ export class Pipeline {
       } else {
         const width = Math.max(1, Math.round(this.resizeParams.customSize.width))
         const height = Math.max(1, Math.round(this.resizeParams.customSize.height))
-        this.resizeTarget = this.ensureTarget(this.resizeTarget, width, height)
+        // resizeTarget may currently be aliased straight to cropTarget (see the
+        // 'original' branch above) rather than an independently-owned target.
+        // Handing that aliased object to ensureTarget as `existing` is unsafe
+        // either way it resolves: same dimensions -> it hands back the same
+        // object, so the runPass below binds cropTarget's framebuffer as the
+        // render target while also sampling cropTarget.texture as the source,
+        // a same-texture read/write feedback loop (surfaces as
+        // GL_INVALID_OPERATION and a black frame on some drivers); different
+        // dimensions -> it disposes cropTarget's GL resources out from under
+        // the live this.cropTarget reference. Only pass the existing target
+        // through for reuse/disposal when resizeTarget actually owns it.
+        const ownedResizeTarget = this.resizeTarget === this.cropTarget ? null : this.resizeTarget
+        this.resizeTarget = this.ensureTarget(ownedResizeTarget, width, height)
         this.runPass(this.resizeProgram, this.resizeTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, this.cropTarget!.texture)
@@ -1843,7 +2099,10 @@ export class Pipeline {
       return
     }
 
-    const previewTarget = this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
+    const showGumiRampDebug = this.debugPreviewGumiRamp && this.lineArt.mode === 'pathG' && this.gumiRampDebugTarget
+    const previewTarget = showGumiRampDebug
+      ? this.gumiRampDebugTarget!
+      : this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
     const naturalWidth = previewTarget.width
     const naturalHeight = previewTarget.height
     const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)
@@ -1894,12 +2153,79 @@ export class Pipeline {
         ? (this.dualPanePriorityIndex() === 1 ? this.colorTargetB : this.colorTarget)
         : this.colorTarget
     if (!source) return null
+    return this.readTargetPixels(source)
+  }
+
+  private readTargetPixels(target: TargetTexture): { data: Uint8ClampedArray; width: number; height: number } {
     const gl = this.gl
-    const { width, height, framebuffer } = source
+    const { width, height, framebuffer } = target
     const buffer = new Uint8ClampedArray(width * height * 4)
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
     return { data: buffer, width, height }
+  }
+
+  /**
+   * Single-pixel readback from enhanceTarget (post denoise/sharpen, pre
+   * line-art, pre color-grade) for the Luminance Ramp eyedropper — this is
+   * the actual image Gumi's threshold/ramp math (threshold.frag.ts) reads,
+   * so sampling here stays correct even under drawn ink or before the color
+   * grade that runs later in the chain. u/v are normalized canvas-fraction
+   * coordinates with v=0 at the top of the displayed image; enhanceTarget is
+   * an ordinary render-to-texture output (not the raw source bitmap), so it
+   * follows the standard convention (top of image -> v=1) rather than the
+   * source-texture flip anomaly documented on crop.frag.ts.
+   *
+   * Forces one synchronous render() first, same rationale as
+   * readFinalPixels: flushes any pending rAF-coalesced param change so a
+   * drag can't read a stale frame. Cheap when nothing's dirty. Called on
+   * every pointer-move during a drag, so this reads a single texel via
+   * gl.readPixels(x, y, 1, 1, ...) rather than the whole target.
+   */
+  sampleEnhancePixel(u: number, v: number): { r: number; g: number; b: number } | null {
+    this.render()
+    const target = this.enhanceTarget
+    if (!target) return null
+    const gl = this.gl
+    const x = Math.min(target.width - 1, Math.max(0, Math.round(u * target.width)))
+    const y = Math.min(target.height - 1, Math.max(0, Math.round((1 - v) * target.height)))
+    const buffer = new Uint8Array(4)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
+    return { r: buffer[0], g: buffer[1], b: buffer[2] }
+  }
+
+  /**
+   * Export tab's own explicit Original/Composite/Overlay selector (independent of whatever the
+   * live single-pane preview's displayMode or Dual Pane is currently showing) — see
+   * ExportPanel.tsx's top "Export" group. 'original' bypasses Enhancement/Line Art/Color
+   * entirely and reads the Crop module's own finished output (crop rect + Resize) directly —
+   * `resizeTarget`, not `enhanceTarget` — per explicit product direction: Export's "Original"
+   * means "post crop, bypass everything, even Enhancement," a stricter/different meaning than
+   * LineArtDisplayMode's 'original' (which is `enhanceTarget`, i.e. post-Enhancement). For
+   * 'composite'/'overlay', recomputes a fresh resolve for that specific mode (reusing
+   * computeLineArtRaw/resolveLineArtDisplay/runColorChain's primary-pane fields — same fields
+   * the non-Dual-Pane live preview uses) regardless of the actual live displayMode/Dual Pane
+   * state, then immediately forces a real recompute of whatever should actually be on screen —
+   * safe since this all happens synchronously within one JS turn, before any browser paint, so
+   * the live canvas is never visibly left showing this export-only resolve.
+   */
+  readExportPixels(exportMode: 'original' | 'composite' | 'overlay'): { data: Uint8ClampedArray; width: number; height: number } | null {
+    this.render()
+    if (exportMode === 'original') {
+      if (!this.resizeTarget) return null
+      return this.readTargetPixels(this.resizeTarget)
+    }
+    if (!this.enhanceTarget) return null
+    const { width, height } = this.enhanceTarget
+    const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
+    const resolved = this.resolveLineArtDisplay(this.enhanceTarget, rawTarget, exportMode, width, height, false)
+    const finalTarget = this.runColorChain(resolved, width, height, false)
+    const pixels = this.readTargetPixels(finalTarget)
+    this.lineArtDirty = true
+    this.colorDirty = true
+    this.render()
+    return pixels
   }
 
   destroy(): void {
@@ -1915,6 +2241,9 @@ export class Pipeline {
       this.tintTarget, this.lineArtBlendTarget, this.lineArtOverlayPreviewTarget, this.colorTarget,
       this.lineArtBlendTargetB, this.lineArtOverlayPreviewTargetB, this.colorTargetB,
       this.rampTarget, this.gumiBoostTarget, this.gumiMaskTarget, this.gumiMaxHTarget, this.gumiMaxVTarget,
+      this.gumiCloseHTarget, this.gumiCloseVTarget,
+      this.gumiOverdriveHTarget, this.gumiOverdriveVTarget,
+      this.gumiHardnessHTarget, this.gumiHardnessVTarget, this.gumiHardnessMixTarget, this.gumiLineColorTarget,
       this.gumiSeedTargetA, this.gumiSeedTargetB, this.gumiBlobTarget, this.gumiBleedTarget, this.gradientMapTarget,
       this.highPassTarget, this.laplacianTarget, this.laplacianSharpenTarget, this.hiThreshTarget,
       this.toneRemapTarget, this.responsiveColorTarget, this.responsiveWhiteExtractTarget,
@@ -1927,9 +2256,10 @@ export class Pipeline {
       this.cropProgram, this.colorCorrectProgram, this.denoiseProgram, this.thresholdProgram,
       this.minFilterProgram, this.erosionProgram, this.erosionGateProgram, this.distanceSeedProgram,
       this.jfaStepProgram, this.distanceToEdgeProgram, this.findEdgesProgram, this.boxBlurProgram,
+      this.mixBlendProgram,
       this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.compositeProgram, this.tintMaskProgram,
       this.colorProgram, this.blitProgram, this.resizeProgram, this.plateauRampProgram, this.softThresholdProgram,
-      this.fillMaskProgram, this.blobMaskProgram, this.gradientMapProgram, this.highPassDiffProgram,
+      this.fillMaskProgram, this.blobMaskProgram, this.lineFillColorProgram, this.gradientMapProgram, this.highPassDiffProgram,
       this.laplacianProgram, this.toneRemapProgram, this.responsiveEdgeColorProgram, this.inkColorMaskProgram,
       this.inkColorRecombineProgram,
     ]) {

@@ -12,6 +12,19 @@
  * distance transform" trick from the Gumi spec, done in one pass instead
  * of an actual iterative erosion.
  *
+ * uGamma (v0.3 tuning, "Detection Contrast") reshapes the reject decision
+ * from a hard single-pixel-precision cutoff at dist==uBlobMaxDt into an
+ * antialiased falloff — same `pow(t, gamma)` idea as distanceToEdge.
+ * frag.ts's own uGamma, just applied to this boundary instead of bleed's.
+ * Confined to a thin band near the edge (aaWidth below, 15% of uBlobMaxDt
+ * floored at 0.5px) rather than spanning the full [0, uBlobMaxDt] radius —
+ * an earlier version ramped across the whole radius, which even at the
+ * "neutral" uGamma=1 read as visible feathering instead of a crisp blob
+ * edge (regression caught by real-image testing against the pre-Detection-
+ * Contrast build). Below the band it's a hard keep, above it a hard
+ * reject, matching the original cutoff everywhere except this sliver;
+ * >1 sharpens further within the band, <1 softens it.
+ *
  * Output stays in the same 0=ink/1=background polarity as the input mask
  * — a rejected blob-interior pixel resolves to 1 (falls back to
  * untouched base through composite.frag.ts's multiply, same as if it had
@@ -43,6 +56,7 @@ in vec2 vUV;
 uniform sampler2D uSeed;
 uniform sampler2D uMask;
 uniform float uBlobMaxDt;
+uniform float uGamma;
 uniform int uSoftOutput;
 out vec4 outColor;
 
@@ -52,9 +66,14 @@ void main() {
   bool isLineCandidate = uSoftOutput == 1 ? mask < 0.999 : mask < 0.5;
   bool hasSeed = seed.x > -1.0e5;
   float dist = hasSeed ? distance(gl_FragCoord.xy, seed.xy) : 1.0e10;
-  bool keepAsInk = isLineCandidate && dist <= uBlobMaxDt;
+
+  float aaWidth = max(uBlobMaxDt * 0.15, 0.5);
+  float edgeStart = max(uBlobMaxDt - aaWidth, 0.0);
+  float t = clamp((dist - edgeStart) / aaWidth, 0.0, 1.0);
+  float rejectWeight = pow(t, uGamma);
   float kept = uSoftOutput == 1 ? mask : 0.0;
-  float result = keepAsInk ? kept : 1.0;
+  float acceptedColor = isLineCandidate ? kept : 1.0;
+  float result = mix(acceptedColor, 1.0, rejectWeight);
   outColor = vec4(result, result, result, 1.0);
 }
 `

@@ -97,6 +97,10 @@ const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, b
 
 /** Radius sliders' hot spot is almost always 0-3px within a 0-20px range — see CLAUDE.md-adjacent feedback: taper so 0-3 gets 40% of the track instead of linear's ~15%. */
 const RADIUS_CURVE: SliderCurve = { breakpoint: 3, breakpointPosition: 0.4 }
+/** Gumi's Luminance Ramp Feather is aggressive across its full 0-1 range (v0.3 tuning: a linear
+ * slider gives away most of the track to values that blow the detection band wide open) — taper
+ * so 0-0.2 (the actually-usable range) gets 65% of the track instead of linear's 20%. */
+const FEATHER_CURVE: SliderCurve = { breakpoint: 0.2, breakpointPosition: 0.65 }
 
 function isModified<T extends Record<string, number>>(current: T, identity: T): boolean {
   return (Object.keys(identity) as (keyof T)[]).some((k) => current[k] !== identity[k])
@@ -333,20 +337,33 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
       )}
       <div className="lineart-divider" />
 
+      {/* Blend Mode + Overlay Opacity grouped under one header/Reset (v0.3 tuning UI pass) —
+          previously two separate blocks split by a divider; grouped since they're both
+          "how the resolved ink combines with the base," unlike everything below which is
+          algorithm-specific detection tuning. Shared across all 7 algorithms. */}
+      <div className="lineart-preprocessing-header">
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Blend Mode</span>
+        <button
+          type="button"
+          className="text-reset-btn font-value"
+          onClick={() => onChange({ ...params, blendMode: 'multiply', opacity: 1 })}
+        >
+          Reset
+        </button>
+      </div>
       <BlendModeRow
         mode={params.blendMode}
         options={params.mode === 'pathF' && params.colorMode === 'findEdge' ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
         onChange={(v) => set('blendMode', v)}
       />
+      <GradientSlider
+        label="Overlay Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
+        formatValue={() => `${opacityPct}%`}
+        onChange={(v) => set('opacity', v)}
+      />
       <div className="lineart-divider" />
 
       <div className="lineart-slidergroup-stack">
-        <GradientSlider
-          label="Overlay Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
-          formatValue={() => `${opacityPct}%`}
-          onChange={(v) => set('opacity', v)}
-        />
-
         {params.mode === 'pathB' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0} onChange={(v) => set('threshold', v)} />
@@ -425,128 +442,227 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
 
         {params.mode === 'pathG' && (
           <>
-            {!params.gumiGradientMap && (
+            {/* Luminance Detection sits above Operation Mode (v0.3 tuning UI pass) — it's the
+                shared upstream stage both Line and Fill operation modes read their detection
+                input from, not something scoped to either one. "(always on)" dropped from the
+                old label since that's now self-evident from its position. */}
+            <div className="lineart-preprocessing-header">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Luminance Detection</span>
+              <button
+                type="button"
+                className="text-reset-btn font-value"
+                onClick={() =>
+                  onChange({ ...params, gumiRampFloor: 0, gumiRampInnerLow: 0, gumiRampInnerHigh: 0.6, gumiRampCeiling: 1, gumiRampFeather: 0.12 })
+                }
+              >
+                Reset
+              </button>
+            </div>
+            {/* Desktop-only for now, matching Tone Lift/Color Lift's own meters — mobile's
+                vertical-stack placement deferred until all algos are tuned (docs/oshiPFP-v0.3-
+                tuningspecs.md). */}
+            <div className="rampmeter-desktop-only">
+              <RampMeter kind="gumiRamp" gumiRamp={params} />
+            </div>
+            <GradientSlider
+              label="Low Clip" value={params.gumiRampInnerLow} min={0} max={1} defaultValue={0}
+              onChange={(v) => onChange({ ...params, gumiRampInnerLow: v, gumiRampFloor: Math.min(params.gumiRampFloor, v) })}
+            />
+            <GradientSlider
+              label="High Clip" value={params.gumiRampInnerHigh} min={0} max={1} defaultValue={0.6}
+              onChange={(v) => onChange({ ...params, gumiRampInnerHigh: v, gumiRampCeiling: Math.max(params.gumiRampCeiling, v) })}
+            />
+            {/* Floor/Ceiling only affect the ramp once Feather > 0 — at Feather=0,
+                plateauRamp.frag.ts's rampStart/rampEnd snap straight to Low/High Clip
+                regardless of what Floor/Ceiling are set to (see its own doc comment), so
+                they're structural no-ops here, not just untouched. Greyed out instead of
+                left silently inert.
+
+                Also clamped to Low/High Clip themselves: the shader wraps each in its own
+                outer min()/max() (rampStart = min(mix(...), LowClip - eps); rampEnd =
+                max(mix(...), HighClip + eps)), so Floor can never push past Low Clip and
+                Ceiling can never fall below High Clip no matter what they're set to —
+                anything past that boundary was a dead zone on the slider. Capped here
+                instead, and Low/High Clip's own onChange drags Floor/Ceiling back inside
+                bounds if they'd otherwise end up on the wrong side of a newly-moved
+                boundary. */}
+            <GradientSlider
+              label="Floor" value={params.gumiRampFloor} min={0} max={params.gumiRampInnerLow} defaultValue={0}
+              disabled={params.gumiRampFeather === 0 || params.gumiRampInnerLow === 0}
+              onChange={(v) => set('gumiRampFloor', v)}
+            />
+            <GradientSlider
+              label="Ceiling" value={params.gumiRampCeiling} min={params.gumiRampInnerHigh} max={1} defaultValue={1}
+              disabled={params.gumiRampFeather === 0 || params.gumiRampInnerHigh === 1}
+              onChange={(v) => set('gumiRampCeiling', v)}
+            />
+            <GradientSlider label="Feather" value={params.gumiRampFeather} min={0} max={1} defaultValue={0.12} step={0.001} curve={FEATHER_CURVE} onChange={(v) => set('gumiRampFeather', v)} />
+
+            <div className="lineart-divider" />
+            <div className="lineart-preprocessing-header">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Operation Mode</span>
+              <button
+                type="button"
+                className="text-reset-btn font-value"
+                onClick={() =>
+                  onChange({
+                    ...params,
+                    gumiFillMode: false,
+                    threshold: 0.5,
+                    radius: 1,
+                    gumiContrastBoost: 1,
+                    blobMaxDt: 2,
+                    gumiGapClosing: true,
+                    gumiBlobGamma: 1,
+                    gumiOverdrive: 0,
+                    hardness: 1,
+                    gumiLineFillType: 'solid',
+                    gumiLineSolidColor: [0, 0, 0],
+                    gumiLineInvert: false,
+                    gumiFillRadius: 8,
+                    gumiFillInvert: false,
+                    gumiFillType: 'image',
+                    gumiFillSolidColor: [0, 0, 0],
+                    gumiFillPixelThreshold: false,
+                  })
+                }
+              >
+                Reset
+              </button>
+            </div>
+            <OperationModeRow fillMode={params.gumiFillMode} onChange={(v) => set('gumiFillMode', v)} />
+
+            {!params.gumiFillMode ? (
               <>
                 <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => set('threshold', v)} />
-                <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={40} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+                <GradientSlider label="Detection Radius" value={params.radius} min={0} max={40} defaultValue={1} step={1} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
                 <GradientSlider label="Contrast Boost" value={params.gumiContrastBoost} min={0} max={2} defaultValue={1} onChange={(v) => set('gumiContrastBoost', v)} />
-                <GradientSlider label="Blob Max DT (px)" value={params.blobMaxDt} min={1} max={20} defaultValue={8} onChange={(v) => set('blobMaxDt', v)} />
-              </>
-            )}
-            <div className="lineart-divider" />
-            <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Luminance Ramp (always on)</p>
-            <GradientSlider label="Floor" value={params.gumiRampFloor} min={0} max={1} defaultValue={0} onChange={(v) => set('gumiRampFloor', v)} />
-            <GradientSlider label="Inner Low" value={params.gumiRampInnerLow} min={0} max={1} defaultValue={0.3} onChange={(v) => set('gumiRampInnerLow', v)} />
-            <GradientSlider label="Inner High" value={params.gumiRampInnerHigh} min={0} max={1} defaultValue={0.7} onChange={(v) => set('gumiRampInnerHigh', v)} />
-            <GradientSlider label="Ceiling" value={params.gumiRampCeiling} min={0} max={1} defaultValue={1} onChange={(v) => set('gumiRampCeiling', v)} />
-            <GradientSlider label="Feather" value={params.gumiRampFeather} min={0} max={1} defaultValue={0} onChange={(v) => set('gumiRampFeather', v)} />
-
-            {!params.gumiGradientMap && (
-              <>
-                <div className="lineart-divider" />
+                <GradientSlider label="Maximum Blob Size" value={params.blobMaxDt} min={1} max={20} defaultValue={2} onChange={(v) => set('blobMaxDt', v)} />
+                {/* Prototype (v0.3 tuning) — fixed-radius grow-then-shrink closing pass applied
+                    before the blob-suppression/fill split below, meant to bridge small gaps at
+                    V/Y stroke intersections without thickening straight runs the way cranking
+                    Detection Radius does. Boolean-only for now; see pipeline.ts's
+                    GUMI_GAP_CLOSING_RADIUS for the hardcoded value being validated. Also feeds
+                    Fill mode's boundary (same closed mask both read), same cross-cutting
+                    relationship Maximum Blob Size doesn't have but this and Detection Contrast
+                    do — kept here since both are mask-geometry refinements of this same
+                    detection, not a Fill-specific concern. */}
                 <div
                   className="lineart-toggle-row"
                   role="button"
                   tabIndex={0}
-                  onClick={() => set('gumiSoftDetection', !params.gumiSoftDetection)}
+                  onClick={() => set('gumiGapClosing', !params.gumiGapClosing)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
-                      set('gumiSoftDetection', !params.gumiSoftDetection)
+                      set('gumiGapClosing', !params.gumiGapClosing)
                     }
                   }}
                 >
-                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Soft Detection</span>
-                  <ToggleSwitch on={params.gumiSoftDetection} label="Soft Detection" />
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Gap Closing (prototype)</span>
+                  <ToggleSwitch on={params.gumiGapClosing} label="Gap Closing" />
                 </div>
-                {params.gumiSoftDetection && (
-                  <GradientSlider label="Softness" value={params.gumiSoftness} min={0} max={0.3} defaultValue={0.1} onChange={(v) => set('gumiSoftness', v)} />
+                {/* Also shared with Fill mode's boundary (v0.3 tuning, "detection offset") —
+                    reshapes the distance-to-edge boundary from a hard single-pixel cutoff into
+                    an antialiased, contrast-adjustable falloff, to help clean up residual
+                    speckle at blob edges without touching the main ramp/threshold. */}
+                <GradientSlider label="Detection Contrast" value={params.gumiBlobGamma} min={0.2} max={5} defaultValue={1} onChange={(v) => set('gumiBlobGamma', v)} />
+                {/* Optical post-process (v0.3 tuning), not algorithm changes — see pipeline.ts's
+                    runGumiLinePostProcess. Overdrive genuinely thickens already-thin strokes
+                    (Maximum Blob Size alone doesn't, since it only governs how large a *blob*
+                    can still count as near-boundary ink). Hardness reuses Botan/Chie's shared
+                    field with its own meaning here: 1 (default) untouched, lower = softer/more
+                    blurred edge. */}
+                <GradientSlider label="Overdrive (px)" value={params.gumiOverdrive} min={0} max={5} step={1} defaultValue={0} onChange={(v) => set('gumiOverdrive', v)} />
+                <GradientSlider label="Hardness" value={params.hardness} min={0} max={1} defaultValue={1} onChange={(v) => set('hardness', v)} />
+                {/* Same Image/Solid/Gradient/Invert mechanism as Fill mode below, applied to
+                    the finished Line-mode mask instead — see lineFillColor.frag.ts. Defaults
+                    to Solid + black so the default look matches what Line mode always
+                    rendered before this existed. */}
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => set('gumiLineInvert', !params.gumiLineInvert)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      set('gumiLineInvert', !params.gumiLineInvert)
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+                  <ToggleSwitch on={params.gumiLineInvert} label="Invert Fill" />
+                </div>
+                <FillTypeRow value={params.gumiLineFillType} onChange={(v) => set('gumiLineFillType', v)} />
+                {params.gumiLineFillType === 'solid' && (
+                  <TintColorRow label="Line Color" tintColor={params.gumiLineSolidColor} onChange={(rgb) => set('gumiLineSolidColor', rgb)} />
                 )}
-
-                <div className="lineart-divider" />
-                <div
-                  className="lineart-toggle-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onChange({ ...params, gumiColorBleed: !params.gumiColorBleed, gumiFillMode: params.gumiColorBleed ? params.gumiFillMode : false })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      onChange({ ...params, gumiColorBleed: !params.gumiColorBleed, gumiFillMode: params.gumiColorBleed ? params.gumiFillMode : false })
-                    }
-                  }}
-                >
-                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Bleed Style</span>
-                  <ToggleSwitch on={params.gumiColorBleed} label="Color Bleed Style" />
-                </div>
-                {params.gumiColorBleed && (
+                {params.gumiLineFillType === 'gradient' && (
                   <>
-                    <GradientSlider label="Bleed Feather (px)" value={params.gumiBleedFeather} min={0} max={10} defaultValue={1.5} onChange={(v) => set('gumiBleedFeather', v)} />
-                    <GradientSlider label="Gamma" value={params.blobContrast} min={0.2} max={5} defaultValue={1} onChange={(v) => set('blobContrast', v)} />
-                    <div
-                      className="lineart-toggle-row"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => set('colorExpansion', !params.colorExpansion)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          set('colorExpansion', !params.colorExpansion)
-                        }
-                      }}
-                    >
-                      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Expansion</span>
-                      <ToggleSwitch on={params.colorExpansion} label="Color Expansion" />
-                    </div>
-                    {params.colorExpansion && (
-                      <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
-                    )}
-                    {!params.colorExpansion && (
-                      <TintColorRow label="Line Color" tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
-                    )}
+                    <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
+                    <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
+                    <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
                   </>
                 )}
-
-                <div className="lineart-divider" />
+              </>
+            ) : (
+              <>
+                {/* Global for Fill mode (v0.3 tuning) — governs all 3 Fill Types below
+                    uniformly, so it sits above the type selector rather than nested under one
+                    of them. Bypasses the distance-transform/blobMaxDt margin entirely, a raw
+                    per-pixel candidate test — Fill Radius near 0 was already approximating
+                    this; this makes it an explicit, well-supported mode. */}
                 <div
                   className="lineart-toggle-row"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onChange({ ...params, gumiFillMode: !params.gumiFillMode, gumiColorBleed: params.gumiFillMode ? params.gumiColorBleed : false })}
+                  onClick={() => set('gumiFillPixelThreshold', !params.gumiFillPixelThreshold)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
-                      onChange({ ...params, gumiFillMode: !params.gumiFillMode, gumiColorBleed: params.gumiFillMode ? params.gumiColorBleed : false })
+                      set('gumiFillPixelThreshold', !params.gumiFillPixelThreshold)
                     }
                   }}
                 >
-                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Fill Layer</span>
-                  <ToggleSwitch on={params.gumiFillMode} label="Fill Layer" />
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Pixel Threshold</span>
+                  <ToggleSwitch on={params.gumiFillPixelThreshold} label="Pixel Threshold" />
                 </div>
-              </>
-            )}
-
-            <div className="lineart-divider" />
-            <div
-              className="lineart-toggle-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => set('gumiGradientMap', !params.gumiGradientMap)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  set('gumiGradientMap', !params.gumiGradientMap)
-                }
-              }}
-            >
-              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Gradient Map (crude prototype)</span>
-              <ToggleSwitch on={params.gumiGradientMap} label="Gradient Map" />
-            </div>
-            {params.gumiGradientMap && (
-              <>
-                <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
-                <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
-                <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
+                {/* Grouped with Pixel Threshold, not the per-type controls below — it's the
+                    other half of the same "how far the fill margin reaches" concern, global
+                    across all 3 Fill Types, not specific to whichever one is selected. */}
+                {!params.gumiFillPixelThreshold && (
+                  <GradientSlider label="Fill Radius (px)" value={params.gumiFillRadius} min={0} max={20} defaultValue={8} onChange={(v) => set('gumiFillRadius', v)} />
+                )}
+                {/* Invert before Fill Type per product direction — it decides *where* fill
+                    applies (ink/blacks vs. background/skin-tone side) before Fill Type decides
+                    *what color* goes there. */}
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => set('gumiFillInvert', !params.gumiFillInvert)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      set('gumiFillInvert', !params.gumiFillInvert)
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+                  <ToggleSwitch on={params.gumiFillInvert} label="Invert Fill" />
+                </div>
+                <FillTypeRow value={params.gumiFillType} onChange={(v) => set('gumiFillType', v)} />
+                {params.gumiFillType === 'solid' && (
+                  <TintColorRow label="Fill Color" tintColor={params.gumiFillSolidColor} onChange={(rgb) => set('gumiFillSolidColor', rgb)} />
+                )}
+                {params.gumiFillType === 'gradient' && (
+                  <>
+                    <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
+                    <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
+                    <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
+                  </>
+                )}
               </>
             )}
           </>
@@ -653,29 +769,74 @@ function HiTreatmentRow({ params, onChange }: { params: LineArtParams; onChange:
   )
 }
 
-const BLEND_MODE_LABELS: Record<BlendMode, string> = { multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay' }
-const ALL_BLEND_OPTIONS: BlendMode[] = ['multiply', 'screen', 'overlay']
-/** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply. */
+const BLEND_MODE_LABELS: Record<BlendMode, string> = { overwrite: 'Overwrite', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay' }
+const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'overlay']
+/** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply, which hard-overrides the blend mode regardless of selection. Overwrite is deliberately excluded here (unlike every other blend-mode row) so this row never shows a selectable option that would silently do nothing. */
 const FIND_EDGE_BLEND_OPTIONS: BlendMode[] = ['multiply']
 
-function BlendModeRow({ mode, options, onChange }: { mode: BlendMode; options: BlendMode[]; onChange: (m: BlendMode) => void }) {
+/** Gumi's Line/Fill split (v0.3 tuning UI pass) — reuses the existing gumiFillMode boolean directly (false=Line, true=Fill) rather than a new field. */
+function OperationModeRow({ fillMode, onChange }: { fillMode: boolean; onChange: (fillMode: boolean) => void }) {
+  return (
+    <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16 }}>
+      <button
+        type="button"
+        className={`pill-toggle-btn font-button-label${!fillMode ? ' active' : ''}`}
+        onClick={() => onChange(false)}
+      >
+        Line
+      </button>
+      <button
+        type="button"
+        className={`pill-toggle-btn font-button-label${fillMode ? ' active' : ''}`}
+        onClick={() => onChange(true)}
+      >
+        Fill
+      </button>
+    </div>
+  )
+}
+
+/** Shared between Fill mode's own fill-type row and Line mode's (v0.3 tuning) — both `gumiFillType` and `gumiLineFillType` are the same 'image'|'solid'|'gradient' union. */
+type FillType = 'image' | 'solid' | 'gradient'
+const FILL_TYPE_LABELS: Record<FillType, string> = { image: 'Image', solid: 'Solid Color', gradient: 'Gradient Map' }
+const FILL_TYPE_OPTIONS: FillType[] = ['image', 'solid', 'gradient']
+
+function FillTypeRow({ value, onChange }: { value: FillType; onChange: (v: FillType) => void }) {
   return (
     <div className="field-row">
       <div className="field-row-label">
-        <span className="font-param-label">Blend Mode</span>
+        <span className="font-param-label">Fill Type</span>
       </div>
       <div className="crop-bottomcontent" style={{ padding: 0 }}>
-        {options.map((opt) => (
+        {FILL_TYPE_OPTIONS.map((opt) => (
           <button
             key={opt}
             type="button"
-            className={`pill-toggle-btn font-button-label${mode === opt ? ' active' : ''}`}
+            className={`pill-toggle-btn font-button-label${value === opt ? ' active' : ''}`}
             onClick={() => onChange(opt)}
           >
-            {BLEND_MODE_LABELS[opt]}
+            {FILL_TYPE_LABELS[opt]}
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Just the pill row — the "Blend Mode" label now lives on the shared group header above (see the Blend Mode + Overlay Opacity grouping in the main render). */
+function BlendModeRow({ mode, options, onChange }: { mode: BlendMode; options: BlendMode[]; onChange: (m: BlendMode) => void }) {
+  return (
+    <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16 }}>
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          className={`pill-toggle-btn font-button-label${mode === opt ? ' active' : ''}`}
+          onClick={() => onChange(opt)}
+        >
+          {BLEND_MODE_LABELS[opt]}
+        </button>
+      ))}
     </div>
   )
 }

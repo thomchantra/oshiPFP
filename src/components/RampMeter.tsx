@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { ColorLiftParams, ToneShapingParams } from '../types'
-import { colorLiftLevels, toneRampDisplayMarkers } from '../tone/rampMeterMath'
+import { colorLiftLevels, gumiRampMarkers, toneRampDisplayMarkers } from '../tone/rampMeterMath'
 
 const BAR_SIZE = 20
 
@@ -9,18 +9,20 @@ const BAR_SIZE = 20
 const MARKER_COLOR = '#FF0000'
 
 interface RampMeterProps {
-  kind: 'tone' | 'color'
+  kind: 'tone' | 'color' | 'gumiRamp'
   toneShaping?: ToneShapingParams
   colorLift?: ColorLiftParams
+  gumiRamp?: { gumiRampFloor: number; gumiRampInnerLow: number; gumiRampInnerHigh: number; gumiRampCeiling: number }
   /** 'row' (default) for the desktop horizontal bar embedded in the expand group;
    * 'column' for the mobile overlay's vertical bar on top of the preview viewport. */
   orientation?: 'row' | 'column'
 }
 
-/** Tone Lift/Color Lift's "ramp feedback meter" — see docs/oshiPFP-v0.3-spec.md.
- * Tone: black->white gradient bar with a solid red line per active ramp point.
- * Color: one swatch-colored (pure hue, opaque) indicator per hue band at its lifted brightness. */
-export default function RampMeter({ kind, toneShaping, colorLift, orientation = 'row' }: RampMeterProps) {
+/** Tone Lift/Color Lift/Gumi Luminance Detection's "ramp feedback meter" — see
+ * docs/oshiPFP-v0.3-spec.md. Tone/gumiRamp: black->white gradient bar with a solid red line
+ * per active ramp point. Color: one swatch-colored (pure hue, opaque) indicator per hue band
+ * at its lifted brightness. */
+export default function RampMeter({ kind, toneShaping, colorLift, gumiRamp, orientation = 'row' }: RampMeterProps) {
   const isRow = orientation === 'row'
   const trackStyle: CSSProperties = {
     position: 'relative',
@@ -31,8 +33,8 @@ export default function RampMeter({ kind, toneShaping, colorLift, orientation = 
     borderRadius: 4,
   }
 
-  if (kind === 'tone' && toneShaping) {
-    const markers = toneRampDisplayMarkers(toneShaping)
+  if ((kind === 'tone' && toneShaping) || (kind === 'gumiRamp' && gumiRamp)) {
+    const markers = kind === 'tone' ? toneRampDisplayMarkers(toneShaping!) : gumiRampMarkers(gumiRamp!)
     return (
       <div
         className="rampmeter rampmeter-tone"

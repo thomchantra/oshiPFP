@@ -3,12 +3,16 @@ import BottomSheet from './BottomSheet'
 import Icon from './Icon'
 import { downloadBlob, exportImage, type FinalPixels } from '../export/exportPica'
 import { computeTarget, clampDimension } from '../export/computeTarget'
-import type { ExportFormat, ResampleMode, ResolutionMode } from '../types'
+import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } from '../types'
 
 interface ExportPanelProps {
   /** Crop's actual output pixel dimensions (post-crop, native res) — not the original upload's dimensions, see usePipeline's cropSize (Pipeline.setCropSizeListener). This is what "Source" shows and what presets/Original resolve against. */
   cropSize: { width: number; height: number } | null
-  readFinalPixels: () => FinalPixels | null
+  /** Original upload's filename (usePipeline's fileInfo) — used to build the download filename, see handleExport. */
+  fileName: string | null
+  readExportPixels: (mode: ExportDisplayMode) => FinalPixels | null
+  exportDisplayMode: ExportDisplayMode
+  setExportDisplayMode: (mode: ExportDisplayMode) => void
   resolutionMode: ResolutionMode
   setResolutionMode: (mode: ResolutionMode) => void
   customSize: { width: number; height: number }
@@ -18,6 +22,15 @@ interface ExportPanelProps {
   format: ExportFormat
   setFormat: (format: ExportFormat) => void
 }
+
+/** Export's own explicit Original/Composite/Overlay selector — see pipeline.ts's readExportPixels
+ * doc comment for why 'original' here means something stricter than the Line Art tab's own
+ * displayMode toggle (bypasses Enhancement too, not just Line Art/Color). */
+const EXPORT_MODE_OPTIONS: { value: ExportDisplayMode; label: string }[] = [
+  { value: 'original', label: 'Original' },
+  { value: 'composite', label: 'Composite' },
+  { value: 'overlay', label: 'Overlay' },
+]
 
 const RESOLUTION_OPTIONS: { value: ResolutionMode; label: string }[] = [
   { value: 'original', label: 'Original' },
@@ -37,7 +50,8 @@ const FORMAT_OPTIONS: { value: ExportFormat; label: string; ext: string }[] = [
 ]
 
 export default function ExportPanel({
-  cropSize, readFinalPixels,
+  cropSize, fileName, readExportPixels,
+  exportDisplayMode, setExportDisplayMode,
   resolutionMode, setResolutionMode,
   customSize, setCustomSize,
   resampleMode, setResampleMode,
@@ -82,7 +96,7 @@ export default function ExportPanel({
   }
 
   const handleExport = async () => {
-    const pixels = readFinalPixels()
+    const pixels = readExportPixels(exportDisplayMode)
     if (!pixels || !target) {
       setStatus('error')
       setErrorMessage('No image loaded yet — upload one from the Crop tab first.')
@@ -93,7 +107,8 @@ export default function ExportPanel({
     try {
       const formatOpt = FORMAT_OPTIONS.find((f) => f.value === format)!
       const blob = await exportImage(pixels, target.width, target.height, resampleMode, format)
-      downloadBlob(blob, `pfp-${target.width}x${target.height}.${formatOpt.ext}`)
+      const baseName = fileName ? fileName.replace(/\.[^./]+$/, '') : 'pfp'
+      downloadBlob(blob, `${baseName}_pfp-${target.width}x${target.height}-${exportDisplayMode}.${formatOpt.ext}`)
       setStatus('idle')
     } catch (e) {
       setStatus('error')
@@ -103,6 +118,20 @@ export default function ExportPanel({
 
   return (
     <BottomSheet>
+      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Export</span>
+      <div className="crop-bottomcontent" style={{ padding: 0, marginTop: 8, marginBottom: 16 }}>
+        {EXPORT_MODE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={`pill-toggle-btn font-button-label${exportDisplayMode === opt.value ? ' active' : ''}`}
+            onClick={() => setExportDisplayMode(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <div style={{ display: 'flex', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
           <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Source</span>

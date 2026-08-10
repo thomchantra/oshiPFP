@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ExportFormat, ResampleMode, ResolutionMode } from '../types'
+import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } from '../types'
 
 /**
  * Export tab's settings, lifted out of ExportPanel.tsx into a hook App.tsx
@@ -10,12 +10,14 @@ import type { ExportFormat, ResampleMode, ResolutionMode } from '../types'
  * wiped to default."
  */
 export function useExportSettings(cropSize: { width: number; height: number } | null) {
+  const [exportDisplayMode, setExportDisplayMode] = useState<ExportDisplayMode>('composite')
   const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
   const [resampleMode, setResampleMode] = useState<ResampleMode>('lanczos3')
   const [format, setFormat] = useState<ExportFormat>('png')
 
   return {
+    exportDisplayMode, setExportDisplayMode,
     resolutionMode, setResolutionMode,
     customSize, setCustomSize,
     resampleMode, setResampleMode,

@@ -7,6 +7,7 @@ import curve from '../assets/icons/curve.svg'
 import diamond from '../assets/icons/diamond.svg'
 import download from '../assets/icons/download.svg'
 import dualpane from '../assets/icons/dualpane.svg'
+import eyedropper from '../assets/icons/eyedropper.svg'
 import flower1 from '../assets/icons/flower1.svg'
 import lineart from '../assets/icons/lineart.svg'
 import moon from '../assets/icons/moon.svg'
@@ -30,6 +31,7 @@ const ICONS = {
   diamond,
   download,
   dualpane,
+  eyedropper,
   flower1,
   lineart,
   moon,
