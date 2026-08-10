@@ -15,6 +15,19 @@ interface HeaderBarProps {
   hasImage: boolean
   theme: 'light' | 'dark'
   onToggleTheme: () => void
+  /** Desktop-only (App.tsx passes isDesktop through) — Dual Pane has no mobile behavior yet, see
+   * oshiPFP v0.3 Workstream C. Omit entirely rather than disable, so it doesn't show up unusable. */
+  showDualPaneToggle: boolean
+  dualPaneEnabled: boolean
+  onToggleDualPane: () => void
+  /** Which of the two dual-pane result textures the corner preview mirrors — see
+   * AvatarCornerPreview's doc comment for the composite > overlay > original priority rule. */
+  dualPanePriorityIndex: 0 | 1
+  /** Dev-only "Dump State" button (see src/debug/dumpState.ts) — the button itself is gated on
+   * `import.meta.env.DEV` below, a Vite build-time constant that's `false` in any production
+   * build (including `npm run build` for Netlify), so this needs no manual pre-push toggle
+   * unlike lab.html's entry point (CLAUDE.md's Checklist). */
+  onDumpState: () => void
 }
 
 export default function HeaderBar({
@@ -25,6 +38,11 @@ export default function HeaderBar({
   hasImage,
   theme,
   onToggleTheme,
+  showDualPaneToggle,
+  dualPaneEnabled,
+  onToggleDualPane,
+  dualPanePriorityIndex,
+  onDumpState,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -52,11 +70,27 @@ export default function HeaderBar({
           <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" onClick={onToggleTheme}>
             <Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} color="var(--accent-title)" />
           </button>
+          {import.meta.env.DEV && (
+            <button
+              type="button"
+              className="theme-btn"
+              aria-label="Dump debug state to a text file (dev only)"
+              title="Dump debug state (dev only)"
+              onClick={onDumpState}
+            >
+              <Icon name="download" size={16} color="var(--accent-title)" />
+            </button>
+          )}
         </div>
         <div className="header-bar-action-row">
           <IconButton icon="upload" onClick={() => fileInputRef.current?.click()}>
             Upload PFP
           </IconButton>
+          {showDualPaneToggle && (
+            <IconButton icon="dualpane" active={dualPaneEnabled} onClick={onToggleDualPane}>
+              Dual Pane View
+            </IconButton>
+          )}
           <IconToggle2
             value={pfpMode}
             onChange={onPfpModeChange}
@@ -68,7 +102,13 @@ export default function HeaderBar({
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
         </div>
       </div>
-      <AvatarCornerPreview sourceCanvasRef={sourceCanvasRef} hasImage={hasImage} circle={pfpMode === 'circle'} />
+      <AvatarCornerPreview
+        sourceCanvasRef={sourceCanvasRef}
+        hasImage={hasImage}
+        circle={pfpMode === 'circle'}
+        dualPaneActive={dualPaneEnabled}
+        dualPanePriorityIndex={dualPanePriorityIndex}
+      />
     </div>
   )
 }

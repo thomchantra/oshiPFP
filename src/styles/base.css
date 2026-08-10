@@ -78,7 +78,11 @@ button, input {
   justify-content: center;
   flex-shrink: 0;
   touch-action: manipulation;
-  margin-left: auto;
+  /* No margin-left:auto — that pushed this to the far edge of
+     .header-bar-title-row once .header-bar-action-row grew wide enough
+     (adding the Dual Pane button) to stretch title-row's own width via
+     .header-bar-left's default column-flex cross-axis stretch, landing the
+     button far from the "v0.2.2" label it's meant to sit next to. */
 }
 
 /* Header bar */
@@ -174,7 +178,11 @@ button, input {
 .panel-col .bottom-sheet { order: 1; }
 
 @media (min-width: 900px) {
-  .app { max-width: 1280px; }
+  /* Full-width/responsive — no cap, the viewport column (flex: 1 1 auto below)
+     fills whatever space is left of the fixed-width sidebar on any monitor size,
+     matching the lab harness's fill-the-window approach rather than centering a
+     fixed max-width block on wide screens. */
+  .app { max-width: none; }
   .body-layout { flex-direction: row; gap: 10px; }
   .viewport-area { flex: 1 1 auto; }
   .panel-col {
@@ -186,6 +194,28 @@ button, input {
      Figma desktop reference's right-column ordering). */
   .panel-col .tab-nav { order: 1; }
   .panel-col .bottom-sheet { order: 2; flex: 1 1 auto; min-height: 0; }
+}
+
+/* Ramp feedback meters (Tone Lift/Color Lift, docs/oshiPFP-v0.3-spec.md) —
+   desktop shows them inline as the first item of each expand group; mobile
+   shows them as a fixed overlay pinned over the preview viewport instead
+   (see .rampmeter-mobile-overlay below), so the inline copy is redundant
+   there. */
+.rampmeter-desktop-only { display: none; }
+@media (min-width: 900px) {
+  .rampmeter-desktop-only { display: block; margin-bottom: 4px; }
+}
+
+.rampmeter-mobile-overlay {
+  position: absolute;
+  inset: 10px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 1;
+}
+@media (min-width: 900px) {
+  .rampmeter-mobile-overlay { display: none; }
 }
 
 /* Preview viewport area — 10px side gutter, matching the header/tabbar inset */
@@ -220,6 +250,11 @@ button, input {
   user-select: none;
   -webkit-touch-callout: none;
 }
+/* Dual Pane fills the wrapper's full available box (see PreviewViewport.tsx's fillWrapper prop)
+   instead of a single-image-shaped squareSize/originalSize box — its own contain-fit letterboxing
+   (pipeline.ts's final blit) should read as open space, not a visibly narrower white-50 card, so
+   swap to the page background here. Rounding (border-radius above) is intentionally unchanged. */
+.preview-viewport-fill { background: var(--bg-light); }
 .preview-viewport canvas {
   -webkit-user-select: none;
   user-select: none;
@@ -601,6 +636,7 @@ button, input {
   touch-action: manipulation;
 }
 .icon-button-primary { background: var(--accent-lighter); color: var(--accent-title); }
+.icon-button-primary.active { background: var(--accent-title); color: var(--bg-light); }
 .icon-button-secondary { background: var(--white-50); color: var(--accent-title); }
 .icon-button-secondary.active { background: var(--accent-title); color: var(--bg-light); }
 

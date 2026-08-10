@@ -10,7 +10,9 @@ import ColorPanel from './components/ColorPanel'
 import ColorCurveOverlay from './components/ColorCurveOverlay'
 import ColorCurveTopContent from './components/ColorCurveTopContent'
 import LineArtPanel from './components/LineArtPanel'
-import { LINE_ART_MODE_DEFAULTS } from './lineArtDefaults'
+import RampMeter from './components/RampMeter'
+import { useIsDesktop } from './hooks/useIsDesktop'
+import { LINE_ART_MODE_DEFAULTS, LINE_ART_LABELS } from './lineArtDefaults'
 import ExportPanel from './components/ExportPanel'
 import { useExportSettings } from './export/useExportSettings'
 import { getTheme, toggleTheme } from './theme'
@@ -19,9 +21,12 @@ import { useCropInteraction } from './crop/useCropInteraction'
 import { useElementSize } from './crop/useElementSize'
 import { useColorCurve } from './curve/useColorCurve'
 import { useCropEnhance } from './crop/useCropEnhance'
+import { useCropResize } from './crop/useCropResize'
+import { formatStateDump } from './debug/dumpState'
+import { downloadBlob } from './export/exportPica'
 import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
-import type { ColorSubTab, CropMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
+import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
 
 const TABS: TabDef[] = [
   { id: 'crop', label: 'CROP', icon: 'crop' },
@@ -36,19 +41,47 @@ const DISPLAY_MODE_OPTIONS: { value: LineArtDisplayMode; label: string }[] = [
   { value: 'overlay', label: 'OVERLAY' },
 ]
 
+const DUAL_PANE_MODE_OPTIONS: { value: DualPaneMode; label: string }[] = [
+  { value: 'original-composite', label: 'ORIGINAL | COMPOSITE' },
+  { value: 'composite-overlay', label: 'COMPOSITE | OVERLAY' },
+  { value: 'original-overlay', label: 'ORIGINAL | OVERLAY' },
+]
+
+/** Maps each DualPaneMode UI option to the [left, right] LineArtDisplayMode pair Pipeline.setDualPane needs — see pipeline.ts's doc comment on why it takes the resolved tuple directly rather than this string union. */
+const DUAL_PANE_MODES: Record<DualPaneMode, [LineArtDisplayMode, LineArtDisplayMode]> = {
+  'original-composite': ['original', 'composite'],
+  'composite-overlay': ['composite', 'overlay'],
+  'original-overlay': ['original', 'overlay'],
+}
+
+/** Which pane (0 or 1) the header's corner preview mirrors while Dual Pane is active — composite
+ * takes priority over overlay, which takes priority over original (the most "finished" result
+ * of whichever pair is showing), per user direction. */
+const DUAL_PANE_PRIORITY_INDEX: Record<DualPaneMode, 0 | 1> = {
+  'original-composite': 1,
+  'composite-overlay': 0,
+  'original-overlay': 1,
+}
+
 const PREVIEW_MODE_OPTIONS: { value: 'original' | 'result'; label: string }[] = [
   { value: 'original', label: 'ORIGINAL' },
   { value: 'result', label: 'RESULT' },
 ]
 
-const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF']
+const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF', 'pathG', 'pathH', 'pathI']
 
 const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0 }
 
 const BASE_LINE_ART_PARAMS: LineArtParams = {
   mode: 'pathB',
   displayMode: 'composite',
-  toneShaping: { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 },
+  toneShaping: {
+    exposure: 0,
+    contrast: 0,
+    mode: 'clip',
+    clipMode: { blackClip: 0, whiteClip: 1 },
+    pinchMode: { position: 0.5, expand: 0.3, feathering: 0.5 },
+  },
   denoise: { intensity: 0, threshold: 0 },
   colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
@@ -66,6 +99,35 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   tintColor: [1, 0.475, 0.886],
   vividDeadzone: 0.15,
   vividBoost: 1,
+  gumiContrastBoost: 1,
+  blobMaxDt: 8,
+  gumiColorBleed: false,
+  gumiBleedFeather: 1.5,
+  gumiSoftDetection: false,
+  gumiSoftness: 0.1,
+  gumiFillMode: false,
+  gumiGradientMap: false,
+  gumiGradientShadow: [0, 0, 0],
+  gumiGradientMid: [0.5, 0.5, 0.5],
+  gumiGradientHighlight: [1, 1, 1],
+  gumiRampFloor: 0,
+  gumiRampInnerLow: 0.3,
+  gumiRampInnerHigh: 0.7,
+  gumiRampCeiling: 1,
+  gumiRampFeather: 0,
+  thresholdEnabled: false,
+  hiToneTarget: 'off',
+  hiToneGain: 1,
+  hiToneContrast: 1,
+  highPassStrength: 1,
+  highPassResponsiveColor: false,
+  responsiveCrossover: 0.5,
+  responsiveGrow: 0,
+  responsiveGrowBias: 0,
+  laplacianStrength: 1,
+  laplacianPreBlur: 0,
+  laplacianSharpenAmount: 0,
+  laplacianGrow: 0,
 }
 
 function buildDefaultParams(mode: LineArtMode): LineArtParams {
@@ -91,6 +153,17 @@ export default function App() {
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
   const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
+  // Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — off by default, only meaningful at
+  // the 900px breakpoint (isDesktop below); see the tab === 'maximizer' block for how this and
+  // dualPaneMode swap out the single-mode SegmentedControl for a 3-way pane-pair one.
+  const [dualPaneEnabled, setDualPaneEnabled] = useState(false)
+  const [dualPaneMode, setDualPaneMode] = useState<DualPaneMode>('original-composite')
+  const isDesktop = useIsDesktop()
+  // Dual Pane visually reverts to single-pane behavior below the desktop breakpoint even if
+  // dualPaneEnabled is still true (e.g. the window was resized narrower after enabling it on
+  // desktop) — gated here, once, rather than repeating `dualPaneEnabled && isDesktop` at each of
+  // the toggle's several call sites below.
+  const dualPaneActive = dualPaneEnabled && isDesktop
   const pipeline = usePipeline()
   const hasImage = pipeline.sourceSize !== null
   const viewportWrapperRef = useRef<HTMLDivElement | null>(null)
@@ -98,6 +171,7 @@ export default function App() {
   const colorAdjustments = useColorAdjustments(pipeline)
   const exportSettings = useExportSettings(pipeline.cropSize)
   const cropEnhance = useCropEnhance(pipeline.setEnhanceParams)
+  const cropResize = useCropResize(pipeline.cropSize, pipeline.setResizeParams)
 
   // Promoted from "reset the curve" to "reset everything in the Color tab" —
   // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
@@ -112,6 +186,35 @@ export default function App() {
   }
 
   const lineArtParams: LineArtParams = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
+
+  // Dev-only debug aid (see HeaderBar's dev-only Dump State button, gated on import.meta.env.DEV)
+  // — a plain-text snapshot of every tab's current config, for reproducing/comparing algo-tuning
+  // results across sessions without hand-transcribing slider values. Line Art is deliberately
+  // scoped to just the active algorithm (lineArtParams above), not the full paramsByMode cache.
+  const handleDumpState = () => {
+    const text = formatStateDump({
+      fileInfo: pipeline.fileInfo,
+      crop: { mode: cropMode, transform: crop.transform, enhance: cropEnhance.enhance, resize: { mode: cropResize.mode, customSize: cropResize.customSize } },
+      lineArt: { label: LINE_ART_LABELS[lineArtMode], params: lineArtParams },
+      color: {
+        subTab: colorSubTab,
+        light: colorAdjustments.light,
+        colorAdjust: colorAdjustments.colorAdjust,
+        invert: colorAdjustments.invert,
+        hslByBand: colorAdjustments.hslByBand,
+        curveChannel: colorCurve.channel,
+        curves: colorCurve.curves,
+      },
+      export: {
+        resolutionMode: exportSettings.resolutionMode,
+        customSize: exportSettings.customSize,
+        resampleMode: exportSettings.resampleMode,
+        format: exportSettings.format,
+      },
+      view: { pfpMode, theme, previewMode, dualPaneEnabled, dualPaneMode },
+    })
+    downloadBlob(new Blob([text], { type: 'text/plain' }), `oshipfp-state-${Date.now()}.txt`)
+  }
 
   // Measured from the wrapper (a pure CSS-layout box) rather than the canvas
   // element itself — the canvas's own backing-store resolution is derived
@@ -191,6 +294,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsByMode, lineArtMode, lineArtDisplayMode])
 
+  // dualPaneActive (not the raw dualPaneEnabled boolean) drives the pipeline — resizing back below
+  // 900px with the toggle still on should stop the pipeline from doubling canvas width/running the
+  // Color chain twice, same as it visually reverts the segmented control (see dualPaneActive above).
+  useEffect(() => {
+    pipeline.setDualPane(dualPaneActive, DUAL_PANE_MODES[dualPaneMode])
+    // pipeline identity is stable; only re-run when the relevant params actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dualPaneActive, dualPaneMode])
+
   // Fumiko's "Find Edge" color mode only supports Multiply (see pipeline.ts's
   // forcedMultiply) — LineArtPanel hides the other two pills for that combo,
   // but if a user had Screen/Overlay selected on Tint/Vivid and switches
@@ -231,6 +343,11 @@ export default function App() {
         hasImage={hasImage}
         theme={theme}
         onToggleTheme={() => setTheme(toggleTheme())}
+        showDualPaneToggle={isDesktop}
+        dualPaneEnabled={dualPaneEnabled}
+        onToggleDualPane={() => setDualPaneEnabled((v) => !v)}
+        dualPanePriorityIndex={DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
+        onDumpState={handleDumpState}
       />
 
       <div className="body-layout">
@@ -240,7 +357,11 @@ export default function App() {
           <CropDebugInfo sourceSize={pipeline.sourceSize} fileInfo={pipeline.fileInfo} />
         )}
         {hasImage && tab === 'maximizer' && (
-          <SegmentedControl options={DISPLAY_MODE_OPTIONS} value={lineArtDisplayMode} onChange={setLineArtDisplayMode} />
+          dualPaneActive ? (
+            <SegmentedControl options={DUAL_PANE_MODE_OPTIONS} value={dualPaneMode} onChange={setDualPaneMode} />
+          ) : (
+            <SegmentedControl options={DISPLAY_MODE_OPTIONS} value={lineArtDisplayMode} onChange={setLineArtDisplayMode} />
+          )
         )}
         {hasImage && tab === 'color' && (
           <ColorCurveTopContent
@@ -276,6 +397,7 @@ export default function App() {
             cropMode={cropMode}
             squareSize={squareSize}
             originalSize={originalSize}
+            fillWrapper={dualPaneActive}
             circle={pfpMode === 'circle'}
             interactive={tab === 'crop' && cropMode === 'square'}
             overlay={!hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} /> : undefined}
@@ -291,6 +413,12 @@ export default function App() {
               viewport at its own stable 1:1 size (colorCurveSize above),
               independent of whatever shape the photo underneath happens to
               be at the moment. */}
+          {hasImage && tab === 'maximizer' && lineArtMode !== 'pathC' && (
+            <div className="rampmeter-mobile-overlay" aria-hidden="true">
+              <RampMeter kind="tone" toneShaping={lineArtParams.toneShaping} orientation="column" />
+              <RampMeter kind="color" colorLift={lineArtParams.colorLift} orientation="column" />
+            </div>
+          )}
           {hasImage && tab === 'color' && colorCurve.visible && (
             <div
               style={{
@@ -348,7 +476,17 @@ export default function App() {
         <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />
 
         {hasImage && tab === 'crop' && (
-          <CropPanel mode={cropMode} onModeChange={setCropMode} enhance={cropEnhance.enhance} setEnhance={cropEnhance.setEnhance} />
+          <CropPanel
+            mode={cropMode}
+            onModeChange={setCropMode}
+            enhance={cropEnhance.enhance}
+            setEnhance={cropEnhance.setEnhance}
+            cropSize={pipeline.cropSize}
+            resizeMode={cropResize.mode}
+            setResizeMode={cropResize.setMode}
+            resizeCustomSize={cropResize.customSize}
+            setResizeCustomSize={cropResize.setCustomSize}
+          />
         )}
 
         {hasImage && tab === 'color' && (

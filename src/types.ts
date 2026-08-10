@@ -57,21 +57,49 @@ export interface InvertParams {
 /** How each algorithm's resolved "ink" color composites onto the base image — shared across all 4 modes (see composite.frag.ts's blendLayer). */
 export type BlendMode = 'multiply' | 'screen' | 'overlay'
 
-/** Botan/Chie/Daiya/Fumiko, kept as their internal pathB/C/D/F ids (ported straight from the lab harness) — display names are cosmetic only. Botan is the default from first load; the expensive recompute itself is gated by Pipeline.setLineArtActive (tab-based), not by mode. */
-export type LineArtMode = 'pathB' | 'pathC' | 'pathD' | 'pathF'
+/** Botan/Chie/Daiya/Fumiko/Gumi/Hinata/Inori, kept as their internal pathB/C/D/F/G/H/I ids (ported straight from the lab harness) — display names are cosmetic only. Botan is the default from first load; the expensive recompute itself is gated by Pipeline.setLineArtActive (tab-based), not by mode. */
+export type LineArtMode = 'pathB' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
 
 /** What the Line Art tab's viewport (and downstream Color/Export) actually reads: the algorithm's raw mask/color output, the multiply/crossfade composite onto the base, or a bypass back to the uncropped base. */
 export type LineArtDisplayMode = 'composite' | 'overlay' | 'original'
 
+/** Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — replaces the single DISPLAY_MODE_OPTIONS
+ * segmented control with a 3-way pane-PAIR selector when active. Each option names the two
+ * LineArtDisplayMode variants shown side-by-side (left|right) — see pipeline.ts's setDualPane,
+ * which takes the resolved [LineArtDisplayMode, LineArtDisplayMode] tuple directly rather than this
+ * string union (App.tsx maps between the two). */
+export type DualPaneMode = 'original-composite' | 'composite-overlay' | 'original-overlay'
+
 /** Daiya is tint-or-vivid only (always recolors); Fumiko can also stay in its native colored-edge look. */
 export type ColorMode = 'findEdge' | 'tint' | 'vivid'
+
+/** Standard 2-point black/white clip — the original Tone Lift ramp, still the default mode. */
+export interface ClipModeParams {
+  blackClip: number
+  whiteClip: number
+}
+
+/** Plateau/pinch 4-point luminance-band isolation — see plateauRamp.frag.ts. `position` is the
+ * band center (0..1), `expand` is the band's total width (spacing between the two inner ramp
+ * points), `feathering` (0..1) controls how much of the floor->inner (and inner->ceiling) span
+ * the fade actually uses. Floor/ceiling are fixed at 0/1 (see pipeline.ts's pinch-mode wiring). */
+export interface PinchModeParams {
+  position: number
+  expand: number
+  feathering: number
+}
 
 export interface ToneShapingParams {
   /** UI convention: 0 = identity for every field (including contrast — mapped to the shader's 1=identity multiplier internally). */
   exposure: number
   contrast: number
-  blackClip: number
-  whiteClip: number
+  /** Which ramp interpretation is active — see pipeline.ts's colorCorrect/plateauRamp branch. */
+  mode: 'clip' | 'pinch'
+  /** Both mode's values are retained across toggling (not just the active one) so users can A/B
+   * compare clip vs. pinch on the same source adjustment without losing either — see
+   * docs/oshiPFP-v0.3-spec.md's "Pinch Mode Toggle Behavior". */
+  clipMode: ClipModeParams
+  pinchMode: PinchModeParams
 }
 
 export interface DenoiseParams {
@@ -95,6 +123,14 @@ export interface ColorLiftParams {
 export interface EnhanceParams {
   smooth: number
   sharpen: number
+}
+
+/** Crop tab's Resize module — 'original' = crop's native pixel size (no resample), 'custom' = explicit width x height. Unlike Export's ResolutionMode, this actually changes the working pipeline resolution feeding Color/Line Art/Export, not just an export-time hint — see pipeline.ts's resizeTarget stage. Deliberately narrower than ResolutionMode (no 150/256 presets) per the Resize module's "facsimile of Export's core functionality" scope. */
+export type ResizeMode = 'original' | 'custom'
+
+export interface ResizeParams {
+  mode: ResizeMode
+  customSize: { width: number; height: number }
 }
 
 /** Flat param bag mirroring src/lab/labPipeline.ts's LabParams — only the fields relevant to the active `mode` are actually read by the pipeline. */
@@ -121,6 +157,57 @@ export interface LineArtParams {
   tintColor: [number, number, number]
   vividDeadzone: number
   vividBoost: number
+
+  // Path G (Gumi) — see src/lab/labPipeline.ts's pathG branch for the full
+  // rationale of each. Reuses `threshold`/`radius`/`blobContrast`/
+  // `colorContrast`/`colorExpansion`/`tintColor` above where the concept is
+  // identical to Botan's (contrast boost reuses colorCorrect's pivot-
+  // contrast curve; blob-DT reject vs. color-bleed both build on Botan's
+  // own distance-to-edge machinery).
+  gumiContrastBoost: number
+  blobMaxDt: number
+  gumiColorBleed: boolean
+  gumiBleedFeather: number
+  gumiSoftDetection: boolean
+  gumiSoftness: number
+  gumiFillMode: boolean
+  gumiGradientMap: boolean
+  gumiGradientShadow: [number, number, number]
+  gumiGradientMid: [number, number, number]
+  gumiGradientHighlight: [number, number, number]
+  /**
+   * Gumi's own always-on 4-point plateau/feather luminance-band ramp (see
+   * plateauRamp.frag.ts) — deliberately separate from ToneShapingParams'
+   * pinch-mode fields (Workstream B, added independently): this ramp
+   * operates on Gumi's own detection input as its "gradient map" stage 1,
+   * not on the shared Tone Lift preprocessing every mode's detection
+   * source passes through first.
+   */
+  gumiRampFloor: number
+  gumiRampInnerLow: number
+  gumiRampInnerHigh: number
+  gumiRampCeiling: number
+  gumiRampFeather: number
+
+  // Path H (Hinata) / Path I (Inori) shared fields — see labPipeline.ts's
+  // pathH/pathI branches. `threshold` above doubles as their optional
+  // Output-treatment binarize cutoff; `radius` doubles as Hinata's blur
+  // radius.
+  thresholdEnabled: boolean
+  hiToneTarget: 'off' | 'multiply' | 'screen'
+  hiToneGain: number
+  hiToneContrast: number
+  // Path H only.
+  highPassStrength: number
+  highPassResponsiveColor: boolean
+  responsiveCrossover: number
+  responsiveGrow: number
+  responsiveGrowBias: number
+  // Path I only.
+  laplacianStrength: number
+  laplacianPreBlur: number
+  laplacianSharpenAmount: number
+  laplacianGrow: number
 }
 
 export type ResampleMode = 'lanczos3' | 'bilinear' | 'nearest'

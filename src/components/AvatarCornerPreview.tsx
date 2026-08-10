@@ -5,6 +5,14 @@ interface AvatarCornerPreviewProps {
   sourceCanvasRef: RefObject<HTMLCanvasElement | null>
   hasImage: boolean
   circle: boolean
+  /** When Dual Pane is active, the mirrored source canvas is two panes side by side (see
+   * pipeline.ts's dual-pane blit) — this preview must mirror only one, not the whole doubled
+   * canvas, or it visibly shows a squished split view instead of a single PFP crop. */
+  dualPaneActive: boolean
+  /** Which half (0 = left, 1 = right) to mirror when dualPaneActive — App.tsx resolves this via
+   * a composite > overlay > original priority so the corner preview always shows the most
+   * "finished" of the two active panes. */
+  dualPanePriorityIndex: 0 | 1
 }
 
 const SIZE = 60
@@ -25,7 +33,13 @@ const SIZE = 60
  * too (useful for seeing how a before/after actually reads in the real PFP
  * frame's cover-fit crop, which differs from the main square viewport's).
  */
-export default function AvatarCornerPreview({ sourceCanvasRef, hasImage, circle }: AvatarCornerPreviewProps) {
+export default function AvatarCornerPreview({
+  sourceCanvasRef,
+  hasImage,
+  circle,
+  dualPaneActive,
+  dualPanePriorityIndex,
+}: AvatarCornerPreviewProps) {
   const previewRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -43,16 +57,21 @@ export default function AvatarCornerPreview({ sourceCanvasRef, hasImage, circle 
         }
         const ctx = dst.getContext('2d')
         if (ctx) {
-          const srcAspect = src.width / src.height
-          let sw = src.width
+          // Dual Pane's on-screen canvas is two equal-width panes side by side (pipeline.ts's
+          // splitCanvasWidth) — treat only the priority half as the source image, not the whole
+          // doubled canvas, or this preview shows a squished two-up split instead of one PFP.
+          const paneWidth = dualPaneActive ? src.width / 2 : src.width
+          const paneOffsetX = dualPaneActive ? dualPanePriorityIndex * paneWidth : 0
+          const srcAspect = paneWidth / src.height
+          let sw = paneWidth
           let sh = src.height
-          let sx = 0
+          let sx = paneOffsetX
           let sy = 0
           if (srcAspect > 1) {
             sw = src.height
-            sx = (src.width - sw) / 2
+            sx = paneOffsetX + (paneWidth - sw) / 2
           } else {
-            sh = src.width
+            sh = paneWidth
             sy = (src.height - sh) / 2
           }
           ctx.imageSmoothingEnabled = true
@@ -65,7 +84,7 @@ export default function AvatarCornerPreview({ sourceCanvasRef, hasImage, circle 
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [hasImage, sourceCanvasRef])
+  }, [hasImage, sourceCanvasRef, dualPaneActive, dualPanePriorityIndex])
 
   return (
     <div className="avatar-corner-preview" style={{ borderRadius: circle ? '50%' : 5 }}>

@@ -9,9 +9,9 @@ interface IconButtonProps {
   onClick?: () => void
 }
 
-/** Pill button: primary = accent-lighter bg (header Upload button), secondary = accent-title bg when active (algo selector). */
-export default function IconButton({ icon, children, variant = 'primary', active = true, onClick }: IconButtonProps) {
-  const iconColor = variant === 'primary' ? 'var(--accent-title)' : active ? 'var(--bg-light)' : 'var(--accent-title)'
+/** Pill button: primary = accent-lighter bg (header Upload button, also header Dual Pane toggle when active), secondary = accent-title bg when active (algo selector). */
+export default function IconButton({ icon, children, variant = 'primary', active = false, onClick }: IconButtonProps) {
+  const iconColor = active ? 'var(--bg-light)' : 'var(--accent-title)'
   return (
     <button
       type="button"

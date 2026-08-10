@@ -1,5 +1,18 @@
 import type { LineArtMode, LineArtParams } from './types'
 
+/** Cosmetic display names, keyed by internal mode id — shared by LineArtPanel's algo selector and
+ * App.tsx's dev-only state dump (src/debug/dumpState.ts), which both need the same human-readable
+ * name without either owning the canonical list. */
+export const LINE_ART_LABELS: Record<LineArtMode, string> = {
+  pathB: 'Botan',
+  pathC: 'Chie',
+  pathD: 'Daiya',
+  pathF: 'Fumiko',
+  pathG: 'Gumi',
+  pathH: 'Hinata',
+  pathI: 'Inori',
+}
+
 /** Per-algorithm default overrides — used both by LineArtPanel (when switching modes fresh) and App.tsx (to seed each algorithm's initial cached params, see the per-mode memory there). */
 export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>> = {
   pathB: {
@@ -23,5 +36,56 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     tintColor: [1, 0.475, 0.886],
     vividDeadzone: 0.15,
     vividBoost: 1,
+  },
+  pathG: {
+    opacity: 1,
+    threshold: 0.5,
+    radius: 1,
+    blobContrast: 1,
+    colorExpansion: false,
+    colorContrast: 1,
+    tintColor: [0, 0, 0],
+    gumiContrastBoost: 1,
+    blobMaxDt: 8,
+    gumiColorBleed: false,
+    gumiBleedFeather: 1.5,
+    gumiSoftDetection: false,
+    gumiSoftness: 0.1,
+    gumiFillMode: false,
+    gumiGradientMap: false,
+    gumiGradientShadow: [0, 0, 0],
+    gumiGradientMid: [0.5, 0.5, 0.5],
+    gumiGradientHighlight: [1, 1, 1],
+    gumiRampFloor: 0,
+    gumiRampInnerLow: 0.3,
+    gumiRampInnerHigh: 0.7,
+    gumiRampCeiling: 1,
+    gumiRampFeather: 0,
+  },
+  pathH: {
+    opacity: 1,
+    threshold: 0.5,
+    radius: 1.5,
+    thresholdEnabled: false,
+    hiToneTarget: 'off',
+    hiToneGain: 1,
+    hiToneContrast: 1,
+    highPassStrength: 1,
+    highPassResponsiveColor: false,
+    responsiveCrossover: 0.5,
+    responsiveGrow: 0,
+    responsiveGrowBias: 0,
+  },
+  pathI: {
+    opacity: 1,
+    threshold: 0.5,
+    thresholdEnabled: false,
+    hiToneTarget: 'off',
+    hiToneGain: 1,
+    hiToneContrast: 1,
+    laplacianStrength: 1,
+    laplacianPreBlur: 0,
+    laplacianSharpenAmount: 0,
+    laplacianGrow: 0,
   },
 }

@@ -23,11 +23,24 @@ import { alphaOverWhiteFrag } from './shaders/alphaOverWhite.frag'
 import { compositeFrag } from './shaders/composite.frag'
 import { tintMaskFrag } from './shaders/tintMask.frag'
 import { blitFrag } from './shaders/blit.frag'
+import { resizeFrag } from './shaders/resize.frag'
+import { plateauRampFrag } from './shaders/plateauRamp.frag'
+import { softThresholdFrag } from './shaders/softThreshold.frag'
+import { fillMaskFrag } from './shaders/fillMask.frag'
+import { blobMaskFrag } from './shaders/blobMask.frag'
+import { gradientMapFrag } from './shaders/gradientMap.frag'
+import { highPassDiffFrag } from './shaders/highPassDiff.frag'
+import { laplacianFrag } from './shaders/laplacian.frag'
+import { toneRemapFrag } from './shaders/toneRemap.frag'
+import { responsiveEdgeColorFrag } from './shaders/responsiveEdgeColor.frag'
+import { inkColorMaskFrag } from './shaders/inkColorMask.frag'
+import { inkColorRecombineFrag } from './shaders/inkColorRecombine.frag'
 import { createSourceTexture, createLutTexture, updateLutTexture } from './texture'
 import { loadSourceBitmap } from '../imageLoad'
 import { identityLutBuffer } from '../curve/spline'
-import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, HslByBand, HslShift, InvertParams, LightParams, LineArtParams } from '../types'
+import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
+import { pinchToPlateau } from '../tone/pinchRamp'
 
 export type CropRect = [number, number, number, number]
 
@@ -47,6 +60,7 @@ export const IDENTITY_INVERT: InvertParams = { rgb: false, r: false, g: false, b
 export const IDENTITY_LIGHT: LightParams = { exposure: 0, contrast: 0, brilliance: 0, whites: 0, highlights: 0, shadows: 0, blacks: 0 }
 export const IDENTITY_COLOR_ADJUST: ColorAdjustParams = { temperature: 0, tint: 0, vibrance: 0 }
 const IDENTITY_ENHANCE: EnhanceParams = { smooth: 0, sharpen: 0 }
+const IDENTITY_RESIZE: ResizeParams = { mode: 'original', customSize: { width: 512, height: 512 } }
 export const IDENTITY_COLOR_LIFT: ColorLiftParams = {
   red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0,
 }
@@ -54,7 +68,13 @@ export const IDENTITY_COLOR_LIFT: ColorLiftParams = {
 const IDENTITY_LINE_ART: LineArtParams = {
   mode: 'pathB',
   displayMode: 'composite',
-  toneShaping: { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 },
+  toneShaping: {
+    exposure: 0,
+    contrast: 0,
+    mode: 'clip',
+    clipMode: { blackClip: 0, whiteClip: 1 },
+    pinchMode: { position: 0.5, expand: 0.3, feathering: 0.5 },
+  },
   denoise: { intensity: 0, threshold: 0 },
   colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
@@ -72,6 +92,35 @@ const IDENTITY_LINE_ART: LineArtParams = {
   tintColor: [1, 0.475, 0.886], // #FF79E2
   vividDeadzone: 0.15,
   vividBoost: 1,
+  gumiContrastBoost: 1,
+  blobMaxDt: 8,
+  gumiColorBleed: false,
+  gumiBleedFeather: 1.5,
+  gumiSoftDetection: false,
+  gumiSoftness: 0.1,
+  gumiFillMode: false,
+  gumiGradientMap: false,
+  gumiGradientShadow: [0, 0, 0],
+  gumiGradientMid: [0.5, 0.5, 0.5],
+  gumiGradientHighlight: [1, 1, 1],
+  gumiRampFloor: 0,
+  gumiRampInnerLow: 0.3,
+  gumiRampInnerHigh: 0.7,
+  gumiRampCeiling: 1,
+  gumiRampFeather: 0,
+  thresholdEnabled: false,
+  hiToneTarget: 'off',
+  hiToneGain: 1,
+  hiToneContrast: 1,
+  highPassStrength: 1,
+  highPassResponsiveColor: false,
+  responsiveCrossover: 0.5,
+  responsiveGrow: 0,
+  responsiveGrowBias: 0,
+  laplacianStrength: 1,
+  laplacianPreBlur: 0,
+  laplacianSharpenAmount: 0,
+  laplacianGrow: 0,
 }
 
 /** Piecewise-linear "hardness" macro shared by Botan/Chie: -1 -> 200% of base max feather, 0 -> 50%, 1 -> hard clip (0). See changelog/oshipfp-v0.2-lineart-saga.md session 7. */
@@ -82,6 +131,11 @@ function hardnessToFeather(hardness: number, base: number): number {
 
 /** uBlendMode ints for composite.frag.ts's blendLayer. */
 const BLEND_MODE_INT: Record<LineArtParams['blendMode'], number> = { multiply: 1, screen: 2, overlay: 3 }
+
+/** Dual Pane "which pane is canonical" priority — composite beats overlay beats original. Mirrors
+ * App.tsx's DUAL_PANE_PRIORITY_INDEX (UI-side precedent for the corner preview); kept here as the
+ * source of truth for readFinalPixels()/the final blit's own pane-selection needs. */
+const DISPLAY_MODE_PRIORITY: Record<LineArtDisplayMode, number> = { composite: 2, overlay: 1, original: 0 }
 
 const ALPHA_OVERDRIVE_LAYERS = 3
 
@@ -124,18 +178,32 @@ export class Pipeline {
   private lightColorProgram: WebGLProgram
   private colorProgram: WebGLProgram
   private blitProgram: WebGLProgram
+  private resizeProgram: WebGLProgram
+  private plateauRampProgram: WebGLProgram
+  private softThresholdProgram: WebGLProgram
+  private fillMaskProgram: WebGLProgram
+  private blobMaskProgram: WebGLProgram
+  private gradientMapProgram: WebGLProgram
+  private highPassDiffProgram: WebGLProgram
+  private laplacianProgram: WebGLProgram
+  private toneRemapProgram: WebGLProgram
+  private responsiveEdgeColorProgram: WebGLProgram
+  private inkColorMaskProgram: WebGLProgram
+  private inkColorRecombineProgram: WebGLProgram
   private quadBuffer: WebGLBuffer
   private lutTexture: WebGLTexture
 
   private sourceTexture: WebGLTexture | null = null
   private sourceBitmap: ImageBitmap | null = null
   private cropTarget: TargetTexture | null = null
+  private resizeTarget: TargetTexture | null = null
   private smoothTarget: TargetTexture | null = null
   private sharpenBlurHTarget: TargetTexture | null = null
   private sharpenBlurVTarget: TargetTexture | null = null
   private sharpenTarget: TargetTexture | null = null
   private enhanceTarget: TargetTexture | null = null
   private correctedTarget: TargetTexture | null = null
+  private toneExposureTarget: TargetTexture | null = null
   private colorLiftTarget: TargetTexture | null = null
   private denoisedTarget: TargetTexture | null = null
   private maskTarget: TargetTexture | null = null
@@ -158,7 +226,44 @@ export class Pipeline {
   private lightColorTarget: TargetTexture | null = null
   private colorTarget: TargetTexture | null = null
 
+  // Dual Pane (desktop-only, Workstream C) — second independent copy of the
+  // display-mode-resolution and Color-chain targets above, only populated
+  // while dualPaneEnabled is true. Pane A always reuses the primary fields
+  // (lineArtOutputTarget/colorTarget etc.) unchanged, so single-pane
+  // behavior (and readFinalPixels/export) is completely unaffected by this
+  // feature; pane B gets its own set so both panes' final textures can
+  // coexist for the double-wide blit at the end of render().
+  private lineArtBlendTargetB: TargetTexture | null = null
+  private lineArtOverlayPreviewTargetB: TargetTexture | null = null
+  private lineArtOutputTargetB: TargetTexture | null = null
+  private lightColorTargetB: TargetTexture | null = null
+  private colorTargetB: TargetTexture | null = null
+
+  // Path G (Gumi) / H (Hinata) / I (Inori) — see renderLineArt's pathG/H/I
+  // branches, ported 1:1 from src/lab/labPipeline.ts's render().
+  private rampTarget: TargetTexture | null = null
+  private gumiBoostTarget: TargetTexture | null = null
+  private gumiMaskTarget: TargetTexture | null = null
+  private gumiMaxHTarget: TargetTexture | null = null
+  private gumiMaxVTarget: TargetTexture | null = null
+  private gumiSeedTargetA: TargetTexture | null = null
+  private gumiSeedTargetB: TargetTexture | null = null
+  private gumiBlobTarget: TargetTexture | null = null
+  private gumiBleedTarget: TargetTexture | null = null
+  private gradientMapTarget: TargetTexture | null = null
+  private highPassTarget: TargetTexture | null = null
+  private laplacianTarget: TargetTexture | null = null
+  private laplacianSharpenTarget: TargetTexture | null = null
+  private hiThreshTarget: TargetTexture | null = null
+  private toneRemapTarget: TargetTexture | null = null
+  private responsiveColorTarget: TargetTexture | null = null
+  private responsiveWhiteExtractTarget: TargetTexture | null = null
+  private responsiveBlackExtractTarget: TargetTexture | null = null
+  private responsiveGrowWhiteTarget: TargetTexture | null = null
+  private responsiveGrowBlackTarget: TargetTexture | null = null
+
   private cropDirty = true
+  private resizeDirty = true
   private enhanceDirty = true
   private lineArtDirty = true
   private colorDirty = true
@@ -180,6 +285,12 @@ export class Pipeline {
   /** Notified with cropTarget's pixel dimensions whenever a crop recompute resolves — cheap (no GPU readback, just the already-known width/height), lets the Export tab show/compute against the real crop output size without needing a full readFinalPixels() call just to read two numbers. */
   private onCropSizeChange: ((size: { width: number; height: number }) => void) | null = null
 
+  /** Dual Pane toggle state — see setDualPane. Desktop-only in the UI (App.tsx gates it behind the
+   * same 900px breakpoint as .rampmeter-desktop-only), but the pipeline itself has no width
+   * awareness and will happily render dual-pane at any canvas size if asked. */
+  private dualPaneEnabled = false
+  private dualPaneModes: [LineArtDisplayMode, LineArtDisplayMode] = ['original', 'composite']
+
   private cropRect: CropRect = [0, 0, 1, 1]
   private hslByBand: HslByBand = IDENTITY_HSL_BY_BAND
   private invert: InvertParams = IDENTITY_INVERT
@@ -187,6 +298,7 @@ export class Pipeline {
   private colorAdjust: ColorAdjustParams = IDENTITY_COLOR_ADJUST
   private lineArt: LineArtParams = IDENTITY_LINE_ART
   private enhance: EnhanceParams = IDENTITY_ENHANCE
+  private resizeParams: ResizeParams = IDENTITY_RESIZE
 
   private disposeContextHandlers: () => void
   private canvasResizeObserver: ResizeObserver
@@ -216,6 +328,18 @@ export class Pipeline {
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
+    this.resizeProgram = createProgram(this.gl, passthroughVert, resizeFrag)
+    this.plateauRampProgram = createProgram(this.gl, passthroughVert, plateauRampFrag)
+    this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
+    this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
+    this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
+    this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
+    this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
+    this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
+    this.toneRemapProgram = createProgram(this.gl, passthroughVert, toneRemapFrag)
+    this.responsiveEdgeColorProgram = createProgram(this.gl, passthroughVert, responsiveEdgeColorFrag)
+    this.inkColorMaskProgram = createProgram(this.gl, passthroughVert, inkColorMaskFrag)
+    this.inkColorRecombineProgram = createProgram(this.gl, passthroughVert, inkColorRecombineFrag)
     this.quadBuffer = createFullscreenQuad(this.gl)
     this.lutTexture = createLutTexture(this.gl, identityLutBuffer(), 3)
     this.disposeContextHandlers = wireContextLossHandlers(
@@ -230,7 +354,14 @@ export class Pipeline {
     // resize logic at the top of render() went stale until some unrelated
     // setter happened to fire next (switching tabs, nudging a slider).
     this.canvasResizeObserver = new ResizeObserver(() => this.scheduleRender())
-    this.canvasResizeObserver.observe(canvas)
+    // Observe the canvas's containing box, not the canvas itself: since render()'s final blit
+    // now sizes the canvas element from that box (contain-fit, never-enlarge — see there), the
+    // canvas's own clientWidth/Height is an *output* of render(), not an input: observing it
+    // would just watch render()'s own writes go by (harmlessly self-stabilizing after one extra
+    // pass, but not the actual signal we need — a real container layout change). The box is
+    // PreviewViewport.tsx's inset:0 centering wrapper (canvas's parent), which fills
+    // .preview-viewport 1:1, so its clientWidth/Height IS the box render() measures against.
+    this.canvasResizeObserver.observe(canvas.parentElement ?? canvas)
   }
 
   private handleContextLost(): void {
@@ -242,11 +373,17 @@ export class Pipeline {
     this.botanSeedTarget = null
     this.botanSeedDirty = true
     for (const key of [
-      'cropTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
-      'correctedTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget', 'growHTarget', 'growVTarget',
+      'cropTarget', 'resizeTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
+      'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget', 'growHTarget', 'growVTarget',
       'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
+      'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
+      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiSeedTargetA',
+      'gumiSeedTargetB', 'gumiBlobTarget', 'gumiBleedTarget', 'gradientMapTarget', 'highPassTarget',
+      'laplacianTarget', 'laplacianSharpenTarget', 'hiThreshTarget', 'toneRemapTarget', 'responsiveColorTarget',
+      'responsiveWhiteExtractTarget', 'responsiveBlackExtractTarget', 'responsiveGrowWhiteTarget',
+      'responsiveGrowBlackTarget',
     ] as const) {
       this[key] = null
     }
@@ -276,12 +413,25 @@ export class Pipeline {
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
+    this.resizeProgram = createProgram(this.gl, passthroughVert, resizeFrag)
+    this.plateauRampProgram = createProgram(this.gl, passthroughVert, plateauRampFrag)
+    this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
+    this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
+    this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
+    this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
+    this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
+    this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
+    this.toneRemapProgram = createProgram(this.gl, passthroughVert, toneRemapFrag)
+    this.responsiveEdgeColorProgram = createProgram(this.gl, passthroughVert, responsiveEdgeColorFrag)
+    this.inkColorMaskProgram = createProgram(this.gl, passthroughVert, inkColorMaskFrag)
+    this.inkColorRecombineProgram = createProgram(this.gl, passthroughVert, inkColorRecombineFrag)
     this.quadBuffer = createFullscreenQuad(this.gl)
     this.lutTexture = createLutTexture(this.gl, identityLutBuffer(), 3)
     if (this.sourceBitmap) {
       this.sourceTexture = createSourceTexture(this.gl, this.sourceBitmap)
     }
     this.cropDirty = true
+    this.resizeDirty = true
     this.enhanceDirty = true
     this.lineArtDirty = true
     this.colorDirty = true
@@ -354,8 +504,12 @@ export class Pipeline {
       params.threshold !== prev.threshold ||
       params.toneShaping.exposure !== prev.toneShaping.exposure ||
       params.toneShaping.contrast !== prev.toneShaping.contrast ||
-      params.toneShaping.blackClip !== prev.toneShaping.blackClip ||
-      params.toneShaping.whiteClip !== prev.toneShaping.whiteClip ||
+      params.toneShaping.mode !== prev.toneShaping.mode ||
+      params.toneShaping.clipMode.blackClip !== prev.toneShaping.clipMode.blackClip ||
+      params.toneShaping.clipMode.whiteClip !== prev.toneShaping.clipMode.whiteClip ||
+      params.toneShaping.pinchMode.position !== prev.toneShaping.pinchMode.position ||
+      params.toneShaping.pinchMode.expand !== prev.toneShaping.pinchMode.expand ||
+      params.toneShaping.pinchMode.feathering !== prev.toneShaping.pinchMode.feathering ||
       params.denoise.intensity !== prev.denoise.intensity ||
       params.denoise.threshold !== prev.denoise.threshold ||
       params.colorLift.red !== prev.colorLift.red ||
@@ -394,7 +548,55 @@ export class Pipeline {
 
   setCropSizeListener(cb: ((size: { width: number; height: number }) => void) | null): void {
     this.onCropSizeChange = cb
-    if (cb && this.cropTarget) cb({ width: this.cropTarget.width, height: this.cropTarget.height })
+    // Prefer resizeTarget (the "working resolution" Export's Original mode
+    // means, see the resizeDirty block in render()) — falls back to
+    // cropTarget only in the brief window before the first resize pass has
+    // resolved.
+    const size = this.resizeTarget ?? this.cropTarget
+    if (cb && size) cb({ width: size.width, height: size.height })
+  }
+
+  setResizeParams(params: ResizeParams): void {
+    this.resizeParams = params
+    this.resizeDirty = true
+    this.scheduleRender()
+  }
+
+  /**
+   * Desktop-only Dual Pane toggle (Workstream C) — when enabled, `render()`
+   * resolves BOTH given displayModes through the full downstream Color
+   * chain (instead of just the single active LineArtParams.displayMode)
+   * and blits them side-by-side into a double-wide canvas. Pane A always
+   * lands in the same primary fields (lineArtOutputTarget/colorTarget)
+   * single-pane rendering already used, so readFinalPixels()/export is
+   * unaffected either way — it's documented there as reading "whichever
+   * pane computed through the primary chain" when dual-pane happens to be
+   * on, which is a debug-viewing feature, not a normal export state.
+   */
+  setDualPane(enabled: boolean, modes: [LineArtDisplayMode, LineArtDisplayMode]): void {
+    const changed =
+      this.dualPaneEnabled !== enabled || this.dualPaneModes[0] !== modes[0] || this.dualPaneModes[1] !== modes[1]
+    this.dualPaneEnabled = enabled
+    this.dualPaneModes = modes
+    if (!changed) return
+    // lineArtOutputTarget's resolution (original/overlay/composite) and the
+    // Color chain built on top of it both depend on which mode(s) are
+    // active — force both stages to re-run so turning Dual Pane on/off (or
+    // switching its pane-pair) doesn't leave a stale texture on screen.
+    this.lineArtDirty = true
+    this.colorDirty = true
+    this.scheduleRender()
+  }
+
+  /**
+   * Which pane (0 = colorTarget, 1 = colorTargetB) is the canonical "single result" while Dual
+   * Pane is active — composite > overlay > original, same rule App.tsx's DUAL_PANE_PRIORITY_INDEX
+   * applies for the corner-preview UI. Used by readFinalPixels (and available to the final blit)
+   * whenever dual-pane needs to collapse down to one texture instead of showing both side by side.
+   */
+  private dualPanePriorityIndex(): 0 | 1 {
+    const [modeA, modeB] = this.dualPaneModes
+    return DISPLAY_MODE_PRIORITY[modeB] > DISPLAY_MODE_PRIORITY[modeA] ? 1 : 0
   }
 
   setPreviewMode(mode: 'original' | 'result'): void {
@@ -423,6 +625,22 @@ export class Pipeline {
       this.renderScheduled = false
       this.render()
     })
+  }
+
+  /**
+   * The CSS box render()'s final blit contain-fits into — the canvas's *parent* element
+   * (PreviewViewport.tsx's inset:0 centering wrapper), NOT the canvas's own
+   * clientWidth/Height. The canvas element's box is an output of render() (it's sized from
+   * this every frame), so reading clientWidth/Height off the canvas itself would be
+   * self-referential — each render would measure its own previous output and could only ever
+   * shrink, never recover once the container is actually large enough again. See also the
+   * ResizeObserver in the constructor, which watches this same parent for the same reason.
+   */
+  private boxSize(fallbackWidth: number, fallbackHeight: number): { width: number; height: number } {
+    const box = this.canvas.parentElement
+    const width = box?.clientWidth || fallbackWidth
+    const height = box?.clientHeight || fallbackHeight
+    return { width, height }
   }
 
   private ensureTarget(existing: TargetTexture | null, width: number, height: number): TargetTexture {
@@ -595,23 +813,136 @@ export class Pipeline {
     return current
   }
 
-  /** Runs the full Botan/Chie/Daiya/Fumiko chain — see labPipeline.ts's render() for the per-algorithm rationale this ports verbatim. */
-  private renderLineArt(base: TargetTexture, width: number, height: number): TargetTexture {
+  /**
+   * 4-point plateau/feather luminance-band ramp (see plateauRamp.frag.ts) —
+   * Gumi/Path G's always-on "gradient map" stage 1. Ported from
+   * labPipeline.ts's runPlateauRamp; here it's only ever called from Gumi's
+   * own branch (production has no optional pre-detection ramp toggle for
+   * other modes, unlike the lab harness).
+   */
+  private runPlateauRamp(source: TargetTexture, p: LineArtParams, width: number, height: number): TargetTexture {
+    const gl = this.gl
+    this.rampTarget = this.ensureTarget(this.rampTarget, width, height)
+    this.runPass(this.plateauRampProgram, this.rampTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.plateauRampProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFloor'), p.gumiRampFloor)
+      gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerLow'), p.gumiRampInnerLow)
+      gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerHigh'), p.gumiRampInnerHigh)
+      gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uCeiling'), p.gumiRampCeiling)
+      gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFeather'), p.gumiRampFeather)
+    })
+    return this.rampTarget
+  }
+
+  /**
+   * Gumi (Path G)'s JFA distance transform, shared by both its final
+   * treatments (hard blob suppression and the color-bleed style) — see
+   * labPipeline.ts's runGumiDistanceTransform. Reuses the same
+   * distanceSeedProgram/jfaStepProgram Botan's own inline JFA loop uses,
+   * just seeded from a different side of the mask (uInvert).
+   */
+  private runGumiDistanceTransform(source: TargetTexture, invert: boolean, width: number, height: number): TargetTexture {
+    const gl = this.gl
+    const texelSize: [number, number] = [1 / width, 1 / height]
+    this.gumiSeedTargetA = this.ensureFloatTarget(this.gumiSeedTargetA, width, height)
+    this.gumiSeedTargetB = this.ensureFloatTarget(this.gumiSeedTargetB, width, height)
+    this.runPass(this.distanceSeedProgram, this.gumiSeedTargetA, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
+      gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), invert ? 1 : 0)
+    })
+    let gSrc = this.gumiSeedTargetA
+    let gDst = this.gumiSeedTargetB
+    const passes = Math.max(1, Math.ceil(Math.log2(Math.max(width, height))))
+    for (let i = 0; i < passes; i++) {
+      const step = Math.pow(2, passes - 1 - i)
+      this.runPass(this.jfaStepProgram, gDst, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, gSrc.texture)
+        gl.uniform1i(gl.getUniformLocation(this.jfaStepProgram, 'uSeed'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.jfaStepProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.jfaStepProgram, 'uStep'), step)
+      })
+      ;[gSrc, gDst] = [gDst, gSrc]
+    }
+    this.gumiSeedTargetA = gSrc
+    this.gumiSeedTargetB = gDst
+    return gSrc
+  }
+
+  /** Composite-readiness remap for Path H/I's raw output — see toneRemap.frag.ts. */
+  private runToneRemap(source: TargetTexture, target: 'multiply' | 'screen', p: LineArtParams, width: number, height: number): TargetTexture {
+    const gl = this.gl
+    this.toneRemapTarget = this.ensureTarget(this.toneRemapTarget, width, height)
+    this.runPass(this.toneRemapProgram, this.toneRemapTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.toneRemapProgram, 'uSource'), 0)
+      gl.uniform1i(gl.getUniformLocation(this.toneRemapProgram, 'uTarget'), target === 'screen' ? 1 : 0)
+      gl.uniform1f(gl.getUniformLocation(this.toneRemapProgram, 'uGain'), p.hiToneGain)
+      gl.uniform1f(gl.getUniformLocation(this.toneRemapProgram, 'uContrast'), p.hiToneContrast)
+    })
+    return this.toneRemapTarget
+  }
+
+  /**
+   * Runs the full Botan/Chie/Daiya/Fumiko/Gumi/Hinata/Inori algorithm chain
+   * and returns the raw mask/ink output — see labPipeline.ts's render() for
+   * the per-algorithm rationale this ports verbatim. Deliberately stops
+   * short of resolving LineArtParams.displayMode (see resolveLineArtDisplay
+   * below): the algorithm chain itself doesn't depend on displayMode, so
+   * Dual Pane can call this once and resolveLineArtDisplay twice instead of
+   * paying for the (expensive, e.g. Botan's ~11-pass JFA) algorithm chain
+   * twice just to show two different views of the same result.
+   */
+  private computeLineArtRaw(base: TargetTexture, width: number, height: number): TargetTexture {
     const gl = this.gl
     const p = this.lineArt
     const texelSize: [number, number] = [1 / width, 1 / height]
 
     this.correctedTarget = this.ensureTarget(this.correctedTarget, width, height)
     const ts = p.toneShaping
-    this.runPass(this.colorCorrectProgram, this.correctedTarget, width, height, () => {
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, base.texture)
-      gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
-      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
-      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
-      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), ts.blackClip)
-      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), ts.whiteClip)
-    })
+    if (ts.mode === 'pinch') {
+      // Exposure/contrast apply the same way regardless of ramp mode — run
+      // them first through an identity-clip colorCorrect pass, then feed
+      // that into the plateau ramp for the pinch band isolation itself
+      // (see src/tone/pinchRamp.ts for the position/expand/feathering ->
+      // floor/innerLow/innerHigh/ceiling/feather mapping).
+      this.toneExposureTarget = this.ensureTarget(this.toneExposureTarget, width, height)
+      this.runPass(this.colorCorrectProgram, this.toneExposureTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), 1)
+      })
+      const plateau = pinchToPlateau(ts.pinchMode)
+      this.runPass(this.plateauRampProgram, this.correctedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.toneExposureTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.plateauRampProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFloor'), plateau.floor)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerLow'), plateau.innerLow)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerHigh'), plateau.innerHigh)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uCeiling'), plateau.ceiling)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFeather'), plateau.feather)
+      })
+    } else {
+      this.runPass(this.colorCorrectProgram, this.correctedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), ts.clipMode.blackClip)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), ts.clipMode.whiteClip)
+      })
+    }
 
     const cl = p.colorLift
     const liftedTarget = this.runColorLift(this.correctedTarget, cl, width, height)
@@ -799,23 +1130,421 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.saturationAdjustProgram, 'uSaturation'), p.saturation)
       })
       outputTarget = this.saturationTarget
+    } else if (p.mode === 'pathG' && p.gumiGradientMap) {
+      // Crude Gradient Map prototype — see gradientMap.frag.ts. No
+      // threshold/closing/blob-or-bleed chain at all: every pixel gets
+      // recolored directly off the 3-stop ramp, then composited below like
+      // every other mode's resolved output (production has no separate
+      // crossfade path the lab harness uses for this case — see this
+      // workstream's report for the resulting behavior difference).
+      this.gradientMapTarget = this.ensureTarget(this.gradientMapTarget, width, height)
+      this.runPass(this.gradientMapProgram, this.gradientMapTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uSource'), 0)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), p.gumiGradientShadow)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), p.gumiGradientMid)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+      })
+      outputTarget = this.gradientMapTarget
+    } else if (p.mode === 'pathG') {
+      // Path G (Gumi): luminance-band isolation (always-on plateau ramp) ->
+      // contrast boost (reuses colorCorrect's pivot-at-0.5 contrast curve)
+      // -> threshold into a binary mask (uInvert=1 — ramp's high
+      // band-weight means "this IS the selected stroke") -> closing
+      // (minFilter1D's min mode). Then one of two final treatments, picked
+      // by gumiColorBleed — see labPipeline.ts's pathG branch for the full
+      // rationale, ported 1:1 here.
+      const gumiRamp = this.runPlateauRamp(detectionSource, p, width, height)
+
+      this.gumiBoostTarget = this.ensureTarget(this.gumiBoostTarget, width, height)
+      this.runPass(this.colorCorrectProgram, this.gumiBoostTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, gumiRamp.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), p.gumiContrastBoost)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), 1)
+      })
+
+      this.gumiMaskTarget = this.ensureTarget(this.gumiMaskTarget, width, height)
+      if (p.gumiSoftDetection) {
+        this.runPass(this.softThresholdProgram, this.gumiMaskTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiBoostTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uSource'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uThreshold'), p.threshold)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uSoftness'), p.gumiSoftness)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uInvert'), 1)
+        })
+      } else {
+        this.runPass(this.thresholdProgram, this.gumiMaskTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiBoostTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 1)
+        })
+      }
+
+      this.gumiMaxHTarget = this.ensureTarget(this.gumiMaxHTarget, width, height)
+      this.gumiMaxVTarget = this.ensureTarget(this.gumiMaxVTarget, width, height)
+      const gumiRadius = Math.round(p.radius)
+      this.runPass(this.minFilterProgram, this.gumiMaxHTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.gumiMaskTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), gumiRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+      })
+      this.runPass(this.minFilterProgram, this.gumiMaxVTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxHTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), gumiRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+      })
+
+      if (p.gumiColorBleed) {
+        const gumiSeed = this.runGumiDistanceTransform(this.gumiMaxVTarget, false, width, height)
+        this.gumiBleedTarget = this.ensureTarget(this.gumiBleedTarget, width, height)
+        this.runPass(this.distanceToEdgeProgram, this.gumiBleedTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uSeed'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uOriginal'), 1)
+          gl.uniform2fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uTexSize'), [width, height])
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.blobMaxDt)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), p.gumiBleedFeather)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), p.colorExpansion ? 1 : 0)
+          gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
+        })
+        outputTarget = this.gumiBleedTarget
+      } else {
+        const gumiSeed = this.runGumiDistanceTransform(this.gumiMaxVTarget, true, width, height)
+        this.gumiBlobTarget = this.ensureTarget(this.gumiBlobTarget, width, height)
+        if (p.gumiFillMode) {
+          this.runPass(this.fillMaskProgram, this.gumiBlobTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
+            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uSeed'), 0)
+            gl.activeTexture(gl.TEXTURE1)
+            gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxVTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uMask'), 1)
+            gl.activeTexture(gl.TEXTURE2)
+            gl.bindTexture(gl.TEXTURE_2D, base.texture)
+            gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uOriginal'), 2)
+            gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uBlobMaxDt'), p.blobMaxDt)
+          })
+        } else {
+          this.runPass(this.blobMaskProgram, this.gumiBlobTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, gumiSeed.texture)
+            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSeed'), 0)
+            gl.activeTexture(gl.TEXTURE1)
+            gl.bindTexture(gl.TEXTURE_2D, this.gumiMaxVTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uMask'), 1)
+            gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uBlobMaxDt'), p.blobMaxDt)
+            gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSoftOutput'), p.gumiSoftDetection ? 1 : 0)
+          })
+        }
+        outputTarget = this.gumiBlobTarget
+      }
+    } else if (p.mode === 'pathH' && p.highPassResponsiveColor) {
+      // Dual-polarity litmus test (see responsiveEdgeColor.frag.ts):
+      // locally-adaptive ink color instead of one fixed polarity. Reuses
+      // the same box-blur pass Fumiko's normal chain computes — the
+      // blurred local-neighborhood average IS the "rough area check".
+      this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+      this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
+      const blurRadius = p.radius
+      this.runPass(this.boxBlurProgram, this.blurHTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+      })
+      this.runPass(this.boxBlurProgram, this.blurVTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+        gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+      })
+
+      this.responsiveColorTarget = this.ensureTarget(this.responsiveColorTarget, width, height)
+      this.runPass(this.responsiveEdgeColorProgram, this.responsiveColorTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.responsiveEdgeColorProgram, 'uSource'), 0)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, this.blurVTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.responsiveEdgeColorProgram, 'uBlurred'), 1)
+        gl.uniform2fv(gl.getUniformLocation(this.responsiveEdgeColorProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.responsiveEdgeColorProgram, 'uStrength'), p.highPassStrength)
+        gl.uniform1f(gl.getUniformLocation(this.responsiveEdgeColorProgram, 'uCrossover'), p.responsiveCrossover)
+      })
+
+      if (p.responsiveGrow > 0) {
+        const growRadius = Math.round(p.responsiveGrow)
+
+        this.responsiveWhiteExtractTarget = this.ensureTarget(this.responsiveWhiteExtractTarget, width, height)
+        this.runPass(this.inkColorMaskProgram, this.responsiveWhiteExtractTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.responsiveColorTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorMaskProgram, 'uInk'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorMaskProgram, 'uTargetWhite'), 1)
+        })
+        this.responsiveBlackExtractTarget = this.ensureTarget(this.responsiveBlackExtractTarget, width, height)
+        this.runPass(this.inkColorMaskProgram, this.responsiveBlackExtractTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.responsiveColorTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorMaskProgram, 'uInk'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorMaskProgram, 'uTargetWhite'), 0)
+        })
+
+        const growOne = (source: TargetTexture, dest: TargetTexture | null): TargetTexture => {
+          this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+          const result = this.ensureTarget(dest, width, height)
+          this.runPass(this.minFilterProgram, this.blurHTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, source.texture)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+          })
+          this.runPass(this.minFilterProgram, result, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+          })
+          return result
+        }
+
+        this.responsiveGrowWhiteTarget = growOne(this.responsiveWhiteExtractTarget, this.responsiveGrowWhiteTarget)
+        this.responsiveGrowBlackTarget = growOne(this.responsiveBlackExtractTarget, this.responsiveGrowBlackTarget)
+
+        this.runPass(this.inkColorRecombineProgram, this.responsiveColorTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.responsiveGrowWhiteTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorRecombineProgram, 'uGrownWhite'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, this.responsiveGrowBlackTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.inkColorRecombineProgram, 'uGrownBlack'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.inkColorRecombineProgram, 'uBias'), p.responsiveGrowBias)
+        })
+      }
+
+      outputTarget = this.responsiveColorTarget
+    } else if (p.mode === 'pathH' || p.mode === 'pathI') {
+      let hiRaw: TargetTexture
+      if (p.mode === 'pathH') {
+        // Path H (High Pass): separable box-blur then source-minus-blurred
+        // (highPassDiff.frag.ts).
+        this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+        this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
+        const blurRadius = p.radius
+        this.runPass(this.boxBlurProgram, this.blurHTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+          gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+          gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+        })
+        this.runPass(this.boxBlurProgram, this.blurVTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+          gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+          gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+        })
+
+        this.highPassTarget = this.ensureTarget(this.highPassTarget, width, height)
+        this.runPass(this.highPassDiffProgram, this.highPassTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.highPassDiffProgram, 'uSource'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, this.blurVTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.highPassDiffProgram, 'uBlurred'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.highPassDiffProgram, 'uStrength'), p.highPassStrength)
+        })
+        hiRaw = this.highPassTarget
+      } else {
+        // Path I (Laplacian): optional pre-blur feeds the single-pass 3x3
+        // second-order kernel (laplacian.frag.ts), then optional re-sharpen
+        // (unsharpMask.frag.ts, already compiled for Crop's Enhance stage).
+        let laplacianSource = detectionSource
+        if (p.laplacianPreBlur > 0) {
+          this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+          this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
+          this.runPass(this.boxBlurProgram, this.blurHTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+            gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+            gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), p.laplacianPreBlur)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+          })
+          this.runPass(this.boxBlurProgram, this.blurVTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+            gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), p.laplacianPreBlur)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+          })
+          laplacianSource = this.blurVTarget
+        }
+
+        this.laplacianTarget = this.ensureTarget(this.laplacianTarget, width, height)
+        this.runPass(this.laplacianProgram, this.laplacianTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, laplacianSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.laplacianProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.laplacianProgram, 'uTexelSize'), texelSize)
+          gl.uniform1f(gl.getUniformLocation(this.laplacianProgram, 'uStrength'), p.laplacianStrength)
+        })
+
+        if (p.laplacianSharpenAmount > 0) {
+          this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+          this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
+          const sharpenBlurRadius = 1.5
+          this.runPass(this.boxBlurProgram, this.blurHTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.laplacianTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+            gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), sharpenBlurRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+          })
+          this.runPass(this.boxBlurProgram, this.blurVTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+            gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), sharpenBlurRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+          })
+          this.laplacianSharpenTarget = this.ensureTarget(this.laplacianSharpenTarget, width, height)
+          this.runPass(this.unsharpMaskProgram, this.laplacianSharpenTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.laplacianTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.unsharpMaskProgram, 'uSource'), 0)
+            gl.activeTexture(gl.TEXTURE1)
+            gl.bindTexture(gl.TEXTURE_2D, this.blurVTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.unsharpMaskProgram, 'uBlurred'), 1)
+            gl.uniform1f(gl.getUniformLocation(this.unsharpMaskProgram, 'uAmount'), p.laplacianSharpenAmount)
+          })
+          hiRaw = this.laplacianSharpenTarget
+        } else {
+          hiRaw = this.laplacianTarget
+        }
+
+        if (p.laplacianGrow > 0) {
+          this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
+          this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
+          const growRadius = Math.round(p.laplacianGrow)
+          this.runPass(this.minFilterProgram, this.blurHTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, hiRaw.texture)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+          })
+          this.runPass(this.minFilterProgram, this.blurVTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.blurHTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+          })
+          hiRaw = this.blurVTarget
+        }
+      }
+
+      // Output treatment, shared by H/I: tone-remap takes priority when
+      // active, then hard-threshold binarize, then the untouched raw diff.
+      if (p.hiToneTarget !== 'off') {
+        outputTarget = this.runToneRemap(hiRaw, p.hiToneTarget, p, width, height)
+      } else if (p.thresholdEnabled) {
+        this.hiThreshTarget = this.ensureTarget(this.hiThreshTarget, width, height)
+        this.runPass(this.thresholdProgram, this.hiThreshTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, hiRaw.texture)
+          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.blendMode === 'screen' ? 1 : 0)
+        })
+        outputTarget = this.hiThreshTarget
+      } else {
+        outputTarget = hiRaw
+      }
     }
 
-    const rawTarget = outputTarget
+    return outputTarget
+  }
 
-    if (p.displayMode === 'original') return base
-    if (p.displayMode === 'overlay') {
+  /**
+   * Resolves an explicit LineArtDisplayMode (instead of always reading
+   * `this.lineArt.displayMode`) against a raw algorithm-chain output from
+   * computeLineArtRaw — factored out of what used to be the tail end of
+   * renderLineArt so Dual Pane can call this twice (once per pane) against
+   * the one shared rawTarget, each writing into its own set of target
+   * textures (isSecondary picks pane B's fields over pane A's/the single-
+   * pane defaults) so the two invocations within one frame don't clobber
+   * each other's framebuffers.
+   */
+  private resolveLineArtDisplay(
+    base: TargetTexture,
+    rawTarget: TargetTexture,
+    mode: LineArtDisplayMode,
+    width: number,
+    height: number,
+    isSecondary: boolean,
+  ): TargetTexture {
+    const gl = this.gl
+    const p = this.lineArt
+
+    if (mode === 'original') return base
+
+    if (mode === 'overlay') {
       // rawTarget carries straight (non-premultiplied) alpha now — flatten
       // it onto plain white for this raw preview instead of blitting the
       // partial alpha straight to the (alpha-enabled) canvas, which would
       // let the page background show through.
-      this.lineArtOverlayPreviewTarget = this.ensureTarget(this.lineArtOverlayPreviewTarget, width, height)
-      this.runPass(this.alphaOverWhiteProgram, this.lineArtOverlayPreviewTarget, width, height, () => {
+      if (isSecondary) {
+        this.lineArtOverlayPreviewTargetB = this.ensureTarget(this.lineArtOverlayPreviewTargetB, width, height)
+      } else {
+        this.lineArtOverlayPreviewTarget = this.ensureTarget(this.lineArtOverlayPreviewTarget, width, height)
+      }
+      const target = isSecondary ? this.lineArtOverlayPreviewTargetB! : this.lineArtOverlayPreviewTarget!
+      this.runPass(this.alphaOverWhiteProgram, target, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, rawTarget.texture)
         gl.uniform1i(gl.getUniformLocation(this.alphaOverWhiteProgram, 'uSource'), 0)
       })
-      return this.lineArtOverlayPreviewTarget
+      return target
     }
 
     // Fumiko's "Find Edge" color mode is the one algorithm output that
@@ -841,8 +1570,13 @@ export class Pipeline {
       // what the opacity slider's 100-300% range already did per algorithm.
       opacities[0] = p.mode === 'pathB' || p.mode === 'pathC' ? Math.min(p.opacity, 1) : p.opacity
     }
-    this.lineArtBlendTarget = this.ensureTarget(this.lineArtBlendTarget, width, height)
-    this.runPass(this.compositeProgram, this.lineArtBlendTarget, width, height, () => {
+    if (isSecondary) {
+      this.lineArtBlendTargetB = this.ensureTarget(this.lineArtBlendTargetB, width, height)
+    } else {
+      this.lineArtBlendTarget = this.ensureTarget(this.lineArtBlendTarget, width, height)
+    }
+    const target = isSecondary ? this.lineArtBlendTargetB! : this.lineArtBlendTarget!
+    this.runPass(this.compositeProgram, target, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, base.texture)
       gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBase'), 0)
@@ -853,7 +1587,92 @@ export class Pipeline {
       gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBlendMode'), blendModeInt)
       gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uLayerCount'), layerCount)
     })
-    return this.lineArtBlendTarget
+    return target
+  }
+
+  /** Runs the full algorithm chain and resolves it against the single active LineArtParams.displayMode — the non-Dual-Pane case. See computeLineArtRaw/resolveLineArtDisplay for the two halves this composes. */
+  private renderLineArt(base: TargetTexture, width: number, height: number): TargetTexture {
+    const rawTarget = this.computeLineArtRaw(base, width, height)
+    return this.resolveLineArtDisplay(base, rawTarget, this.lineArt.displayMode, width, height, false)
+  }
+
+  /**
+   * Light+Color basic correction (lightColorCorrect.frag.ts) into curves+HSL
+   * (curvesHsl.frag.ts) — the downstream chain every LineArtDisplayMode
+   * variant's output passes through on its way to colorTarget, factored out
+   * of render()'s single-path colorDirty block so Dual Pane can invoke it
+   * twice (pane A into the primary lightColorTarget/colorTarget fields,
+   * pane B into the *B-suffixed pair) against the two different line-art
+   * variants resolveLineArtDisplay produced. Every uniform here reads from
+   * this.colorAdjust/light/hslByBand/invert/lutTexture, identical for both
+   * panes — only `source` (and thus the output) differs.
+   */
+  private runColorChain(source: TargetTexture, width: number, height: number, isSecondary: boolean): TargetTexture {
+    const gl = this.gl
+
+    if (isSecondary) {
+      this.lightColorTargetB = this.ensureTarget(this.lightColorTargetB, width, height)
+    } else {
+      this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
+    }
+    const lightColor = isSecondary ? this.lightColorTargetB! : this.lightColorTarget!
+    this.runPass(this.lightColorProgram, lightColor, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.lightColorProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTemperature'), this.colorAdjust.temperature)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTint'), this.colorAdjust.tint)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uExposure'), this.light.exposure)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uContrast'), this.light.contrast)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uHighlights'), this.light.highlights)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uShadows'), this.light.shadows)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uWhites'), this.light.whites)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBlacks'), this.light.blacks)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBrilliance'), this.light.brilliance)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
+    })
+
+    if (isSecondary) {
+      this.colorTargetB = this.ensureTarget(this.colorTargetB, width, height)
+    } else {
+      this.colorTarget = this.ensureTarget(this.colorTarget, width, height)
+    }
+    const colorOut = isSecondary ? this.colorTargetB! : this.colorTarget!
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, colorOut.framebuffer)
+    gl.viewport(0, 0, width, height)
+    gl.useProgram(this.colorProgram)
+    bindFullscreenQuadAttribs(gl, this.colorProgram, this.quadBuffer)
+
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+    gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uSource'), 0)
+
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.lutTexture)
+    gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uLut'), 1)
+
+    const bandShifts = new Float32Array(8 * 3)
+    HUE_BAND_SWATCHES.forEach((swatch, i) => {
+      const shift = this.hslByBand[swatch.key]
+      bandShifts[i * 3] = shift.hue
+      bandShifts[i * 3 + 1] = shift.saturation
+      bandShifts[i * 3 + 2] = shift.lightness
+    })
+    gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uBandShift'), bandShifts)
+
+    gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uHue'), this.hslByBand.master.hue)
+    gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uSaturation'), this.hslByBand.master.saturation)
+    gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uLightness'), this.hslByBand.master.lightness)
+
+    gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uInvertMask'), [
+      this.invert.rgb || this.invert.r ? 1 : 0,
+      this.invert.rgb || this.invert.g ? 1 : 0,
+      this.invert.rgb || this.invert.b ? 1 : 0,
+    ])
+    drawFullscreenQuad(gl)
+
+    return colorOut
   }
 
   render(): void {
@@ -877,15 +1696,42 @@ export class Pipeline {
       drawFullscreenQuad(gl)
 
       this.cropDirty = false
-      this.enhanceDirty = true
+      this.resizeDirty = true
       this.botanSeedDirty = true
-      this.onCropSizeChange?.({ width, height })
     }
     if (!this.cropTarget) return
 
+    if (this.resizeDirty) {
+      if (this.resizeParams.mode === 'original') {
+        // No-op passthrough at the crop's native size — don't force a
+        // resample through the shader when the user hasn't asked for one,
+        // same "alias instead of copy" convention as lineArtOutputTarget
+        // when Line Art is inactive.
+        this.resizeTarget = this.cropTarget
+      } else {
+        const width = Math.max(1, Math.round(this.resizeParams.customSize.width))
+        const height = Math.max(1, Math.round(this.resizeParams.customSize.height))
+        this.resizeTarget = this.ensureTarget(this.resizeTarget, width, height)
+        this.runPass(this.resizeProgram, this.resizeTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.cropTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.resizeProgram, 'uSource'), 0)
+        })
+      }
+      this.resizeDirty = false
+      this.enhanceDirty = true
+      this.botanSeedDirty = true
+      // Fired here (post-resize), not in the cropDirty block above — Export's
+      // "Original" resolution mode means "the resize module's output," not
+      // the raw crop, so cropSize downstream (ExportPanel etc.) needs to
+      // reflect resizeTarget's dimensions.
+      this.onCropSizeChange?.({ width: this.resizeTarget.width, height: this.resizeTarget.height })
+    }
+    if (!this.resizeTarget) return
+
     if (this.enhanceDirty) {
-      const { width, height } = this.cropTarget
-      this.enhanceTarget = this.runEnhance(this.cropTarget, width, height)
+      const { width, height } = this.resizeTarget
+      this.enhanceTarget = this.runEnhance(this.resizeTarget, width, height)
       this.enhanceDirty = false
       this.lineArtDirty = true
     }
@@ -894,13 +1740,28 @@ export class Pipeline {
     if (this.lineArtDirty) {
       if (this.lineArtActive) {
         const { width, height } = this.enhanceTarget
-        this.lineArtOutputTarget = this.renderLineArt(this.enhanceTarget, width, height)
+        if (this.dualPaneEnabled) {
+          // Shared raw algorithm output (Botan JFA etc. — the expensive
+          // part) computed once, then resolved against each pane's own
+          // displayMode — see computeLineArtRaw/resolveLineArtDisplay.
+          const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
+          this.lineArtOutputTarget = this.resolveLineArtDisplay(
+            this.enhanceTarget, rawTarget, this.dualPaneModes[0], width, height, false,
+          )
+          this.lineArtOutputTargetB = this.resolveLineArtDisplay(
+            this.enhanceTarget, rawTarget, this.dualPaneModes[1], width, height, true,
+          )
+        } else {
+          this.lineArtOutputTarget = this.renderLineArt(this.enhanceTarget, width, height)
+          this.lineArtOutputTargetB = null
+        }
         this.lineArtDirty = false
       } else {
         // Frozen: cheap passthrough to the live (auto-updating) enhanceTarget
         // reference instead of the expensive algorithm chain. lineArtDirty is
         // deliberately left true so reactivating forces one fresh recompute.
         this.lineArtOutputTarget = this.enhanceTarget
+        this.lineArtOutputTargetB = this.dualPaneEnabled ? this.enhanceTarget : null
       }
       this.colorDirty = true
     }
@@ -908,82 +1769,99 @@ export class Pipeline {
 
     if (this.colorDirty) {
       const { width, height } = this.lineArtOutputTarget
-
-      // Light + Color sub-tabs' basic correction runs first — before Invert/
-      // Curve/HSL below — so a photo's exposure/white-balance correction
-      // applies to the source, not to a creative grade already stacked on
-      // top of it. See lightColorCorrect.frag.ts.
-      this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
-      this.runPass(this.lightColorProgram, this.lightColorTarget, width, height, () => {
-        gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, this.lineArtOutputTarget!.texture)
-        gl.uniform1i(gl.getUniformLocation(this.lightColorProgram, 'uSource'), 0)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTemperature'), this.colorAdjust.temperature)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTint'), this.colorAdjust.tint)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uExposure'), this.light.exposure)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uContrast'), this.light.contrast)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uHighlights'), this.light.highlights)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uShadows'), this.light.shadows)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uWhites'), this.light.whites)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBlacks'), this.light.blacks)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBrilliance'), this.light.brilliance)
-        gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
-      })
-
-      this.colorTarget = this.ensureTarget(this.colorTarget, width, height)
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorTarget.framebuffer)
-      gl.viewport(0, 0, width, height)
-      gl.useProgram(this.colorProgram)
-      bindFullscreenQuadAttribs(gl, this.colorProgram, this.quadBuffer)
-
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, this.lightColorTarget.texture)
-      gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uSource'), 0)
-
-      gl.activeTexture(gl.TEXTURE1)
-      gl.bindTexture(gl.TEXTURE_2D, this.lutTexture)
-      gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uLut'), 1)
-
-      const bandShifts = new Float32Array(8 * 3)
-      HUE_BAND_SWATCHES.forEach((swatch, i) => {
-        const shift = this.hslByBand[swatch.key]
-        bandShifts[i * 3] = shift.hue
-        bandShifts[i * 3 + 1] = shift.saturation
-        bandShifts[i * 3 + 2] = shift.lightness
-      })
-      gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uBandShift'), bandShifts)
-
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uHue'), this.hslByBand.master.hue)
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uSaturation'), this.hslByBand.master.saturation)
-      gl.uniform1f(gl.getUniformLocation(this.colorProgram, 'uLightness'), this.hslByBand.master.lightness)
-
-      gl.uniform3fv(gl.getUniformLocation(this.colorProgram, 'uInvertMask'), [
-        this.invert.rgb || this.invert.r ? 1 : 0,
-        this.invert.rgb || this.invert.g ? 1 : 0,
-        this.invert.rgb || this.invert.b ? 1 : 0,
-      ])
-      drawFullscreenQuad(gl)
-
+      this.runColorChain(this.lineArtOutputTarget, width, height, false)
+      if (this.dualPaneEnabled && this.lineArtOutputTargetB) {
+        const { width: widthB, height: heightB } = this.lineArtOutputTargetB
+        this.runColorChain(this.lineArtOutputTargetB, widthB, heightB, true)
+      }
       this.colorDirty = false
     }
     if (!this.colorTarget) return
 
     // Present: cheap blit of the native-res result onto the on-screen
-    // canvas at display resolution — Export uses the full-res colorTarget
-    // directly, not this downsampled view (see readFinalPixels). In
-    // 'original' preview mode, blits cropTarget instead — post-crop but
-    // before Enhancement/Line Art/Color, since this A/B toggle is meant to
-    // compare "before any line-processing/color work" against the final
-    // result, not audit the crop itself. cropTarget is guaranteed non-null
-    // here (checked earlier in render(), before colorTarget can exist).
-    const previewTarget = this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
+    // canvas — Export uses the full-res colorTarget directly, not this
+    // downsampled/upsampled view (see readFinalPixels). In 'original'
+    // preview mode, blits cropTarget instead — post-crop but before
+    // Enhancement/Line Art/Color, since this A/B toggle is meant to compare
+    // "before any line-processing/color work" against the final result, not
+    // audit the crop itself. cropTarget is guaranteed non-null here (checked
+    // earlier in render(), before colorTarget can exist).
+    //
+    // Sizing is contain-fit + never-enlarge against the CSS box
+    // (canvas.clientWidth/Height), not "stretch to fill it": the backing
+    // store (and the canvas's own inline style.width/height, since the box
+    // is centered via a flex wrapper in PreviewViewport.tsx rather than
+    // width:100%/height:100% — see that file) is sized from whichever
+    // texture(s) are actually being shown (natural size), scaled down only
+    // as far as needed to fit the box, never up past 1:1. This is what
+    // decouples the Resize module's working resolution and Dual Pane's
+    // doubled width from the viewport's CSS box size.
     const dpr = window.devicePixelRatio || 1
-    const displayWidth = Math.round(this.canvas.clientWidth * dpr)
-    const displayHeight = Math.round(this.canvas.clientHeight * dpr)
-    if (this.canvas.width !== displayWidth || this.canvas.height !== displayHeight) {
-      this.canvas.width = displayWidth
-      this.canvas.height = displayHeight
+
+    if (this.dualPaneEnabled && this.colorTargetB) {
+      // Dual Pane: mirror labPipeline.ts's splitMode — blit each pane into
+      // its own half of the canvas via gl.viewport. Bypasses previewMode
+      // entirely (always shows the two colorTarget/colorTargetB results,
+      // never cropTarget's "original" A/B view) — that toggle only applies
+      // to the deselected fullscreen preview, which Dual Pane (a Line Art
+      // tab-only, desktop-only feature) never coexists with in the UI.
+      const naturalWidth = this.colorTarget.width * 2
+      const naturalHeight = this.colorTarget.height
+      const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)
+      const scale = Math.min(1, boxWidth / naturalWidth, boxHeight / naturalHeight)
+      const renderWidth = Math.max(1, Math.round(naturalWidth * scale))
+      const renderHeight = Math.max(1, Math.round(naturalHeight * scale))
+      const backingWidth = Math.round(renderWidth * dpr)
+      const backingHeight = Math.round(renderHeight * dpr)
+
+      if (this.canvas.width !== backingWidth || this.canvas.height !== backingHeight) {
+        this.canvas.width = backingWidth
+        this.canvas.height = backingHeight
+      }
+      const styleWidth = `${renderWidth}px`
+      const styleHeight = `${renderHeight}px`
+      if (this.canvas.style.width !== styleWidth || this.canvas.style.height !== styleHeight) {
+        this.canvas.style.width = styleWidth
+        this.canvas.style.height = styleHeight
+      }
+
+      const paneWidth = Math.round(backingWidth / 2)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.useProgram(this.blitProgram)
+      bindFullscreenQuadAttribs(gl, this.blitProgram, this.quadBuffer)
+      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
+
+      gl.viewport(0, 0, paneWidth, backingHeight)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.colorTarget.texture)
+      drawFullscreenQuad(gl)
+
+      gl.viewport(paneWidth, 0, backingWidth - paneWidth, backingHeight)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.colorTargetB.texture)
+      drawFullscreenQuad(gl)
+      return
+    }
+
+    const previewTarget = this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
+    const naturalWidth = previewTarget.width
+    const naturalHeight = previewTarget.height
+    const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)
+    const scale = Math.min(1, boxWidth / naturalWidth, boxHeight / naturalHeight)
+    const renderWidth = Math.max(1, Math.round(naturalWidth * scale))
+    const renderHeight = Math.max(1, Math.round(naturalHeight * scale))
+    const backingWidth = Math.round(renderWidth * dpr)
+    const backingHeight = Math.round(renderHeight * dpr)
+
+    if (this.canvas.width !== backingWidth || this.canvas.height !== backingHeight) {
+      this.canvas.width = backingWidth
+      this.canvas.height = backingHeight
+    }
+    const styleWidth = `${renderWidth}px`
+    const styleHeight = `${renderHeight}px`
+    if (this.canvas.style.width !== styleWidth || this.canvas.style.height !== styleHeight) {
+      this.canvas.style.width = styleWidth
+      this.canvas.style.height = styleHeight
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -1001,15 +1879,23 @@ export class Pipeline {
    * Only called on the Export button click, never per-frame — readPixels
    * is a GPU-CPU sync stall. Returns raw bottom-up (OpenGL row order)
    * RGBA bytes; the caller flips rows when building an ImageData.
+   *
+   * While Dual Pane is active, reads from whichever of colorTarget/colorTargetB
+   * dualPanePriorityIndex() resolves to (composite > overlay > original) instead of always
+   * pane A — see that method's doc comment.
    */
   readFinalPixels(): { data: Uint8ClampedArray; width: number; height: number } | null {
     // Setters now go through scheduleRender (rAF-coalesced) rather than
     // rendering synchronously — force one final synchronous pass here so a
     // pending-but-not-yet-fired frame can never leak a stale readback.
     this.render()
-    if (!this.colorTarget) return null
+    const source =
+      this.dualPaneEnabled && this.colorTargetB
+        ? (this.dualPanePriorityIndex() === 1 ? this.colorTargetB : this.colorTarget)
+        : this.colorTarget
+    if (!source) return null
     const gl = this.gl
-    const { width, height, framebuffer } = this.colorTarget
+    const { width, height, framebuffer } = source
     const buffer = new Uint8ClampedArray(width * height * 4)
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
@@ -1022,11 +1908,17 @@ export class Pipeline {
     if (this.sourceTexture) this.gl.deleteTexture(this.sourceTexture)
     if (this.sourceBitmap) this.sourceBitmap.close()
     for (const target of [
-      this.cropTarget, this.smoothTarget, this.sharpenBlurHTarget, this.sharpenBlurVTarget, this.sharpenTarget,
-      this.enhanceTarget, this.correctedTarget, this.denoisedTarget, this.maskTarget, this.growHTarget,
+      this.cropTarget, this.resizeTarget, this.smoothTarget, this.sharpenBlurHTarget, this.sharpenBlurVTarget, this.sharpenTarget,
+      this.enhanceTarget, this.correctedTarget, this.toneExposureTarget, this.denoisedTarget, this.maskTarget, this.growHTarget,
       this.growVTarget, this.erodeHTarget, this.erodeVTarget, this.gateTarget, this.seedTargetA,
       this.seedTargetB, this.distanceMaskTarget, this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
       this.tintTarget, this.lineArtBlendTarget, this.lineArtOverlayPreviewTarget, this.colorTarget,
+      this.lineArtBlendTargetB, this.lineArtOverlayPreviewTargetB, this.colorTargetB,
+      this.rampTarget, this.gumiBoostTarget, this.gumiMaskTarget, this.gumiMaxHTarget, this.gumiMaxVTarget,
+      this.gumiSeedTargetA, this.gumiSeedTargetB, this.gumiBlobTarget, this.gumiBleedTarget, this.gradientMapTarget,
+      this.highPassTarget, this.laplacianTarget, this.laplacianSharpenTarget, this.hiThreshTarget,
+      this.toneRemapTarget, this.responsiveColorTarget, this.responsiveWhiteExtractTarget,
+      this.responsiveBlackExtractTarget, this.responsiveGrowWhiteTarget, this.responsiveGrowBlackTarget,
     ]) {
       if (target) disposeTargetTexture(this.gl, target)
     }
@@ -1036,7 +1928,10 @@ export class Pipeline {
       this.minFilterProgram, this.erosionProgram, this.erosionGateProgram, this.distanceSeedProgram,
       this.jfaStepProgram, this.distanceToEdgeProgram, this.findEdgesProgram, this.boxBlurProgram,
       this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.compositeProgram, this.tintMaskProgram,
-      this.colorProgram, this.blitProgram,
+      this.colorProgram, this.blitProgram, this.resizeProgram, this.plateauRampProgram, this.softThresholdProgram,
+      this.fillMaskProgram, this.blobMaskProgram, this.gradientMapProgram, this.highPassDiffProgram,
+      this.laplacianProgram, this.toneRemapProgram, this.responsiveEdgeColorProgram, this.inkColorMaskProgram,
+      this.inkColorRecombineProgram,
     ]) {
       this.gl.deleteProgram(program)
     }

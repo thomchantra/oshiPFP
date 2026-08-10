@@ -9,6 +9,13 @@ interface PreviewViewportProps {
   squareSize?: number
   /** Explicit contain-fit pixel size for 'original' mode, preserving the source image's fixed native aspect ratio regardless of how much space the current tab's chrome leaves the wrapper (App.tsx computes this from sourceSize, not the wrapper's own aspect). Unused in 'square' mode. */
   originalSize?: { width: number; height: number }
+  /** Dual Pane override (oshiPFP v0.3) — bypasses squareSize/originalSize's single-image aspect
+   * lock entirely and fills the wrapper's full available box instead. Dual Pane shows two flush
+   * panes side by side (double-wide content), which needs the actual available area to contain-fit
+   * against, not a box shaped for one image — see pipeline.ts's final blit for the contain-fit math
+   * this box feeds. Background also switches to the page background (not the white-50 card color)
+   * so any left-over letterboxing reads as open space rather than a visible narrower card. */
+  fillWrapper?: boolean
   circle: boolean
   interactive: boolean
   /** Rendered absolutely inset within this component's own shaped box (not the outer centering wrapper) — e.g. BlankState, so it matches the square's actual bounds instead of stretching to fill leftover flex space. */
@@ -33,6 +40,7 @@ export default function PreviewViewport({
   cropMode,
   squareSize,
   originalSize,
+  fillWrapper,
   circle,
   interactive,
   overlay,
@@ -49,20 +57,24 @@ export default function PreviewViewport({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      className="preview-viewport"
+      className={`preview-viewport${fillWrapper ? ' preview-viewport-fill' : ''}`}
       style={{
-        width: isSquare ? (squareSize ?? '100%') : (originalSize?.width ?? '100%'),
-        height: isSquare ? squareSize : originalSize?.height,
-        flex: isSquare || originalSize ? '0 0 auto' : '1 1 auto',
-        borderRadius: isSquare && circle ? '50%' : undefined,
+        width: fillWrapper ? '100%' : isSquare ? (squareSize ?? '100%') : (originalSize?.width ?? '100%'),
+        height: fillWrapper ? '100%' : isSquare ? squareSize : originalSize?.height,
+        flex: fillWrapper ? '1 1 auto' : isSquare || originalSize ? '0 0 auto' : '1 1 auto',
+        borderRadius: !fillWrapper && isSquare && circle ? '50%' : undefined,
         touchAction: interactive ? 'none' : 'auto',
         cursor: interactive ? 'grab' : 'default',
       }}
     >
-      {/* Absolutely positioned rather than width/height:100% — canvas is a replaced
-          element whose intrinsic (backing-store) aspect ratio can otherwise leak
-          into percentage-height resolution and override the flex-grown box size. */}
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
+      {/* pipeline.ts's render() now owns the canvas's own CSS width/height imperatively
+          (contain-fit, never-enlarge against this wrapper's box — see its final blit
+          section), so this wrapper only centers whatever size the canvas ends up being;
+          it must NOT set width/height:100% on the canvas itself, or React's style
+          reconciliation would stomp the imperative values back on every re-render. */}
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <canvas ref={canvasRef} style={{ display: 'block' }} />
+      </div>
       {overlay && <div style={{ position: 'absolute', inset: 0 }}>{overlay}</div>}
     </div>
   )

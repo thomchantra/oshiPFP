@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pipeline, type CropRect } from './pipeline'
-import type { ColorAdjustParams, EnhanceParams, HslByBand, InvertParams, LightParams, LineArtParams } from '../types'
+import type { ColorAdjustParams, EnhanceParams, HslByBand, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 
 export function usePipeline() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -64,6 +64,10 @@ export function usePipeline() {
     pipelineRef.current?.setEnhanceParams(params)
   }, [])
 
+  const setResizeParams = useCallback((params: ResizeParams) => {
+    pipelineRef.current?.setResizeParams(params)
+  }, [])
+
   const setLineArtParams = useCallback((params: LineArtParams) => {
     pipelineRef.current?.setLineArtParams(params)
   }, [])
@@ -74,6 +78,10 @@ export function usePipeline() {
 
   const setPreviewMode = useCallback((mode: 'original' | 'result') => {
     pipelineRef.current?.setPreviewMode(mode)
+  }, [])
+
+  const setDualPane = useCallback((enabled: boolean, modes: [LineArtDisplayMode, LineArtDisplayMode]) => {
+    pipelineRef.current?.setDualPane(enabled, modes)
   }, [])
 
   const readFinalPixels = useCallback(() => {
@@ -94,9 +102,11 @@ export function usePipeline() {
     setLight,
     setColorAdjust,
     setEnhanceParams,
+    setResizeParams,
     setLineArtParams,
     setLineArtActive,
     setPreviewMode,
+    setDualPane,
     readFinalPixels,
   }
 }

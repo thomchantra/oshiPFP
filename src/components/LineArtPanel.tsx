@@ -5,8 +5,9 @@ import GradientSlider, { type SliderCurve } from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
 import Modal from './Modal'
 import Icon from './Icon'
+import RampMeter from './RampMeter'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
-import type { BlendMode, ColorMode, LineArtMode, LineArtParams } from '../types'
+import type { BlendMode, ColorMode, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
 
 interface LineArtPanelProps {
   params: LineArtParams
@@ -15,14 +16,17 @@ interface LineArtPanelProps {
   onReset: () => void
 }
 
-const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' }[] = [
+const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'flower1' }[] = [
   { mode: 'pathB', label: 'Botan', icon: 'rose' },
   { mode: 'pathC', label: 'Chie', icon: 'spark' },
   { mode: 'pathD', label: 'Daiya', icon: 'diamond' },
   { mode: 'pathF', label: 'Fumiko', icon: 'spiral' },
+  { mode: 'pathG', label: 'Gumi', icon: 'bear' },
+  { mode: 'pathH', label: 'Hinata', icon: 'sun' },
+  { mode: 'pathI', label: 'Inori', icon: 'flower1' },
 ]
 
-const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral'; blurb: string }[] = [
+const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'flower1'; blurb: string }[] = [
   {
     mode: 'pathB',
     label: 'Botan',
@@ -55,9 +59,39 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
     blurb:
       "Detects edges directly instead of thickening existing lines. Produces crisp, naturally colorful edge-lines with real graduated transparency along each line.",
   },
+  {
+    mode: 'pathG',
+    label: 'Gumi',
+    technique: 'Luminance Band + Closing',
+    icon: 'bear',
+    blurb:
+      "Isolates a luminance band, boosts its contrast, then closes and cleans up the result — rejects wide fill interiors so only thin strokes survive (or, in Color Bleed mode, a soft stylized ink falloff instead).",
+  },
+  {
+    mode: 'pathH',
+    label: 'Hinata',
+    technique: 'High Pass (Blur Diff)',
+    icon: 'sun',
+    blurb:
+      "Subtracts a blurred version of the image from itself to isolate high-frequency detail — reads as a soft, painterly edge response rather than a hard line.",
+  },
+  {
+    mode: 'pathI',
+    label: 'Inori',
+    technique: 'Laplacian',
+    icon: 'flower1',
+    blurb:
+      "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass, with optional pre-blur/post-sharpen to tune noise vs. definition.",
+  },
 ]
 
-const IDENTITY_TONE_SHAPING = { exposure: 0, contrast: 0, blackClip: 0, whiteClip: 1 }
+const IDENTITY_TONE_SHAPING: ToneShapingParams = {
+  exposure: 0,
+  contrast: 0,
+  mode: 'clip',
+  clipMode: { blackClip: 0, whiteClip: 1 },
+  pinchMode: { position: 0.5, expand: 0.3, feathering: 0.5 },
+}
 const IDENTITY_DENOISE = { intensity: 0, threshold: 0 }
 const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, blue: 0, purple: 0, magenta: 0 }
 
@@ -66,6 +100,21 @@ const RADIUS_CURVE: SliderCurve = { breakpoint: 3, breakpointPosition: 0.4 }
 
 function isModified<T extends Record<string, number>>(current: T, identity: T): boolean {
   return (Object.keys(identity) as (keyof T)[]).some((k) => current[k] !== identity[k])
+}
+
+/** Tone Lift's identity check spans both ramp modes' values at once (not just the active one) —
+ * A/B retention means drift in either should still show the modified dot. */
+function isToneShapingModified(current: ToneShapingParams, identity: ToneShapingParams): boolean {
+  return (
+    current.exposure !== identity.exposure ||
+    current.contrast !== identity.contrast ||
+    current.mode !== identity.mode ||
+    current.clipMode.blackClip !== identity.clipMode.blackClip ||
+    current.clipMode.whiteClip !== identity.clipMode.whiteClip ||
+    current.pinchMode.position !== identity.pinchMode.position ||
+    current.pinchMode.expand !== identity.pinchMode.expand ||
+    current.pinchMode.feathering !== identity.pinchMode.feathering
+  )
 }
 
 function rgbToHex([r, g, b]: [number, number, number]): string {
@@ -177,7 +226,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             className={`pill-toggle-btn font-button-label${toneLiftExpanded ? ' active' : ''}`}
             onClick={() => setToneLiftExpanded((v) => !v)}
           >
-            <ModifiedDot show={isModified(params.toneShaping, IDENTITY_TONE_SHAPING)} />
+            <ModifiedDot show={isToneShapingModified(params.toneShaping, IDENTITY_TONE_SHAPING)} />
             Tone Lift
           </button>
           <button
@@ -200,6 +249,13 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
 
         {toneLiftExpanded && (
           <div className="lineart-slidergroup-stack">
+            <div className="rampmeter-desktop-only">
+              <RampMeter kind="tone" toneShaping={params.toneShaping} />
+            </div>
+            <RampModeRow
+              mode={params.toneShaping.mode}
+              onChange={(m) => set('toneShaping', { ...params.toneShaping, mode: m })}
+            />
             <GradientSlider
               label="Exposure" value={params.toneShaping.exposure} min={-3} max={3} defaultValue={0}
               onChange={(v) => set('toneShaping', { ...params.toneShaping, exposure: v })}
@@ -208,21 +264,44 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
               label="Contrast" value={params.toneShaping.contrast} min={-0.8} max={2} defaultValue={0}
               onChange={(v) => set('toneShaping', { ...params.toneShaping, contrast: v })}
             />
-            <GradientSlider
-              label="Black Clip" value={params.toneShaping.blackClip} min={0} max={0.5} defaultValue={0}
-              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-              onChange={(v) => set('toneShaping', { ...params.toneShaping, blackClip: v })}
-            />
-            <GradientSlider
-              label="White Clip" value={params.toneShaping.whiteClip} min={0.5} max={1} defaultValue={1}
-              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-              onChange={(v) => set('toneShaping', { ...params.toneShaping, whiteClip: v })}
-            />
+            {params.toneShaping.mode === 'clip' ? (
+              <>
+                <GradientSlider
+                  label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={0.5} defaultValue={0}
+                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: v } })}
+                />
+                <GradientSlider
+                  label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0.5} max={1} defaultValue={1}
+                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: v } })}
+                />
+              </>
+            ) : (
+              <>
+                <GradientSlider
+                  label="Pinch Position" value={params.toneShaping.pinchMode.position} min={0} max={1} defaultValue={0.5}
+                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, position: v } })}
+                />
+                <GradientSlider
+                  label="Pinch Size" value={params.toneShaping.pinchMode.expand} min={0} max={1} defaultValue={0.3}
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, expand: v } })}
+                />
+                <GradientSlider
+                  label="Pinch Feathering" value={params.toneShaping.pinchMode.feathering} min={0} max={1} defaultValue={0.5}
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, feathering: v } })}
+                />
+              </>
+            )}
           </div>
         )}
         {toneLiftExpanded && colorLiftExpanded && <div className="lineart-divider" />}
         {colorLiftExpanded && (
           <div className="lineart-slidergroup-stack">
+            <div className="rampmeter-desktop-only">
+              <RampMeter kind="color" colorLift={params.colorLift} />
+            </div>
             {COLOR_LIFT_SWATCHES.map((swatch) => (
               <GradientSlider
                 key={swatch.key}
@@ -343,8 +422,234 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             )}
           </>
         )}
+
+        {params.mode === 'pathG' && (
+          <>
+            {!params.gumiGradientMap && (
+              <>
+                <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => set('threshold', v)} />
+                <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={40} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+                <GradientSlider label="Contrast Boost" value={params.gumiContrastBoost} min={0} max={2} defaultValue={1} onChange={(v) => set('gumiContrastBoost', v)} />
+                <GradientSlider label="Blob Max DT (px)" value={params.blobMaxDt} min={1} max={20} defaultValue={8} onChange={(v) => set('blobMaxDt', v)} />
+              </>
+            )}
+            <div className="lineart-divider" />
+            <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Luminance Ramp (always on)</p>
+            <GradientSlider label="Floor" value={params.gumiRampFloor} min={0} max={1} defaultValue={0} onChange={(v) => set('gumiRampFloor', v)} />
+            <GradientSlider label="Inner Low" value={params.gumiRampInnerLow} min={0} max={1} defaultValue={0.3} onChange={(v) => set('gumiRampInnerLow', v)} />
+            <GradientSlider label="Inner High" value={params.gumiRampInnerHigh} min={0} max={1} defaultValue={0.7} onChange={(v) => set('gumiRampInnerHigh', v)} />
+            <GradientSlider label="Ceiling" value={params.gumiRampCeiling} min={0} max={1} defaultValue={1} onChange={(v) => set('gumiRampCeiling', v)} />
+            <GradientSlider label="Feather" value={params.gumiRampFeather} min={0} max={1} defaultValue={0} onChange={(v) => set('gumiRampFeather', v)} />
+
+            {!params.gumiGradientMap && (
+              <>
+                <div className="lineart-divider" />
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => set('gumiSoftDetection', !params.gumiSoftDetection)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      set('gumiSoftDetection', !params.gumiSoftDetection)
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Soft Detection</span>
+                  <ToggleSwitch on={params.gumiSoftDetection} label="Soft Detection" />
+                </div>
+                {params.gumiSoftDetection && (
+                  <GradientSlider label="Softness" value={params.gumiSoftness} min={0} max={0.3} defaultValue={0.1} onChange={(v) => set('gumiSoftness', v)} />
+                )}
+
+                <div className="lineart-divider" />
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onChange({ ...params, gumiColorBleed: !params.gumiColorBleed, gumiFillMode: params.gumiColorBleed ? params.gumiFillMode : false })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onChange({ ...params, gumiColorBleed: !params.gumiColorBleed, gumiFillMode: params.gumiColorBleed ? params.gumiFillMode : false })
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Bleed Style</span>
+                  <ToggleSwitch on={params.gumiColorBleed} label="Color Bleed Style" />
+                </div>
+                {params.gumiColorBleed && (
+                  <>
+                    <GradientSlider label="Bleed Feather (px)" value={params.gumiBleedFeather} min={0} max={10} defaultValue={1.5} onChange={(v) => set('gumiBleedFeather', v)} />
+                    <GradientSlider label="Gamma" value={params.blobContrast} min={0.2} max={5} defaultValue={1} onChange={(v) => set('blobContrast', v)} />
+                    <div
+                      className="lineart-toggle-row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => set('colorExpansion', !params.colorExpansion)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          set('colorExpansion', !params.colorExpansion)
+                        }
+                      }}
+                    >
+                      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Expansion</span>
+                      <ToggleSwitch on={params.colorExpansion} label="Color Expansion" />
+                    </div>
+                    {params.colorExpansion && (
+                      <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+                    )}
+                    {!params.colorExpansion && (
+                      <TintColorRow label="Line Color" tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
+                    )}
+                  </>
+                )}
+
+                <div className="lineart-divider" />
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onChange({ ...params, gumiFillMode: !params.gumiFillMode, gumiColorBleed: params.gumiFillMode ? params.gumiColorBleed : false })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onChange({ ...params, gumiFillMode: !params.gumiFillMode, gumiColorBleed: params.gumiFillMode ? params.gumiColorBleed : false })
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Fill Layer</span>
+                  <ToggleSwitch on={params.gumiFillMode} label="Fill Layer" />
+                </div>
+              </>
+            )}
+
+            <div className="lineart-divider" />
+            <div
+              className="lineart-toggle-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => set('gumiGradientMap', !params.gumiGradientMap)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  set('gumiGradientMap', !params.gumiGradientMap)
+                }
+              }}
+            >
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Gradient Map (crude prototype)</span>
+              <ToggleSwitch on={params.gumiGradientMap} label="Gradient Map" />
+            </div>
+            {params.gumiGradientMap && (
+              <>
+                <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
+                <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
+                <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
+              </>
+            )}
+          </>
+        )}
+
+        {params.mode === 'pathH' && (
+          <>
+            <GradientSlider label="Radius (px)" value={params.radius} min={0} max={40} defaultValue={1.5} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="High Pass Strength" value={params.highPassStrength} min={0} max={10} defaultValue={1} step={0.05} onChange={(v) => set('highPassStrength', v)} />
+
+            <div className="lineart-divider" />
+            <div
+              className="lineart-toggle-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => set('highPassResponsiveColor', !params.highPassResponsiveColor)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  set('highPassResponsiveColor', !params.highPassResponsiveColor)
+                }
+              }}
+            >
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Responsive Edge Color</span>
+              <ToggleSwitch on={params.highPassResponsiveColor} label="Responsive Edge Color" />
+            </div>
+            {params.highPassResponsiveColor && (
+              <>
+                <GradientSlider label="Crossover" value={params.responsiveCrossover} min={0} max={1} defaultValue={0.5} onChange={(v) => set('responsiveCrossover', v)} />
+                <GradientSlider label="Grow (texels)" value={params.responsiveGrow} min={0} max={20} defaultValue={0} onChange={(v) => set('responsiveGrow', v)} />
+                {params.responsiveGrow > 0 && (
+                  <GradientSlider label="Grow Bias" value={params.responsiveGrowBias} min={-1} max={1} defaultValue={0} onChange={(v) => set('responsiveGrowBias', v)} />
+                )}
+              </>
+            )}
+
+            {!params.highPassResponsiveColor && (
+              <>
+                <div className="lineart-divider" />
+                <HiTreatmentRow params={params} onChange={onChange} />
+              </>
+            )}
+          </>
+        )}
+
+        {params.mode === 'pathI' && (
+          <>
+            <GradientSlider label="Laplacian Strength" value={params.laplacianStrength} min={0.5} max={10} defaultValue={1} step={0.05} onChange={(v) => set('laplacianStrength', v)} />
+            <GradientSlider label="Pre-Blur (px)" value={params.laplacianPreBlur} min={0} max={10} defaultValue={0} step={0.1} onChange={(v) => set('laplacianPreBlur', v)} />
+            <GradientSlider label="Post-Sharpen Amount" value={params.laplacianSharpenAmount} min={0} max={3} defaultValue={0} step={0.05} onChange={(v) => set('laplacianSharpenAmount', v)} />
+            <GradientSlider label="Grow (texels)" value={params.laplacianGrow} min={0} max={20} defaultValue={0} onChange={(v) => set('laplacianGrow', v)} />
+
+            <div className="lineart-divider" />
+            <HiTreatmentRow params={params} onChange={onChange} />
+          </>
+        )}
       </div>
     </BottomSheet>
+  )
+}
+
+/** Hinata/Inori's shared "Output treatment" pill row — Raw / Binarize / Tone→Multiply / Tone→Screen. Ported from LabApp.tsx's showHiTreatment block; thresholdEnabled and hiToneTarget are mutually exclusive (only one drives the output at a time), matching production's flat-bag convention of setting both fields together on each click. */
+function HiTreatmentRow({ params, onChange }: { params: LineArtParams; onChange: (params: LineArtParams) => void }) {
+  const TREATMENTS: { id: 'raw' | 'binarize' | 'multiply' | 'screen'; label: string }[] = [
+    { id: 'raw', label: 'Raw' },
+    { id: 'binarize', label: 'Binarize' },
+    { id: 'multiply', label: 'Tone→Multiply' },
+    { id: 'screen', label: 'Tone→Screen' },
+  ]
+  const active: 'raw' | 'binarize' | 'multiply' | 'screen' = params.thresholdEnabled
+    ? 'binarize'
+    : params.hiToneTarget !== 'off'
+      ? params.hiToneTarget
+      : 'raw'
+  return (
+    <>
+      <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Output Treatment</p>
+      <div className="crop-bottomcontent" style={{ padding: 0 }}>
+        {TREATMENTS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`pill-toggle-btn font-button-label${active === t.id ? ' active' : ''}`}
+            onClick={() => {
+              if (t.id === 'raw') onChange({ ...params, thresholdEnabled: false, hiToneTarget: 'off' })
+              else if (t.id === 'binarize') onChange({ ...params, thresholdEnabled: true, hiToneTarget: 'off' })
+              else onChange({ ...params, thresholdEnabled: false, hiToneTarget: t.id })
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {params.thresholdEnabled && (
+        <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => onChange({ ...params, threshold: v })} />
+      )}
+      {params.hiToneTarget !== 'off' && (
+        <>
+          <GradientSlider label="Tone Gain" value={params.hiToneGain} min={0.2} max={4} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneGain: v })} />
+          <GradientSlider label="Tone Contrast" value={params.hiToneContrast} min={0.2} max={5} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneContrast: v })} />
+        </>
+      )}
+    </>
   )
 }
 
@@ -368,6 +673,33 @@ function BlendModeRow({ mode, options, onChange }: { mode: BlendMode; options: B
             onClick={() => onChange(opt)}
           >
             {BLEND_MODE_LABELS[opt]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const RAMP_MODE_LABELS: Record<ToneShapingParams['mode'], string> = { clip: 'Clip', pinch: 'Pinch' }
+
+/** Standard 2-point clip vs. Pinch Mode's 4-point plateau isolation — see docs/oshiPFP-v0.3-spec.md.
+ * Switching modes retains both sets of slider values (App.tsx-owned state), only the active
+ * interpretation/ramp changes. */
+function RampModeRow({ mode, onChange }: { mode: ToneShapingParams['mode']; onChange: (m: ToneShapingParams['mode']) => void }) {
+  return (
+    <div className="field-row">
+      <div className="field-row-label">
+        <span className="font-param-label">Ramp Mode</span>
+      </div>
+      <div className="crop-bottomcontent" style={{ padding: 0 }}>
+        {(['clip', 'pinch'] as const).map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            className={`pill-toggle-btn font-button-label${mode === opt ? ' active' : ''}`}
+            onClick={() => onChange(opt)}
+          >
+            {RAMP_MODE_LABELS[opt]}
           </button>
         ))}
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import Icon from './Icon'
 import { downloadBlob, exportImage, type FinalPixels } from '../export/exportPica'
+import { computeTarget, clampDimension } from '../export/computeTarget'
 import type { ExportFormat, ResampleMode, ResolutionMode } from '../types'
 
 interface ExportPanelProps {
@@ -34,31 +35,6 @@ const FORMAT_OPTIONS: { value: ExportFormat; label: string; ext: string }[] = [
   { value: 'jpegHd', label: 'JPG HD', ext: 'jpg' },
   { value: 'jpegTiny', label: 'JPG Tiny', ext: 'jpg' },
 ]
-
-/**
- * 'original' = crop's own pixel size, no resize. A numeric preset resizes
- * to that longest-side px, aspect-preserving — not a forced square —
- * since Crop tab's 'original' aspect mode can hand this a non-square
- * source; stretching/cropping it into a square target would silently
- * distort it. 'custom' is a direct passthrough of the user's own fields
- * (can distort if they want it to — that's the point of "custom").
- */
-function computeTarget(
-  mode: ResolutionMode,
-  cropSize: { width: number; height: number } | null,
-  custom: { width: number; height: number },
-): { width: number; height: number } | null {
-  if (!cropSize) return null
-  if (mode === 'original') return cropSize
-  if (mode === 'custom') return custom
-  return cropSize.width >= cropSize.height
-    ? { width: mode, height: Math.max(1, Math.round((mode * cropSize.height) / cropSize.width)) }
-    : { width: Math.max(1, Math.round((mode * cropSize.width) / cropSize.height)), height: mode }
-}
-
-function clampDimension(n: number): number {
-  return Math.max(1, Math.min(8192, Math.round(n)))
-}
 
 export default function ExportPanel({
   cropSize, readFinalPixels,

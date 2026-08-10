@@ -1,3 +1,4 @@
+import bear from '../assets/icons/bear.svg'
 import circle from '../assets/icons/circle.svg'
 import circlefill from '../assets/icons/circlefill.svg'
 import color from '../assets/icons/color.svg'
@@ -5,6 +6,8 @@ import crop from '../assets/icons/crop.svg'
 import curve from '../assets/icons/curve.svg'
 import diamond from '../assets/icons/diamond.svg'
 import download from '../assets/icons/download.svg'
+import dualpane from '../assets/icons/dualpane.svg'
+import flower1 from '../assets/icons/flower1.svg'
 import lineart from '../assets/icons/lineart.svg'
 import moon from '../assets/icons/moon.svg'
 import palette from '../assets/icons/palette.svg'
@@ -18,6 +21,7 @@ import sun from '../assets/icons/sun.svg'
 import upload from '../assets/icons/upload.svg'
 
 const ICONS = {
+  bear,
   circle,
   circlefill,
   color,
@@ -25,6 +29,8 @@ const ICONS = {
   curve,
   diamond,
   download,
+  dualpane,
+  flower1,
   lineart,
   moon,
   palette,
