@@ -43,6 +43,14 @@ export function useLabPipeline() {
     pipelineRef.current?.setViewMode(viewMode)
   }, [])
 
+  const setSplitMode = useCallback((splitMode: boolean) => {
+    pipelineRef.current?.setSplitMode(splitMode)
+  }, [])
+
+  const pickPixel = useCallback((nativeX: number, nativeY: number) => {
+    return pipelineRef.current?.pickPixel(nativeX, nativeY) ?? null
+  }, [])
+
   const runPathE = useCallback(async (radius: number, threshold: number) => {
     if (!pipelineRef.current) return null
     try {
@@ -55,5 +63,5 @@ export function useLabPipeline() {
     }
   }, [])
 
-  return { canvasRef, error, sourceSize, loadFile, setMode, setParams, setViewMode, runPathE }
+  return { canvasRef, error, sourceSize, loadFile, setMode, setParams, setViewMode, setSplitMode, pickPixel, runPathE }
 }

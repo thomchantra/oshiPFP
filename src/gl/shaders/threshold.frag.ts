@@ -4,18 +4,32 @@
  * black/white image with black lines, matching what a grayscale-erosion
  * ("Minimum" filter) grow pass expects: picking the darkest neighbor
  * naturally spreads (thickens) the black line regions.
+ *
+ * uInvert (default 0, unset at every existing call site — v1/Path D rely
+ * on WebGL's implicit 0 for an unset int uniform) flips that polarity.
+ * Added for Path G/Gumi: its detection input isn't "luminance below
+ * cutoff" but "band-weight above cutoff" (from plateauRamp.frag.ts — a
+ * high band-weight means the pixel IS the selected line/stroke), so
+ * without inversion the naive comparison would emit 1 for a detected
+ * stroke and 0 for background — backwards from every other mask-mode
+ * path in this codebase (0 = line/ink, 1 = fill/background). uInvert=1
+ * flips it back at the source, so everything downstream (grow direction,
+ * distance-transform seeding) can stay in the one shared convention
+ * instead of needing per-path polarity patches later in the chain.
  */
 export const thresholdFrag = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uSource;
 uniform float uThreshold;
+uniform int uInvert;
 out vec4 outColor;
 
 void main() {
   vec3 c = texture(uSource, vUV).rgb;
   float luminance = dot(c, vec3(0.2126, 0.7152, 0.0722));
   float mask = luminance < uThreshold ? 0.0 : 1.0;
+  if (uInvert == 1) mask = 1.0 - mask;
   outColor = vec4(mask, mask, mask, 1.0);
 }
 `
