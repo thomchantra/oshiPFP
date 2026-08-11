@@ -42,6 +42,12 @@
  * attempts (an unsharp-mask ring, then a radius-tightening trick) were
  * both dropped after real-art review; see
  * changelog/oshipfp-v0.2-lineart-saga.md for why.
+ *
+ * uInvert (v0.3 Service Update) — only meaningful for Botan's `fillType === 'image'` case, where
+ * shape and color stay fused in this one pass (see pipeline.ts's pathB branch) instead of running
+ * through the shared maskFillColor.frag.ts final pass every other fillType/algorithm uses; this
+ * flips the resolved alpha itself (t instead of 1-t) so "background instead of near-line glow"
+ * means the same thing here as maskFillColor.frag.ts's uInvert does everywhere else.
  */
 export const distanceToEdgeFrag = `#version 300 es
 precision highp float;
@@ -55,6 +61,7 @@ uniform float uGamma;
 uniform float uColorContrast;
 uniform int uColorExpansion;
 uniform vec3 uLineColor;
+uniform int uInvert;
 out vec4 outColor;
 
 void main() {
@@ -71,6 +78,7 @@ void main() {
   } else {
     seedColor = uLineColor;
   }
-  outColor = vec4(seedColor, 1.0 - t);
+  float alpha = uInvert == 1 ? t : 1.0 - t;
+  outColor = vec4(seedColor, alpha);
 }
 `

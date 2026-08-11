@@ -5,9 +5,11 @@
  * ("Minimum" filter) grow pass expects: picking the darkest neighbor
  * naturally spreads (thickens) the black line regions.
  *
- * uInvert (default 0, unset at every existing call site — v1/Path D rely
- * on WebGL's implicit 0 for an unset int uniform) flips that polarity.
- * Added for Path G/Gumi: its detection input isn't "luminance below
+ * uInvert flips that polarity — explicitly set 0 at every Botan/Path D call site (a real,
+ * user-visible bug fixed in the v0.3 saga: those two used to rely on WebGL's implicit 0 for an
+ * unset int uniform, which silently broke the moment Gumi — the only other consumer of this
+ * shared program — rendered first and left its own uInvert=1 on the program object). Added for
+ * Path G/Gumi: its detection input isn't "luminance below
  * cutoff" but "band-weight above cutoff" (from plateauRamp.frag.ts — a
  * high band-weight means the pixel IS the selected line/stroke), so
  * without inversion the naive comparison would emit 1 for a detected

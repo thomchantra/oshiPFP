@@ -19,17 +19,17 @@ import { boxBlurFrag } from './shaders/boxBlur.frag'
 import { mixBlendFrag } from './shaders/mixBlend.frag'
 import { unsharpMaskFrag } from './shaders/unsharpMask.frag'
 import { saturationAdjustFrag } from './shaders/saturationAdjust.frag'
+import { edgeFillColorFrag } from './shaders/edgeFillColor.frag'
 import { colorLiftFrag } from './shaders/colorLift.frag'
 import { alphaOverWhiteFrag } from './shaders/alphaOverWhite.frag'
 import { compositeFrag } from './shaders/composite.frag'
-import { tintMaskFrag } from './shaders/tintMask.frag'
 import { blitFrag } from './shaders/blit.frag'
 import { resizeFrag } from './shaders/resize.frag'
 import { plateauRampFrag } from './shaders/plateauRamp.frag'
 import { softThresholdFrag } from './shaders/softThreshold.frag'
 import { fillMaskFrag } from './shaders/fillMask.frag'
 import { blobMaskFrag } from './shaders/blobMask.frag'
-import { lineFillColorFrag } from './shaders/lineFillColor.frag'
+import { maskFillColorFrag } from './shaders/maskFillColor.frag'
 import { gradientMapFrag } from './shaders/gradientMap.frag'
 import { highPassDiffFrag } from './shaders/highPassDiff.frag'
 import { laplacianFrag } from './shaders/laplacian.frag'
@@ -85,15 +85,22 @@ const IDENTITY_LINE_ART: LineArtParams = {
   radius: 1,
   hardness: 1,
   blobContrast: 1,
-  colorExpansion: true,
+  colorExpansion: false,
   colorContrast: 1,
   gateThreshold: 0,
   sensitivity: 3,
   saturation: 0.5,
-  colorMode: 'tint',
+  findEdge: false,
   tintColor: [1, 0.475, 0.886], // #FF79E2
   vividDeadzone: 0.15,
   vividBoost: 1,
+  fillType: 'image',
+  fillInvert: false,
+  gradientShadow: [0, 0, 0],
+  gradientMid: [0.5, 0.5, 0.5],
+  gradientHighlight: [1, 1, 1],
+  gradientPivot: 0,
+  gradientDuoTone: false,
   gumiContrastBoost: 1,
   blobMaxDt: 8,
   gumiOverdrive: 0,
@@ -126,11 +133,21 @@ const IDENTITY_LINE_ART: LineArtParams = {
   hiToneTarget: 'off',
   hiToneGain: 1,
   hiToneContrast: 1,
+  hiRawDarkenLighten: 0,
+  hiThresholdContrast: 1,
+  hiRawContrast: 1,
+  hiToneSaturation: 1,
+  hiToneHueInvert: false,
+  hiThresholdInvert: false,
   highPassStrength: 1,
   highPassResponsiveColor: false,
   responsiveCrossover: 0.5,
   responsiveGrow: 0,
   responsiveGrowBias: 0,
+  edgeInkOverDarkFillType: 'solid',
+  edgeInkOverDarkSolidColor: [1, 1, 1],
+  edgeInkOverLightFillType: 'solid',
+  edgeInkOverLightSolidColor: [0, 0, 0],
   laplacianStrength: 1,
   laplacianPreBlur: 0,
   laplacianSharpenAmount: 0,
@@ -190,10 +207,10 @@ export class Pipeline {
   private mixBlendProgram: WebGLProgram
   private unsharpMaskProgram: WebGLProgram
   private saturationAdjustProgram: WebGLProgram
+  private edgeFillColorProgram: WebGLProgram
   private colorLiftProgram: WebGLProgram
   private alphaOverWhiteProgram: WebGLProgram
   private compositeProgram: WebGLProgram
-  private tintMaskProgram: WebGLProgram
   private lightColorProgram: WebGLProgram
   private colorProgram: WebGLProgram
   private blitProgram: WebGLProgram
@@ -202,7 +219,7 @@ export class Pipeline {
   private softThresholdProgram: WebGLProgram
   private fillMaskProgram: WebGLProgram
   private blobMaskProgram: WebGLProgram
-  private lineFillColorProgram: WebGLProgram
+  private maskFillColorProgram: WebGLProgram
   private gradientMapProgram: WebGLProgram
   private highPassDiffProgram: WebGLProgram
   private laplacianProgram: WebGLProgram
@@ -235,6 +252,17 @@ export class Pipeline {
   private seedTargetA: TargetTexture | null = null
   private seedTargetB: TargetTexture | null = null
   private distanceMaskTarget: TargetTexture | null = null
+  /** v0.3 Service Update — Botan's solid/gradient fillType final-color pass output (see pipeline.ts's
+   * pathB branch); unused (outputTarget stays distanceMaskTarget directly) when fillType is 'image'. */
+  private botanFillColorTarget: TargetTexture | null = null
+  /** v0.3 Service Update — Chie's fillType final-color pass output (Chie had no color mechanism
+   * before this phase, so this is always used, unlike Botan's equivalent above). */
+  private chieFillColorTarget: TargetTexture | null = null
+  /** v0.3 Service Update follow-up — scratch targets for `runSoftHardness`'s box-blur+mix, shared
+   * across Daiya/Fumiko (never both active in the same render() pass, so one set suffices). */
+  private softHardnessHTarget: TargetTexture | null = null
+  private softHardnessVTarget: TargetTexture | null = null
+  private softHardnessMixTarget: TargetTexture | null = null
   private edgeMapTarget: TargetTexture | null = null
   private blurHTarget: TargetTexture | null = null
   private blurVTarget: TargetTexture | null = null
@@ -286,6 +314,12 @@ export class Pipeline {
   private laplacianTarget: TargetTexture | null = null
   private laplacianSharpenTarget: TargetTexture | null = null
   private hiThreshTarget: TargetTexture | null = null
+  /** Hinata Tuning Saga Phase 1 — Darken/Lighten's output when Emboss/Raw is the active treatment. */
+  private hiRawTreatedTarget: TargetTexture | null = null
+  /** Hinata Tuning Saga Phase 2 — Edge's per-polarity fill-color resolution output. */
+  private edgeFillColorTarget: TargetTexture | null = null
+  /** Hinata Tuning Saga Phase 2 — Erode's shared-fill-type-mechanism color resolution output. */
+  private hiThreshFillColorTarget: TargetTexture | null = null
   private toneRemapTarget: TargetTexture | null = null
   private responsiveColorTarget: TargetTexture | null = null
   private responsiveWhiteExtractTarget: TargetTexture | null = null
@@ -366,10 +400,10 @@ export class Pipeline {
     this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
+    this.edgeFillColorProgram = createProgram(this.gl, passthroughVert, edgeFillColorFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
-    this.tintMaskProgram = createProgram(this.gl, passthroughVert, tintMaskFrag)
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
@@ -378,7 +412,7 @@ export class Pipeline {
     this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
     this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
     this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
-    this.lineFillColorProgram = createProgram(this.gl, passthroughVert, lineFillColorFrag)
+    this.maskFillColorProgram = createProgram(this.gl, passthroughVert, maskFillColorFrag)
     this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
     this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
     this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
@@ -422,6 +456,7 @@ export class Pipeline {
       'cropTarget', 'resizeTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
       'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget', 'growHTarget', 'growVTarget',
       'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
+      'botanFillColorTarget', 'chieFillColorTarget', 'softHardnessHTarget', 'softHardnessVTarget', 'softHardnessMixTarget',
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
       'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
@@ -429,7 +464,7 @@ export class Pipeline {
       'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
       'gumiSeedTargetA',
       'gumiSeedTargetB', 'gumiBlobTarget', 'gumiBleedTarget', 'gradientMapTarget', 'highPassTarget',
-      'laplacianTarget', 'laplacianSharpenTarget', 'hiThreshTarget', 'toneRemapTarget', 'responsiveColorTarget',
+      'laplacianTarget', 'laplacianSharpenTarget', 'hiThreshTarget', 'hiRawTreatedTarget', 'edgeFillColorTarget', 'hiThreshFillColorTarget', 'toneRemapTarget', 'responsiveColorTarget',
       'responsiveWhiteExtractTarget', 'responsiveBlackExtractTarget', 'responsiveGrowWhiteTarget',
       'responsiveGrowBlackTarget',
     ] as const) {
@@ -455,10 +490,10 @@ export class Pipeline {
     this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
+    this.edgeFillColorProgram = createProgram(this.gl, passthroughVert, edgeFillColorFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
-    this.tintMaskProgram = createProgram(this.gl, passthroughVert, tintMaskFrag)
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
     this.blitProgram = createProgram(this.gl, passthroughVert, blitFrag)
@@ -467,7 +502,7 @@ export class Pipeline {
     this.softThresholdProgram = createProgram(this.gl, passthroughVert, softThresholdFrag)
     this.fillMaskProgram = createProgram(this.gl, passthroughVert, fillMaskFrag)
     this.blobMaskProgram = createProgram(this.gl, passthroughVert, blobMaskFrag)
-    this.lineFillColorProgram = createProgram(this.gl, passthroughVert, lineFillColorFrag)
+    this.maskFillColorProgram = createProgram(this.gl, passthroughVert, maskFillColorFrag)
     this.gradientMapProgram = createProgram(this.gl, passthroughVert, gradientMapFrag)
     this.highPassDiffProgram = createProgram(this.gl, passthroughVert, highPassDiffFrag)
     this.laplacianProgram = createProgram(this.gl, passthroughVert, laplacianFrag)
@@ -745,6 +780,39 @@ export class Pipeline {
       gl.uniform2fv(gl.getUniformLocation(this.erosionProgram, 'uDirection'), [0, 1])
     })
     return this.erodeVTarget
+  }
+
+  /** Sets every value uniform (not the uOriginal/uDetectionSource samplers — those vary by texture
+   * unit per call site) fillTypeColor.frag.ts declares, on whichever shared program currently binds
+   * it (fillMaskProgram/maskFillColorProgram/gradientMapProgram). Exists specifically so no call
+   * site can forget one — see docs/oshiPFP-v0.3-tuningspecs.md's Gumi footnote on shared GL
+   * programs silently leaking uniform state across call sites in the same render() pass. */
+  private setFillTypeColorUniforms(
+    program: WebGLProgram,
+    opts: {
+      fillType: 'image' | 'solid' | 'gradient'
+      solidColor: [number, number, number]
+      shadowColor: [number, number, number]
+      midColor: [number, number, number]
+      highlightColor: [number, number, number]
+      pivot: number
+      duoTone: boolean
+      vividBoost: number
+      vividDeadzone: number
+      colorContrast: number
+    },
+  ): void {
+    const gl = this.gl
+    gl.uniform1i(gl.getUniformLocation(program, 'uFillType'), FILL_TYPE_INT[opts.fillType])
+    gl.uniform3fv(gl.getUniformLocation(program, 'uSolidColor'), opts.solidColor)
+    gl.uniform3fv(gl.getUniformLocation(program, 'uShadowColor'), opts.shadowColor)
+    gl.uniform3fv(gl.getUniformLocation(program, 'uMidColor'), opts.midColor)
+    gl.uniform3fv(gl.getUniformLocation(program, 'uHighlightColor'), opts.highlightColor)
+    gl.uniform1f(gl.getUniformLocation(program, 'uGradientPivot'), opts.pivot)
+    gl.uniform1i(gl.getUniformLocation(program, 'uGradientDuoTone'), opts.duoTone ? 1 : 0)
+    gl.uniform1f(gl.getUniformLocation(program, 'uVividBoost'), opts.vividBoost)
+    gl.uniform1f(gl.getUniformLocation(program, 'uVividDeadzone'), opts.vividDeadzone)
+    gl.uniform1f(gl.getUniformLocation(program, 'uColorContrast'), opts.colorContrast)
   }
 
   private runDenoise(base: TargetTexture, width: number, height: number): TargetTexture {
@@ -1025,7 +1093,69 @@ export class Pipeline {
     return current
   }
 
-  /** Composite-readiness remap for Path H/I's raw output — see toneRemap.frag.ts. */
+  /**
+   * Shared "Hardness" soft-only post-process (v0.3 Service Update follow-up) — Daiya/Fumiko's
+   * own answer to Botan/Chie's `hardnessToFeather` (which reshapes those algorithms' own
+   * antialiasing width during shape generation, not applicable here since Daiya's threshold+
+   * grow mask and Fumiko's post-erosion edge map don't have an equivalent feather parameter to
+   * tune). Reuses Gumi Line mode's exact box-blur+mixBlend recipe (`runGumiLinePostProcess`
+   * above), but remapped so the shared `hardness` field's existing default (0, matching Botan/
+   * Chie's own slider default) is the neutral no-op point instead of Gumi's own `1`: negative
+   * values blur (mixed in at `-hardness` strength, same `HARDNESS_MAX_BLUR` radius ceiling as
+   * Gumi); non-negative values are a no-op, since these algorithms' masks are already at their
+   * hardest/crispest by construction (a plain threshold or erosion cutoff) — there's no
+   * "sharpen beyond default" state to move into, the same reason Botan/Chie's own hardness=1
+   * (hardest) endpoint does nothing further. Deliberately blur-only, not the full bidirectional
+   * sharpen+blur originally asked for — true sharpening would need a different primitive
+   * (morphological erode, per the Gumi footnote) and was skipped this phase as not easily
+   * doable within the existing per-algorithm mask shapes.
+   */
+  private readonly HARDNESS_MAX_BLUR = 6
+
+  private runSoftHardness(source: TargetTexture, hardness: number, width: number, height: number): TargetTexture {
+    if (hardness >= 0) return source
+    const gl = this.gl
+    const texelSize: [number, number] = [1 / width, 1 / height]
+    const blurRadius = this.HARDNESS_MAX_BLUR * -hardness
+    this.softHardnessHTarget = this.ensureTarget(this.softHardnessHTarget, width, height)
+    this.softHardnessVTarget = this.ensureTarget(this.softHardnessVTarget, width, height)
+    this.runPass(this.boxBlurProgram, this.softHardnessHTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+      gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+      gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+      gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [1, 0])
+    })
+    this.runPass(this.boxBlurProgram, this.softHardnessVTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.softHardnessHTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.boxBlurProgram, 'uSource'), 0)
+      gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uTexelSize'), texelSize)
+      gl.uniform1f(gl.getUniformLocation(this.boxBlurProgram, 'uRadius'), blurRadius)
+      gl.uniform2fv(gl.getUniformLocation(this.boxBlurProgram, 'uDirection'), [0, 1])
+    })
+    this.softHardnessMixTarget = this.ensureTarget(this.softHardnessMixTarget, width, height)
+    this.runPass(this.mixBlendProgram, this.softHardnessMixTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uBase'), 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, this.softHardnessVTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uOverlay'), 1)
+      gl.uniform1f(gl.getUniformLocation(this.mixBlendProgram, 'uOpacity'), -hardness)
+    })
+    return this.softHardnessMixTarget
+  }
+
+  /**
+   * Composite-readiness remap for Path H/I's raw output — see toneRemap.frag.ts. Followed by a
+   * saturation/hue-invert polish pass (Hinata Tuning Saga Phase 2) — both highPassDiff.frag.ts
+   * and toneRemap.frag.ts operate per-channel rather than on collapsed luminance, so real
+   * (often undesired) chromatic fringing survives into this output; hiToneSaturation/
+   * hiToneHueInvert give a way to tame or flip it. Neutral at defaults (saturation=1,
+   * hueInvert=false), so Inori (which shares this method, own UI not yet scoped) is unaffected.
+   */
   private runToneRemap(source: TargetTexture, target: 'multiply' | 'screen', p: LineArtParams, width: number, height: number): TargetTexture {
     const gl = this.gl
     this.toneRemapTarget = this.ensureTarget(this.toneRemapTarget, width, height)
@@ -1037,7 +1167,68 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.toneRemapProgram, 'uGain'), p.hiToneGain)
       gl.uniform1f(gl.getUniformLocation(this.toneRemapProgram, 'uContrast'), p.hiToneContrast)
     })
-    return this.toneRemapTarget
+    this.saturationTarget = this.ensureTarget(this.saturationTarget, width, height)
+    this.runPass(this.saturationAdjustProgram, this.saturationTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.toneRemapTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.saturationAdjustProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.saturationAdjustProgram, 'uSaturation'), p.hiToneSaturation)
+      gl.uniform1i(gl.getUniformLocation(this.saturationAdjustProgram, 'uHueInvert'), p.hiToneHueInvert ? 1 : 0)
+    })
+    return this.saturationTarget
+  }
+
+  /**
+   * Hinata Tuning Saga Phase 1/2 — "Darken / Lighten" + "Contrast" macros for the Emboss/Raw
+   * treatment. Reuses colorCorrectProgram (no new shader): `hiRawDarkenLighten` (-1..1) maps to
+   * `uBlackClip`/`uWhiteClip` only — negative crushes everything below `-hiRawDarkenLighten` to
+   * black, positive crushes everything above `1-hiRawDarkenLighten` to white. `hiRawContrast`
+   * (Phase 2, default 1) drives the same pivoted-at-0.5 curve every other "contrast" slider in
+   * this codebase uses. At defaults (0, 1) this is `blackClip=0, whiteClip=1, contrast=1`, the
+   * exact identity, so Emboss's default output is byte-identical to before either feature existed.
+   */
+  private runHiRawDarkenLighten(source: TargetTexture, p: LineArtParams, width: number, height: number): TargetTexture {
+    if (p.hiRawDarkenLighten === 0 && p.hiRawContrast === 1) return source
+    const gl = this.gl
+    const s = Math.max(-1, Math.min(1, p.hiRawDarkenLighten))
+    const blackClip = s < 0 ? -s : 0
+    const whiteClip = s > 0 ? 1 - s : 1
+    this.hiRawTreatedTarget = this.ensureTarget(this.hiRawTreatedTarget, width, height)
+    this.runPass(this.colorCorrectProgram, this.hiRawTreatedTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), p.hiRawContrast)
+      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), blackClip)
+      gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), whiteClip)
+    })
+    return this.hiRawTreatedTarget
+  }
+
+  /**
+   * Hinata Tuning Saga Phase 2 — Edge's independent per-polarity fill-type resolution, a
+   * separate final pass after responsiveEdgeColor.frag.ts's (and Grow's, if active) shape
+   * decision — see edgeFillColor.frag.ts's doc comment for why no upstream shader changes were
+   * needed. Defaults (dark-side solid white, light-side solid black) exactly reproduce the old
+   * hardcoded behavior.
+   */
+  private runEdgeFillColor(source: TargetTexture, p: LineArtParams, base: TargetTexture, width: number, height: number): TargetTexture {
+    const gl = this.gl
+    this.edgeFillColorTarget = this.ensureTarget(this.edgeFillColorTarget, width, height)
+    this.runPass(this.edgeFillColorProgram, this.edgeFillColorTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, source.texture)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uInk'), 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, base.texture)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uOriginal'), 1)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkFillType'), p.edgeInkOverDarkFillType === 'solid' ? 1 : 0)
+      gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkSolidColor'), p.edgeInkOverDarkSolidColor)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightFillType'), p.edgeInkOverLightFillType === 'solid' ? 1 : 0)
+      gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightSolidColor'), p.edgeInkOverLightSolidColor)
+    })
+    return this.edgeFillColorTarget
   }
 
   /**
@@ -1118,6 +1309,11 @@ export class Pipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+        // Shared-uniform-leak fix: thresholdProgram is also used by Gumi, which explicitly sets
+        // uInvert=1 on its own call site — without setting it here too, Botan silently inherited
+        // whatever the last renderer (e.g. Gumi) left behind. See threshold.frag.ts's own doc
+        // comment, which predicted exactly this fragility.
+        gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
       })
       this.runPass(this.distanceSeedProgram, this.seedTargetA, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -1145,7 +1341,14 @@ export class Pipeline {
       this.botanSeedDirty = false
       }
 
+      // v0.3 Service Update: fillType === 'image' keeps shape+color fused in this one pass exactly
+      // as before (uColorExpansion driven by fillType instead of the old colorExpansion field,
+      // uInvert added directly here) — the continuous distance-transform falloff and Color
+      // Contrast's in-place recolor were never separable into a discrete post step without
+      // changing Botan's default look. 'solid'/'gradient' only need the plain alpha (color
+      // discarded, resolved by the shared maskFillColorProgram pass below instead).
       const feather = hardnessToFeather(p.hardness, HARDNESS_BASE_MAX_FEATHER.pathB!)
+      const botanFused = p.fillType === 'image'
       this.runPass(this.distanceToEdgeProgram, this.distanceMaskTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, this.botanSeedTarget!.texture)
@@ -1158,10 +1361,42 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), feather)
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
-        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), p.colorExpansion ? 1 : 0)
+        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), botanFused ? 1 : 0)
         gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
+        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), botanFused && p.fillInvert ? 1 : 0)
       })
-      outputTarget = this.distanceMaskTarget
+
+      if (botanFused) {
+        outputTarget = this.distanceMaskTarget
+      } else {
+        this.botanFillColorTarget = this.ensureTarget(this.botanFillColorTarget, width, height)
+        this.runPass(this.maskFillColorProgram, this.botanFillColorTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.distanceMaskTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 1)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+          this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+            fillType: p.fillType,
+            solidColor: p.tintColor,
+            shadowColor: p.gradientShadow,
+            midColor: p.gradientMid,
+            highlightColor: p.gradientHighlight,
+            pivot: p.gradientPivot,
+            duoTone: p.gradientDuoTone,
+            vividBoost: 1,
+            vividDeadzone: 1,
+            colorContrast: 1,
+          })
+        })
+        outputTarget = this.botanFillColorTarget
+      }
     } else if (p.mode === 'pathC') {
       const eroded = this.runErosion(base, p.radius, width, height)
       this.gateTarget = this.ensureTarget(this.gateTarget, width, height)
@@ -1176,7 +1411,37 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.erosionGateProgram, 'uGateThreshold'), p.gateThreshold)
         gl.uniform1f(gl.getUniformLocation(this.erosionGateProgram, 'uFeather'), feather)
       })
-      outputTarget = this.gateTarget
+
+      // v0.3 Service Update: Chie had no color mechanism before this phase — erosionGateProgram's
+      // own output color (.rgb = eroded) is discarded here, only its .a (gate strength, already an
+      // ink-weight-direct convention like distanceToEdge's — see maskFillColor.frag.ts's uMaskChannel) is used.
+      this.chieFillColorTarget = this.ensureTarget(this.chieFillColorTarget, width, height)
+      this.runPass(this.maskFillColorProgram, this.chieFillColorTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.gateTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 1)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+        gl.activeTexture(gl.TEXTURE2)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+        this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+          fillType: p.fillType,
+          solidColor: p.tintColor,
+          shadowColor: p.gradientShadow,
+          midColor: p.gradientMid,
+          highlightColor: p.gradientHighlight,
+          pivot: p.gradientPivot,
+          duoTone: p.gradientDuoTone,
+          vividBoost: 1,
+          vividDeadzone: 1,
+          colorContrast: p.colorContrast,
+        })
+      })
+      outputTarget = this.chieFillColorTarget
     } else if (p.mode === 'pathD') {
       this.maskTarget = this.ensureTarget(this.maskTarget, width, height)
       this.growHTarget = this.ensureTarget(this.growHTarget, width, height)
@@ -1187,6 +1452,11 @@ export class Pipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+        // Shared-uniform-leak fix: thresholdProgram is also used by Botan/Gumi, and Gumi
+        // explicitly sets uInvert=1 on its own call site — without setting it here too, Daiya
+        // silently inherited whatever the last renderer left behind. See threshold.frag.ts's own
+        // doc comment, which predicted exactly this fragility.
+        gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
       })
 
       const intRadius = Math.max(0, Math.round(p.radius * (Math.SQRT2 - 1)))
@@ -1207,18 +1477,35 @@ export class Pipeline {
         src = dst
       })
 
+      src = this.runSoftHardness(src, p.hardness, width, height)
+
+      // v0.3 Service Update: 'image' fillType absorbs the old colorMode==='vivid' HSV-saturation
+      // boost as an always-applied (neutral at vividBoost=1) modulation instead of a separate mode.
       this.tintTarget = this.ensureTarget(this.tintTarget, width, height)
-      this.runPass(this.tintMaskProgram, this.tintTarget, width, height, () => {
+      this.runPass(this.maskFillColorProgram, this.tintTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, src.texture)
-        gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uSource'), 0)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 0)
         gl.activeTexture(gl.TEXTURE1)
         gl.bindTexture(gl.TEXTURE_2D, base.texture)
-        gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uOriginal'), 1)
-        gl.uniform3fv(gl.getUniformLocation(this.tintMaskProgram, 'uTintColor'), p.tintColor)
-        gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uVividMode'), p.colorMode === 'vivid' ? 1 : 0)
-        gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uDeadzone'), p.vividDeadzone)
-        gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uVividBoost'), p.vividBoost)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+        gl.activeTexture(gl.TEXTURE2)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+        this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+          fillType: p.fillType,
+          solidColor: p.tintColor,
+          shadowColor: p.gradientShadow,
+          midColor: p.gradientMid,
+          highlightColor: p.gradientHighlight,
+          pivot: p.gradientPivot,
+          duoTone: p.gradientDuoTone,
+          vividBoost: p.vividBoost,
+          vividDeadzone: p.vividDeadzone,
+          colorContrast: p.colorContrast,
+        })
       })
       outputTarget = this.tintTarget
     } else if (p.mode === 'pathF') {
@@ -1252,20 +1539,34 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.findEdgesProgram, 'uGamma'), p.blobContrast)
       })
       outputTarget = this.runErosion(this.edgeMapTarget, p.radius, width, height)
+      outputTarget = this.runSoftHardness(outputTarget, p.hardness, width, height)
 
-      if (p.colorMode !== 'findEdge') {
+      if (!p.findEdge) {
         this.tintTarget = this.ensureTarget(this.tintTarget, width, height)
-        this.runPass(this.tintMaskProgram, this.tintTarget, width, height, () => {
+        this.runPass(this.maskFillColorProgram, this.tintTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, outputTarget.texture)
-          gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uSource'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 0)
           gl.activeTexture(gl.TEXTURE1)
           gl.bindTexture(gl.TEXTURE_2D, base.texture)
-          gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uOriginal'), 1)
-          gl.uniform3fv(gl.getUniformLocation(this.tintMaskProgram, 'uTintColor'), p.tintColor)
-          gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uVividMode'), p.colorMode === 'vivid' ? 1 : 0)
-          gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uDeadzone'), p.vividDeadzone)
-          gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uVividBoost'), p.vividBoost)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+          this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+            fillType: p.fillType,
+            solidColor: p.tintColor,
+            shadowColor: p.gradientShadow,
+            midColor: p.gradientMid,
+            highlightColor: p.gradientHighlight,
+            pivot: p.gradientPivot,
+            duoTone: p.gradientDuoTone,
+            vividBoost: p.vividBoost,
+            vividDeadzone: p.vividDeadzone,
+            colorContrast: p.colorContrast,
+          })
         })
         outputTarget = this.tintTarget
       }
@@ -1280,6 +1581,7 @@ export class Pipeline {
         gl.bindTexture(gl.TEXTURE_2D, outputTarget.texture)
         gl.uniform1i(gl.getUniformLocation(this.saturationAdjustProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.saturationAdjustProgram, 'uSaturation'), p.saturation)
+        gl.uniform1i(gl.getUniformLocation(this.saturationAdjustProgram, 'uHueInvert'), 0)
       })
       outputTarget = this.saturationTarget
     } else if (p.mode === 'pathG' && p.gumiGradientMap) {
@@ -1297,6 +1599,11 @@ export class Pipeline {
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), p.gumiGradientShadow)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), p.gumiGradientMid)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+        // No Pivot/Duo Tone UI for Gumi's own Gradient Map yet (v0.3 Service Update added these
+        // to Botan/Chie/Daiya/Fumiko's shared fillType selector only) — neutral values keep this
+        // call's output identical to before.
+        gl.uniform1f(gl.getUniformLocation(this.gradientMapProgram, 'uGradientPivot'), 0)
+        gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uGradientDuoTone'), 0)
       })
       outputTarget = this.gradientMapTarget
     } else if (p.mode === 'pathG') {
@@ -1431,6 +1738,9 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), p.colorExpansion ? 1 : 0)
           gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
+          // Color Bleed predates uInvert (added for Botan's v0.3 Service Update port) — explicit 0
+          // keeps this call's output unchanged rather than leaking Botan's fillInvert state.
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), 0)
         })
         outputTarget = this.gumiBleedTarget
       } else if (p.gumiFillMode) {
@@ -1464,6 +1774,12 @@ export class Pipeline {
           gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uShadowColor'), p.gumiGradientShadow)
           gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uMidColor'), p.gumiGradientMid)
           gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+          // No Pivot/Duo Tone/Vivid/Color Contrast UI for Gumi Fill mode yet — neutral values.
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uGradientPivot'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uGradientDuoTone'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividBoost'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividDeadzone'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorContrast'), 1)
         })
         outputTarget = this.gumiBlobTarget
       } else {
@@ -1482,30 +1798,41 @@ export class Pipeline {
         })
         const linePostProcessed = this.runGumiLinePostProcess(this.gumiBlobTarget, p, width, height)
         this.gumiLineColorTarget = this.ensureTarget(this.gumiLineColorTarget, width, height)
-        this.runPass(this.lineFillColorProgram, this.gumiLineColorTarget, width, height, () => {
+        this.runPass(this.maskFillColorProgram, this.gumiLineColorTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, linePostProcessed.texture)
-          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uMask'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 0)
           gl.activeTexture(gl.TEXTURE1)
           gl.bindTexture(gl.TEXTURE_2D, base.texture)
-          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uOriginal'), 1)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
           gl.activeTexture(gl.TEXTURE2)
           gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
-          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uDetectionSource'), 2)
-          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uFillType'), FILL_TYPE_INT[p.gumiLineFillType])
-          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uSolidColor'), p.gumiLineSolidColor)
-          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uShadowColor'), p.gumiGradientShadow)
-          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uMidColor'), p.gumiGradientMid)
-          gl.uniform3fv(gl.getUniformLocation(this.lineFillColorProgram, 'uHighlightColor'), p.gumiGradientHighlight)
-          gl.uniform1i(gl.getUniformLocation(this.lineFillColorProgram, 'uInvert'), p.gumiLineInvert ? 1 : 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uFillType'), FILL_TYPE_INT[p.gumiLineFillType])
+          gl.uniform3fv(gl.getUniformLocation(this.maskFillColorProgram, 'uSolidColor'), p.gumiLineSolidColor)
+          gl.uniform3fv(gl.getUniformLocation(this.maskFillColorProgram, 'uShadowColor'), p.gumiGradientShadow)
+          gl.uniform3fv(gl.getUniformLocation(this.maskFillColorProgram, 'uMidColor'), p.gumiGradientMid)
+          gl.uniform3fv(gl.getUniformLocation(this.maskFillColorProgram, 'uHighlightColor'), p.gumiGradientHighlight)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.gumiLineInvert ? 1 : 0)
+          // No Pivot/Duo Tone/Vivid/Color Contrast UI for Gumi Line mode yet — neutral values.
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uGradientPivot'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uGradientDuoTone'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividDeadzone'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorContrast'), 1)
         })
         outputTarget = this.gumiLineColorTarget
       }
-    } else if (p.mode === 'pathH' && p.highPassResponsiveColor) {
+    } else if ((p.mode === 'pathH' || p.mode === 'pathI') && p.highPassResponsiveColor) {
       // Dual-polarity litmus test (see responsiveEdgeColor.frag.ts):
       // locally-adaptive ink color instead of one fixed polarity. Reuses
       // the same box-blur pass Fumiko's normal chain computes — the
       // blurred local-neighborhood average IS the "rough area check".
+      // Tsukiko Tuning Saga: this branch is entirely self-contained (its own blur+zero-crossing
+      // diff computed directly from detectionSource) and never touches Path H's highPassDiff or
+      // Path I's laplacian machinery, so widening the guard to include pathI needed no other
+      // changes — Edge isn't "High Pass edge" or "Laplacian edge," it's its own recipe.
       this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
       this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
       const blurRadius = p.radius
@@ -1595,7 +1922,7 @@ export class Pipeline {
         })
       }
 
-      outputTarget = this.responsiveColorTarget
+      outputTarget = this.runEdgeFillColor(this.responsiveColorTarget, p, base, width, height)
     } else if (p.mode === 'pathH' || p.mode === 'pathI') {
       let hiRaw: TargetTexture
       if (p.mode === 'pathH') {
@@ -1728,21 +2055,60 @@ export class Pipeline {
       }
 
       // Output treatment, shared by H/I: tone-remap takes priority when
-      // active, then hard-threshold binarize, then the untouched raw diff.
+      // active, then soft-threshold binarize/erode, then the (optionally
+      // darkened/lightened) raw diff.
       if (p.hiToneTarget !== 'off') {
         outputTarget = this.runToneRemap(hiRaw, p.hiToneTarget, p, width, height)
       } else if (p.thresholdEnabled) {
+        // Hinata Tuning Saga Phase 1: softThresholdProgram replaces the old hard thresholdProgram
+        // so Erode's Contrast slider (hiThresholdContrast) can widen the cutoff into a smoothstep
+        // band — at hiThresholdContrast=1 (default) uSoftness=0, identical to the old hard cutoff.
+        // Phase 2: uInvert is now driven by the explicit hiThresholdInvert toggle (erosion
+        // direction) instead of the old implicit blendMode==='screen' coupling.
         this.hiThreshTarget = this.ensureTarget(this.hiThreshTarget, width, height)
-        this.runPass(this.thresholdProgram, this.hiThreshTarget, width, height, () => {
+        const hiSoftness = 0.12 * (1 - Math.max(0, Math.min(1, p.hiThresholdContrast)))
+        this.runPass(this.softThresholdProgram, this.hiThreshTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, hiRaw.texture)
-          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
-          gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
-          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.blendMode === 'screen' ? 1 : 0)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uSource'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uThreshold'), p.threshold)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uSoftness'), hiSoftness)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uInvert'), p.hiThresholdInvert ? 1 : 0)
         })
-        outputTarget = this.hiThreshTarget
+        // Phase 2: route through the same shared fill-type mechanism Botan/Chie/Daiya/Fumiko use
+        // (Image/Solid/Gradient + Invert) instead of compositing the grayscale mask directly via
+        // blend mode — gives Erode a real alpha-based "fill image" mode and a configurable solid
+        // backdrop color, per user request. uMaskChannel=0 matches softThresholdProgram's
+        // 0=ink/1=background grayscale convention (same as every other threshold-derived mask).
+        this.hiThreshFillColorTarget = this.ensureTarget(this.hiThreshFillColorTarget, width, height)
+        this.runPass(this.maskFillColorProgram, this.hiThreshFillColorTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.hiThreshTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+          gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+          this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+            fillType: p.fillType,
+            solidColor: p.tintColor,
+            shadowColor: p.gradientShadow,
+            midColor: p.gradientMid,
+            highlightColor: p.gradientHighlight,
+            pivot: p.gradientPivot,
+            duoTone: p.gradientDuoTone,
+            vividBoost: 1,
+            vividDeadzone: 1,
+            colorContrast: 1,
+          })
+        })
+        outputTarget = this.hiThreshFillColorTarget
       } else {
-        outputTarget = hiRaw
+        outputTarget = this.runHiRawDarkenLighten(hiRaw, p, width, height)
       }
     }
 
@@ -1798,7 +2164,7 @@ export class Pipeline {
     // regression to a previously-validated look) — force Multiply for it
     // regardless of the user's blend mode selection; LineArtPanel.tsx hides
     // the other two options in the UI for this specific case to match.
-    const forcedMultiply = p.mode === 'pathF' && p.colorMode === 'findEdge'
+    const forcedMultiply = p.mode === 'pathF' && p.findEdge
     const blendModeInt = forcedMultiply ? BLEND_MODE_INT.multiply : BLEND_MODE_INT[p.blendMode]
 
     const isAlphaOverdrive = p.mode === 'pathF'
@@ -2237,7 +2603,9 @@ export class Pipeline {
       this.cropTarget, this.resizeTarget, this.smoothTarget, this.sharpenBlurHTarget, this.sharpenBlurVTarget, this.sharpenTarget,
       this.enhanceTarget, this.correctedTarget, this.toneExposureTarget, this.denoisedTarget, this.maskTarget, this.growHTarget,
       this.growVTarget, this.erodeHTarget, this.erodeVTarget, this.gateTarget, this.seedTargetA,
-      this.seedTargetB, this.distanceMaskTarget, this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
+      this.seedTargetB, this.distanceMaskTarget, this.botanFillColorTarget, this.chieFillColorTarget,
+      this.softHardnessHTarget, this.softHardnessVTarget, this.softHardnessMixTarget,
+      this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
       this.tintTarget, this.lineArtBlendTarget, this.lineArtOverlayPreviewTarget, this.colorTarget,
       this.lineArtBlendTargetB, this.lineArtOverlayPreviewTargetB, this.colorTargetB,
       this.rampTarget, this.gumiBoostTarget, this.gumiMaskTarget, this.gumiMaxHTarget, this.gumiMaxVTarget,
@@ -2245,7 +2613,8 @@ export class Pipeline {
       this.gumiOverdriveHTarget, this.gumiOverdriveVTarget,
       this.gumiHardnessHTarget, this.gumiHardnessVTarget, this.gumiHardnessMixTarget, this.gumiLineColorTarget,
       this.gumiSeedTargetA, this.gumiSeedTargetB, this.gumiBlobTarget, this.gumiBleedTarget, this.gradientMapTarget,
-      this.highPassTarget, this.laplacianTarget, this.laplacianSharpenTarget, this.hiThreshTarget,
+      this.highPassTarget, this.laplacianTarget, this.laplacianSharpenTarget, this.hiThreshTarget, this.hiRawTreatedTarget,
+      this.edgeFillColorTarget, this.hiThreshFillColorTarget,
       this.toneRemapTarget, this.responsiveColorTarget, this.responsiveWhiteExtractTarget,
       this.responsiveBlackExtractTarget, this.responsiveGrowWhiteTarget, this.responsiveGrowBlackTarget,
     ]) {
@@ -2257,11 +2626,11 @@ export class Pipeline {
       this.minFilterProgram, this.erosionProgram, this.erosionGateProgram, this.distanceSeedProgram,
       this.jfaStepProgram, this.distanceToEdgeProgram, this.findEdgesProgram, this.boxBlurProgram,
       this.mixBlendProgram,
-      this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.compositeProgram, this.tintMaskProgram,
+      this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.compositeProgram,
       this.colorProgram, this.blitProgram, this.resizeProgram, this.plateauRampProgram, this.softThresholdProgram,
-      this.fillMaskProgram, this.blobMaskProgram, this.lineFillColorProgram, this.gradientMapProgram, this.highPassDiffProgram,
+      this.fillMaskProgram, this.blobMaskProgram, this.maskFillColorProgram, this.gradientMapProgram, this.highPassDiffProgram,
       this.laplacianProgram, this.toneRemapProgram, this.responsiveEdgeColorProgram, this.inkColorMaskProgram,
-      this.inkColorRecombineProgram,
+      this.inkColorRecombineProgram, this.edgeFillColorProgram,
     ]) {
       this.gl.deleteProgram(program)
     }

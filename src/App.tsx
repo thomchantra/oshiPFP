@@ -90,15 +90,22 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   radius: 1,
   hardness: 1,
   blobContrast: 1,
-  colorExpansion: true,
+  colorExpansion: false,
   colorContrast: 1,
   gateThreshold: 0,
   sensitivity: 3,
   saturation: 0.5,
-  colorMode: 'tint',
+  findEdge: false,
   tintColor: [1, 0.475, 0.886],
   vividDeadzone: 0.15,
   vividBoost: 1,
+  fillType: 'image',
+  fillInvert: false,
+  gradientShadow: [0, 0, 0],
+  gradientMid: [0.5, 0.5, 0.5],
+  gradientHighlight: [1, 1, 1],
+  gradientPivot: 0,
+  gradientDuoTone: false,
   gumiContrastBoost: 1,
   blobMaxDt: 8,
   gumiOverdrive: 0,
@@ -131,11 +138,21 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   hiToneTarget: 'off',
   hiToneGain: 1,
   hiToneContrast: 1,
+  hiRawDarkenLighten: 0,
+  hiThresholdContrast: 1,
+  hiRawContrast: 1,
+  hiToneSaturation: 1,
+  hiToneHueInvert: false,
+  hiThresholdInvert: false,
   highPassStrength: 1,
   highPassResponsiveColor: false,
   responsiveCrossover: 0.5,
   responsiveGrow: 0,
   responsiveGrowBias: 0,
+  edgeInkOverDarkFillType: 'solid',
+  edgeInkOverDarkSolidColor: [1, 1, 1],
+  edgeInkOverLightFillType: 'solid',
+  edgeInkOverLightSolidColor: [0, 0, 0],
   laplacianStrength: 1,
   laplacianPreBlur: 0,
   laplacianSharpenAmount: 0,
@@ -315,14 +332,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dualPaneActive, dualPaneMode])
 
-  // Fumiko's "Find Edge" color mode only supports Multiply (see pipeline.ts's
-  // forcedMultiply) — LineArtPanel hides the other two pills for that combo,
-  // but if a user had Screen/Overlay selected on Tint/Vivid and switches
+  // Fumiko's "Find Edge" mode only supports Multiply (see pipeline.ts's
+  // forcedMultiply) — LineArtPanel hides the other blend options for that combo,
+  // but if a user had Screen/Overlay selected with Find Edge off and switches
   // straight into Find Edge, snap the cached param back to Multiply so it
   // doesn't silently keep a hidden, non-applied selection.
   useEffect(() => {
     const pathFParams = paramsByMode.pathF
-    if (pathFParams.colorMode === 'findEdge' && pathFParams.blendMode !== 'multiply') {
+    if (pathFParams.findEdge && pathFParams.blendMode !== 'multiply') {
       setParamsByMode((prev) => ({ ...prev, pathF: { ...prev.pathF, blendMode: 'multiply' } }))
     }
   }, [paramsByMode.pathF])

@@ -78,8 +78,10 @@ export type ExportDisplayMode = 'original' | 'composite' | 'overlay'
  * string union (App.tsx maps between the two). */
 export type DualPaneMode = 'original-composite' | 'composite-overlay' | 'original-overlay'
 
-/** Daiya is tint-or-vivid only (always recolors); Fumiko can also stay in its native colored-edge look. */
-export type ColorMode = 'findEdge' | 'tint' | 'vivid'
+/** v0.3 Service Update: 'image'/'solid'/'gradient' fill-type selector shared by Botan/Chie/Daiya/
+ * Fumiko (and Gumi's own gumiFillType/gumiLineFillType, kept separate since Gumi alone needs two
+ * simultaneous fill contexts) — see fillTypeColor.frag.ts. */
+export type FillType = 'image' | 'solid' | 'gradient'
 
 /** Standard 2-point black/white clip — the original Tone Lift ramp, still the default mode. */
 export interface ClipModeParams {
@@ -157,19 +159,52 @@ export interface LineArtParams {
   /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi (v0.3 tuning) reuses this same field with its own, unrelated meaning — see pipeline.ts's runGumiLinePostProcess: 1 (default) = untouched, 0 = final Line-mode mask box-blurred and mixed in at full strength (a soft/antialiased edge instead of a hard one). Each mode interprets its own shared fields independently, same convention `radius` etc. already follow. */
   hardness: number
   blobContrast: number
+  /** Gumi's Color Bleed feature only now (v0.3 Service Update) — reuses distanceToEdge.frag.ts's
+   * own image-vs-flat-tint branch independently of the shared `fillType` selector below. Botan no
+   * longer reads this field; its own `fillType === 'image'` drives the same `uColorExpansion`
+   * uniform at its call site instead (see pipeline.ts). Kept only for Gumi Color Bleed, which is
+   * untouched this phase. */
   colorExpansion: boolean
+  /** Botan's Image-subtab vivid slider (v0.3 Service Update) — a contrast curve applied to the
+   * nearest-line source color before it's used, only meaningful when `fillType === 'image'`.
+   * Also still used by Gumi's Color Bleed alongside `colorExpansion` above. */
   colorContrast: number
   gateThreshold: number
   sensitivity: number
   saturation: number
-  colorMode: ColorMode
+  /** Fumiko-only (v0.3 Service Update, replaces the old 3-way `colorMode` union now that
+   * `tint`/`vivid` have migrated to the shared `fillType` selector below) — bypasses `fillType`
+   * entirely and shows the raw Sobel edge map's own per-channel color, forced to Multiply blend.
+   * Deferred: promoting this into a toggle row above Blend Mode (per the tuning doc) is a
+   * follow-up phase, not done here. */
+  findEdge: boolean
   tintColor: [number, number, number]
   vividDeadzone: number
   vividBoost: number
 
+  /** v0.3 Service Update (Post-Gumi Saga, Phase 1) — shared fill-type selector for Botan/Chie/
+   * Daiya/Fumiko, ported from Gumi's own gumiFillType/gumiLineFillType mechanism. Flat/shared
+   * (not per-algo-prefixed) since each of these four only has one fill context at a time, unlike
+   * Gumi's simultaneous Line+Fill. See fillTypeColor.frag.ts for the shader-side contract. */
+  fillType: FillType
+  /** Colors the background side instead of the detected stroke/shape — see lineFillColor.frag.ts's
+   * uInvert convention, reused here for all four algos. For Botan's continuous (non-binary) alpha
+   * this flips the resolved alpha itself (1-alpha) rather than swapping a hard mask side. */
+  fillInvert: boolean
+  gradientShadow: [number, number, number]
+  gradientMid: [number, number, number]
+  gradientHighlight: [number, number, number]
+  /** -1..1, default 0 — see fillTypeColor.frag.ts's resolveFillTypeColor doc comment for the
+   * exact stop-remapping rule (negative compresses mid+highlight toward shadow, positive
+   * compresses shadow+mid toward highlight). */
+  gradientPivot: number
+  /** Drops the mid stop, leaving a direct shadow->highlight 2-point ramp (Pivot still applies,
+   * now only compressing whichever end it leans toward). */
+  gradientDuoTone: boolean
+
   // Path G (Gumi) — see src/lab/labPipeline.ts's pathG branch for the full
   // rationale of each. Reuses `threshold`/`radius`/`blobContrast`/
-  // `colorContrast`/`colorExpansion`/`tintColor` above where the concept is
+  // `colorContrast`/`tintColor` above where the concept is
   // identical to Botan's (contrast boost reuses colorCorrect's pivot-
   // contrast curve; blob-DT reject vs. color-bleed both build on Botan's
   // own distance-to-edge machinery).
@@ -228,12 +263,48 @@ export interface LineArtParams {
   hiToneTarget: 'off' | 'multiply' | 'screen'
   hiToneGain: number
   hiToneContrast: number
+  /** Hinata Tuning Saga Phase 1 — shared-tail field (like hiToneGain/hiToneContrast above), even
+   * though only Hinata's UI exposes it this phase: -1..1, 0 = identity (matches today's Raw
+   * output exactly). Negative crushes toward solid black, positive toward solid white — see
+   * pipeline.ts's runHiRawDarkenLighten (reuses colorCorrectProgram's black/white clip). */
+  hiRawDarkenLighten: number
+  /** Hinata Tuning Saga Phase 1 — shared-tail field: 0..1, 1 = today's unchanged hard cutoff
+   * (softThresholdProgram's uSoftness=0). Lower values widen the threshold's transition band —
+   * see pipeline.ts's Output Treatment tail. */
+  hiThresholdContrast: number
+  /** Hinata Tuning Saga Phase 2 — shared-tail field: pivoted-at-0.5 contrast curve applied
+   * alongside hiRawDarkenLighten's black/white clip in runHiRawDarkenLighten, 1 = identity. */
+  hiRawContrast: number
+  /** Hinata Tuning Saga Phase 2 — shared-tail field, applies to Tone only: standard luma-mix
+   * saturation (reuses saturationAdjustProgram, already used by Fumiko), 1 = identity. */
+  hiToneSaturation: number
+  /** Hinata Tuning Saga Phase 2 — shared-tail field, applies to Tone only: rotates hue 180°
+   * (HSV round-trip) while preserving luminance/saturation — see saturationAdjust.frag.ts's
+   * uHueInvert. */
+  hiToneHueInvert: boolean
+  /** Hinata Tuning Saga Phase 2 — Erode's own erosion-direction toggle, replacing the old
+   * implicit `blendMode==='screen'` coupling on softThresholdProgram's uInvert: flips which
+   * luminance side (surface/shading vs. line art) is classified as ink at the threshold stage
+   * itself. Independent of `fillInvert` below, which operates one stage later (color resolution,
+   * not shape) — see pipeline.ts's Erode branch. */
+  hiThresholdInvert: boolean
   // Path H only.
   highPassStrength: number
   highPassResponsiveColor: boolean
   responsiveCrossover: number
   responsiveGrow: number
   responsiveGrowBias: number
+  /** Hinata Tuning Saga Phase 2 — Edge's independent per-polarity fill-type (Image/Solid only,
+   * no Gradient — Edge's ink color is a per-pixel binary choice, not a luminance-driven ramp).
+   * "Dark"/"Light" name the *local background area* the ink is drawn over (matching
+   * responsiveEdgeColor.frag.ts's uCrossover convention), not the ink's own color — defaults
+   * (white-over-dark, black-over-light) match today's hardcoded behavior exactly, so switching
+   * either side to 'image' is the only way this changes existing output. See
+   * pipeline.ts's runEdgeFillColor / edgeFillColor.frag.ts. */
+  edgeInkOverDarkFillType: 'image' | 'solid'
+  edgeInkOverDarkSolidColor: [number, number, number]
+  edgeInkOverLightFillType: 'image' | 'solid'
+  edgeInkOverLightSolidColor: [number, number, number]
   // Path I only.
   laplacianStrength: number
   laplacianPreBlur: number

@@ -1,27 +1,35 @@
 /**
- * Gumi (Path G) Line mode's fill-type color resolution (v0.3 tuning) — a final pass after
- * blobMask.frag.ts's boundary decision (and Overdrive/Hardness's optical post-process, if
- * any), giving Line mode the same Image/Solid/Gradient/Invert choice Fill mode already has
- * (fillMask.frag.ts), reusing the identical color logic (fillTypeColor.frag.ts).
+ * Shared "resolve a shape/edge decision into real RGBA" final pass — originally built for Gumi
+ * (Path G) Line mode only (see fillMask.frag.ts's inline equivalent for Gumi Fill mode), promoted
+ * in the v0.3 Service Update (Post-Gumi Saga, Phase 1) to the shared final pass for Botan/Chie/
+ * Daiya/Fumiko too, all of which resolve color as a separate step after their own shape decision
+ * rather than fusing it in (see each algorithm's own pipeline.ts branch for why — Botan is the one
+ * exception, still fusing shape+color for its `fillType === 'image'` case to preserve its exact
+ * pre-existing continuous falloff behavior).
  *
- * Deliberately its own separate pass rather than folding straight into blobMask.frag.ts:
- * Overdrive (minFilter1D.frag.ts) and Hardness (boxBlur.frag.ts + mixBlend.frag.ts) both only
- * read/write a single grayscale channel and hardcode alpha=1 — they're shared with many other
- * call sites across the codebase, so widening their data contract to carry real RGBA wasn't
- * an option. Keeping blobMask's own output as the plain grayscale shape decision it already
- * was means Overdrive/Hardness keep working exactly as built; this pass only runs *after*
- * them, converting the (possibly reshaped) grayscale mask into real color + alpha.
+ * Deliberately its own separate pass rather than folding into any algorithm's own shape shader:
+ * several of those shaders (blobMask.frag.ts via Overdrive/Hardness's minFilter1D.frag.ts/
+ * boxBlur.frag.ts, both shared with many other call sites) only read/write a single grayscale
+ * channel and hardcode alpha=1 — widening their contract to carry real RGBA wasn't an option.
  *
- * uMask is blobMask.frag.ts's own 0=ink/1=background grayscale convention (post
- * Overdrive/Hardness) — alpha here is derived as 1-mask (or mask itself when uInvert=1, to
- * color the background side instead of the detected strokes).
+ * uMask convention varies by source shape shader, selected by uMaskChannel:
+ * - 0 (default — blobMask.frag.ts/erosionGate.frag.ts/minFilter1D.frag.ts's binary/grayscale
+ *   masks): BT.709 luminance of mask.rgb, 0 = ink/shape, 1 = background — matches tintMask.
+ *   frag.ts's old formula exactly (not just mask.r), since Fumiko's findEdges.frag.ts mask is
+ *   genuinely colored per-channel (Sobel), not true grayscale, and .r alone would misread it.
+ * - 1 (distanceToEdge.frag.ts's continuous alpha convention, Botan only): mask.a, ink weight
+ *   directly (1 = full ink at the seed, fading toward 0).
+ * Both are normalized internally to a single "inkWeight" (1 = full ink) before uInvert is applied,
+ * so uInvert means the same thing regardless of source convention: colors the background/far side
+ * instead of the detected ink.
  */
 import { fillTypeColorUniforms, resolveFillTypeColorFn } from './fillTypeColor.frag'
 
-export const lineFillColorFrag = `#version 300 es
+export const maskFillColorFrag = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uMask;
+uniform int uMaskChannel;
 uniform int uInvert;
 ${fillTypeColorUniforms}
 out vec4 outColor;
@@ -29,8 +37,10 @@ out vec4 outColor;
 ${resolveFillTypeColorFn}
 
 void main() {
-  float m = texture(uMask, vUV).r;
-  float alpha = uInvert == 1 ? m : (1.0 - m);
+  vec4 maskSample = texture(uMask, vUV);
+  float luminance = dot(maskSample.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float inkWeight = uMaskChannel == 1 ? maskSample.a : (1.0 - luminance);
+  float alpha = uInvert == 1 ? (1.0 - inkWeight) : inkWeight;
   vec3 color = resolveFillTypeColor(vUV);
   outColor = vec4(color, alpha);
 }

@@ -7,7 +7,7 @@ import Modal from './Modal'
 import Icon from './Icon'
 import RampMeter from './RampMeter'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
-import type { BlendMode, ColorMode, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
+import type { BlendMode, FillType, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
 
 interface LineArtPanelProps {
   params: LineArtParams
@@ -16,17 +16,17 @@ interface LineArtPanelProps {
   onReset: () => void
 }
 
-const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'flower1' }[] = [
+const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon' }[] = [
   { mode: 'pathB', label: 'Botan', icon: 'rose' },
   { mode: 'pathC', label: 'Chie', icon: 'spark' },
   { mode: 'pathD', label: 'Daiya', icon: 'diamond' },
   { mode: 'pathF', label: 'Fumiko', icon: 'spiral' },
   { mode: 'pathG', label: 'Gumi', icon: 'bear' },
   { mode: 'pathH', label: 'Hinata', icon: 'sun' },
-  { mode: 'pathI', label: 'Inori', icon: 'flower1' },
+  { mode: 'pathI', label: 'Tsukiko', icon: 'moon' },
 ]
 
-const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'flower1'; blurb: string }[] = [
+const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon'; blurb: string }[] = [
   {
     mode: 'pathB',
     label: 'Botan',
@@ -77,9 +77,9 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
   },
   {
     mode: 'pathI',
-    label: 'Inori',
+    label: 'Tsukiko',
     technique: 'Laplacian',
-    icon: 'flower1',
+    icon: 'moon',
     blurb:
       "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass, with optional pre-blur/post-sharpen to tune noise vs. definition.",
   },
@@ -353,7 +353,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
       </div>
       <BlendModeRow
         mode={params.blendMode}
-        options={params.mode === 'pathF' && params.colorMode === 'findEdge' ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
+        options={params.mode === 'pathF' && params.findEdge ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
         onChange={(v) => set('blendMode', v)}
       />
       <GradientSlider
@@ -367,30 +367,28 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
         {params.mode === 'pathB' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (px)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (px)" value={params.radius} min={0} max={20} defaultValue={1} step={1} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
             <GradientSlider label="Blob Contrast" value={params.blobContrast} min={0.2} max={5} defaultValue={1} onChange={(v) => set('blobContrast', v)} />
             <div className="lineart-divider" />
-            <div
-              className="lineart-toggle-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => set('colorExpansion', !params.colorExpansion)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  set('colorExpansion', !params.colorExpansion)
-                }
-              }}
-            >
-              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Expansion</span>
-              <ToggleSwitch on={params.colorExpansion} label="Color Expansion" />
-            </div>
-            {params.colorExpansion && (
+            <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
+            <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
+            {params.fillType === 'image' && (
               <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
             )}
-            {!params.colorExpansion && (
+            {params.fillType === 'solid' && (
               <TintColorRow label="Line Color" tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
+            )}
+            {params.fillType === 'gradient' && (
+              <GradientFillControls
+                shadow={params.gradientShadow} mid={params.gradientMid} highlight={params.gradientHighlight}
+                pivot={params.gradientPivot} duoTone={params.gradientDuoTone}
+                onShadowChange={(rgb) => set('gradientShadow', rgb)}
+                onMidChange={(rgb) => set('gradientMid', rgb)}
+                onHighlightChange={(rgb) => set('gradientHighlight', rgb)}
+                onPivotChange={(v) => set('gradientPivot', v)}
+                onDuoToneChange={(v) => set('gradientDuoTone', v)}
+              />
             )}
           </>
         )}
@@ -400,23 +398,57 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             <GradientSlider label="Gate Threshold" value={params.gateThreshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('gateThreshold', v)} />
             <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
+            <div className="lineart-divider" />
+            <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
+            <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
+            {params.fillType === 'image' && (
+              <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+            )}
+            {params.fillType === 'solid' && (
+              <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
+            )}
+            {params.fillType === 'gradient' && (
+              <GradientFillControls
+                shadow={params.gradientShadow} mid={params.gradientMid} highlight={params.gradientHighlight}
+                pivot={params.gradientPivot} duoTone={params.gradientDuoTone}
+                onShadowChange={(rgb) => set('gradientShadow', rgb)}
+                onMidChange={(rgb) => set('gradientMid', rgb)}
+                onHighlightChange={(rgb) => set('gradientHighlight', rgb)}
+                onPivotChange={(v) => set('gradientPivot', v)}
+                onDuoToneChange={(v) => set('gradientDuoTone', v)}
+              />
+            )}
           </>
         )}
 
         {params.mode === 'pathD' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={1.5} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={2} step={1} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
             <div className="lineart-divider" />
-            <ColorModeRow mode={params.colorMode} options={['tint', 'vivid']} onChange={(v) => set('colorMode', v)} />
-            {params.colorMode === 'tint' && (
-              <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
-            )}
-            {params.colorMode === 'vivid' && (
+            <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
+            <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
+            {params.fillType === 'image' && (
               <>
+                <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
                 <GradientSlider label="Vivid Deadzone" value={params.vividDeadzone} min={0} max={0.6} defaultValue={0.15} onChange={(v) => set('vividDeadzone', v)} />
                 <GradientSlider label="Vivid Boost" value={params.vividBoost} min={1} max={4} defaultValue={1} onChange={(v) => set('vividBoost', v)} />
               </>
+            )}
+            {params.fillType === 'solid' && (
+              <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
+            )}
+            {params.fillType === 'gradient' && (
+              <GradientFillControls
+                shadow={params.gradientShadow} mid={params.gradientMid} highlight={params.gradientHighlight}
+                pivot={params.gradientPivot} duoTone={params.gradientDuoTone}
+                onShadowChange={(rgb) => set('gradientShadow', rgb)}
+                onMidChange={(rgb) => set('gradientMid', rgb)}
+                onHighlightChange={(rgb) => set('gradientHighlight', rgb)}
+                onPivotChange={(v) => set('gradientPivot', v)}
+                onDuoToneChange={(v) => set('gradientDuoTone', v)}
+              />
             )}
           </>
         )}
@@ -426,15 +458,48 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             <GradientSlider label="Sensitivity" value={params.sensitivity} min={0.5} max={20} defaultValue={3} onChange={(v) => set('sensitivity', v)} />
             <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={3} defaultValue={0.2} step={0.01} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Saturation" value={params.saturation} min={0} max={2} defaultValue={0.5} onChange={(v) => set('saturation', v)} />
+            <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
             <div className="lineart-divider" />
-            <ColorModeRow mode={params.colorMode} options={['findEdge', 'tint', 'vivid']} onChange={(v) => set('colorMode', v)} />
-            {params.colorMode === 'tint' && (
-              <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
-            )}
-            {params.colorMode === 'vivid' && (
+            <div
+              className="lineart-toggle-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => set('findEdge', !params.findEdge)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  set('findEdge', !params.findEdge)
+                }
+              }}
+            >
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Find Edge</span>
+              <ToggleSwitch on={params.findEdge} label="Find Edge" />
+            </div>
+            {!params.findEdge && (
               <>
-                <GradientSlider label="Vivid Deadzone" value={params.vividDeadzone} min={0} max={0.6} defaultValue={0.15} onChange={(v) => set('vividDeadzone', v)} />
-                <GradientSlider label="Vivid Boost" value={params.vividBoost} min={1} max={4} defaultValue={1} onChange={(v) => set('vividBoost', v)} />
+                <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
+                <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
+                {params.fillType === 'image' && (
+                  <>
+                    <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+                    <GradientSlider label="Vivid Deadzone" value={params.vividDeadzone} min={0} max={0.6} defaultValue={0.15} onChange={(v) => set('vividDeadzone', v)} />
+                    <GradientSlider label="Vivid Boost" value={params.vividBoost} min={1} max={4} defaultValue={1} onChange={(v) => set('vividBoost', v)} />
+                  </>
+                )}
+                {params.fillType === 'solid' && (
+                  <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
+                )}
+                {params.fillType === 'gradient' && (
+                  <GradientFillControls
+                    shadow={params.gradientShadow} mid={params.gradientMid} highlight={params.gradientHighlight}
+                    pivot={params.gradientPivot} duoTone={params.gradientDuoTone}
+                    onShadowChange={(rgb) => set('gradientShadow', rgb)}
+                    onMidChange={(rgb) => set('gradientMid', rgb)}
+                    onHighlightChange={(rgb) => set('gradientHighlight', rgb)}
+                    onPivotChange={(v) => set('gradientPivot', v)}
+                    onDuoToneChange={(v) => set('gradientDuoTone', v)}
+                  />
+                )}
               </>
             )}
           </>
@@ -672,39 +737,8 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
           <>
             <GradientSlider label="Radius (px)" value={params.radius} min={0} max={40} defaultValue={1.5} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <GradientSlider label="High Pass Strength" value={params.highPassStrength} min={0} max={10} defaultValue={1} step={0.05} onChange={(v) => set('highPassStrength', v)} />
-
             <div className="lineart-divider" />
-            <div
-              className="lineart-toggle-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => set('highPassResponsiveColor', !params.highPassResponsiveColor)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  set('highPassResponsiveColor', !params.highPassResponsiveColor)
-                }
-              }}
-            >
-              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Responsive Edge Color</span>
-              <ToggleSwitch on={params.highPassResponsiveColor} label="Responsive Edge Color" />
-            </div>
-            {params.highPassResponsiveColor && (
-              <>
-                <GradientSlider label="Crossover" value={params.responsiveCrossover} min={0} max={1} defaultValue={0.5} onChange={(v) => set('responsiveCrossover', v)} />
-                <GradientSlider label="Grow (texels)" value={params.responsiveGrow} min={0} max={20} defaultValue={0} onChange={(v) => set('responsiveGrow', v)} />
-                {params.responsiveGrow > 0 && (
-                  <GradientSlider label="Grow Bias" value={params.responsiveGrowBias} min={-1} max={1} defaultValue={0} onChange={(v) => set('responsiveGrowBias', v)} />
-                )}
-              </>
-            )}
-
-            {!params.highPassResponsiveColor && (
-              <>
-                <div className="lineart-divider" />
-                <HiTreatmentRow params={params} onChange={onChange} />
-              </>
-            )}
+            <OutputTreatmentRow params={params} onChange={onChange} />
           </>
         )}
 
@@ -716,7 +750,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             <GradientSlider label="Grow (texels)" value={params.laplacianGrow} min={0} max={20} defaultValue={0} onChange={(v) => set('laplacianGrow', v)} />
 
             <div className="lineart-divider" />
-            <HiTreatmentRow params={params} onChange={onChange} />
+            <OutputTreatmentRow params={params} onChange={onChange} />
           </>
         )}
       </div>
@@ -724,19 +758,31 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
   )
 }
 
-/** Hinata/Inori's shared "Output treatment" pill row — Raw / Binarize / Tone→Multiply / Tone→Screen. Ported from LabApp.tsx's showHiTreatment block; thresholdEnabled and hiToneTarget are mutually exclusive (only one drives the output at a time), matching production's flat-bag convention of setting both fields together on each click. */
-function HiTreatmentRow({ params, onChange }: { params: LineArtParams; onChange: (params: LineArtParams) => void }) {
-  const TREATMENTS: { id: 'raw' | 'binarize' | 'multiply' | 'screen'; label: string }[] = [
-    { id: 'raw', label: 'Raw' },
-    { id: 'binarize', label: 'Binarize' },
-    { id: 'multiply', label: 'Tone→Multiply' },
-    { id: 'screen', label: 'Tone→Screen' },
+/** Hinata/Tsukiko's shared "Output Treatment" pill row — Edge / Emboss / Erode / Tone (Hinata
+ * Tuning Saga; widened to Tsukiko once Edge was confirmed applicable there too — Edge's own
+ * implementation is self-contained, computing its own blur+zero-crossing diff directly from
+ * detectionSource, never touching Path H's highPassDiff or Path I's laplacian machinery, so
+ * nothing else needed to change to share this component). Originally forked from a since-deleted
+ * `HiTreatmentRow` (the old 4-pill Raw/Binarize/Tone→Multiply/Tone→Screen row) back when Inori
+ * had no Edge branch at all — that's no longer true, so both algorithms use this one now. Each
+ * pill click sets blend mode alongside the treatment fields (a one-time default snap the user can
+ * freely override afterward via the shared Blend Mode row below — not a lock, unlike Fumiko's
+ * forcedMultiply). */
+function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onChange: (params: LineArtParams) => void }) {
+  type Treatment = 'edge' | 'emboss' | 'erode' | 'tone'
+  const TREATMENTS: { id: Treatment; label: string }[] = [
+    { id: 'edge', label: 'Edge' },
+    { id: 'emboss', label: 'Emboss' },
+    { id: 'erode', label: 'Erode' },
+    { id: 'tone', label: 'Tone' },
   ]
-  const active: 'raw' | 'binarize' | 'multiply' | 'screen' = params.thresholdEnabled
-    ? 'binarize'
-    : params.hiToneTarget !== 'off'
-      ? params.hiToneTarget
-      : 'raw'
+  const active: Treatment = params.highPassResponsiveColor
+    ? 'edge'
+    : params.thresholdEnabled
+      ? 'erode'
+      : params.hiToneTarget !== 'off'
+        ? 'tone'
+        : 'emboss'
   return (
     <>
       <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Output Treatment</p>
@@ -747,24 +793,163 @@ function HiTreatmentRow({ params, onChange }: { params: LineArtParams; onChange:
             type="button"
             className={`pill-toggle-btn font-button-label${active === t.id ? ' active' : ''}`}
             onClick={() => {
-              if (t.id === 'raw') onChange({ ...params, thresholdEnabled: false, hiToneTarget: 'off' })
-              else if (t.id === 'binarize') onChange({ ...params, thresholdEnabled: true, hiToneTarget: 'off' })
-              else onChange({ ...params, thresholdEnabled: false, hiToneTarget: t.id })
+              if (t.id === 'edge') {
+                onChange({ ...params, highPassResponsiveColor: true, thresholdEnabled: false, hiToneTarget: 'off', blendMode: 'overwrite' })
+              } else if (t.id === 'emboss') {
+                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'off', blendMode: 'overlay' })
+              } else if (t.id === 'erode') {
+                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: true, hiToneTarget: 'off', blendMode: 'multiply' })
+              } else {
+                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'multiply', blendMode: 'multiply' })
+              }
             }}
           >
             {t.label}
           </button>
         ))}
       </div>
-      {params.thresholdEnabled && (
-        <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => onChange({ ...params, threshold: v })} />
-      )}
-      {params.hiToneTarget !== 'off' && (
+
+      {active === 'edge' && (
         <>
-          <GradientSlider label="Tone Gain" value={params.hiToneGain} min={0.2} max={4} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneGain: v })} />
-          <GradientSlider label="Tone Contrast" value={params.hiToneContrast} min={0.2} max={5} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneContrast: v })} />
+          <GradientSlider label="Crossover" value={params.responsiveCrossover} min={0} max={1} defaultValue={0.5} onChange={(v) => onChange({ ...params, responsiveCrossover: v })} />
+          <GradientSlider label="Grow (texels)" value={params.responsiveGrow} min={0} max={20} defaultValue={0} onChange={(v) => onChange({ ...params, responsiveGrow: v })} />
+          {params.responsiveGrow > 0 && (
+            <GradientSlider label="Grow Bias" value={params.responsiveGrowBias} min={-1} max={1} defaultValue={0} onChange={(v) => onChange({ ...params, responsiveGrowBias: v })} />
+          )}
+          <div className="lineart-divider" />
+          <EdgePolarityFillRow
+            label="Ink Over Dark Areas"
+            fillType={params.edgeInkOverDarkFillType}
+            solidColor={params.edgeInkOverDarkSolidColor}
+            onFillTypeChange={(v) => onChange({ ...params, edgeInkOverDarkFillType: v })}
+            onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverDarkSolidColor: rgb })}
+          />
+          <EdgePolarityFillRow
+            label="Ink Over Light Areas"
+            fillType={params.edgeInkOverLightFillType}
+            solidColor={params.edgeInkOverLightSolidColor}
+            onFillTypeChange={(v) => onChange({ ...params, edgeInkOverLightFillType: v })}
+            onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverLightSolidColor: rgb })}
+          />
         </>
       )}
+
+      {active === 'emboss' && (
+        <>
+          <GradientSlider label="Darken / Lighten" value={params.hiRawDarkenLighten} min={-1} max={1} defaultValue={0} onChange={(v) => onChange({ ...params, hiRawDarkenLighten: v })} />
+          <GradientSlider label="Contrast" value={params.hiRawContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => onChange({ ...params, hiRawContrast: v })} />
+        </>
+      )}
+
+      {active === 'erode' && (
+        <>
+          <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.48} onChange={(v) => onChange({ ...params, threshold: v })} />
+          <GradientSlider label="Contrast" value={params.hiThresholdContrast} min={0} max={1} defaultValue={1} onChange={(v) => onChange({ ...params, hiThresholdContrast: v })} />
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onChange({ ...params, hiThresholdInvert: !params.hiThresholdInvert })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onChange({ ...params, hiThresholdInvert: !params.hiThresholdInvert })
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Erosion</span>
+            <ToggleSwitch on={params.hiThresholdInvert} label="Invert Erosion" />
+          </div>
+          <div className="lineart-divider" />
+          <InvertFillRow on={params.fillInvert} onChange={(v) => onChange({ ...params, fillInvert: v })} />
+          <FillTypeRow value={params.fillType} onChange={(v) => onChange({ ...params, fillType: v })} />
+          {params.fillType === 'solid' && (
+            <TintColorRow tintColor={params.tintColor} onChange={(rgb) => onChange({ ...params, tintColor: rgb })} />
+          )}
+          {params.fillType === 'gradient' && (
+            <GradientFillControls
+              shadow={params.gradientShadow} mid={params.gradientMid} highlight={params.gradientHighlight}
+              pivot={params.gradientPivot} duoTone={params.gradientDuoTone}
+              onShadowChange={(rgb) => onChange({ ...params, gradientShadow: rgb })}
+              onMidChange={(rgb) => onChange({ ...params, gradientMid: rgb })}
+              onHighlightChange={(rgb) => onChange({ ...params, gradientHighlight: rgb })}
+              onPivotChange={(v) => onChange({ ...params, gradientPivot: v })}
+              onDuoToneChange={(v) => onChange({ ...params, gradientDuoTone: v })}
+            />
+          )}
+        </>
+      )}
+
+      {active === 'tone' && (
+        <>
+          <div className="crop-bottomcontent" style={{ padding: 0 }}>
+            {(['multiply', 'screen'] as const).map((polarity) => (
+              <button
+                key={polarity}
+                type="button"
+                className={`pill-toggle-btn font-button-label${params.hiToneTarget === polarity ? ' active' : ''}`}
+                onClick={() => onChange({ ...params, hiToneTarget: polarity, blendMode: polarity })}
+              >
+                {polarity === 'multiply' ? 'Multiply' : 'Screen'}
+              </button>
+            ))}
+          </div>
+          <GradientSlider label="Tone Gain" value={params.hiToneGain} min={0.2} max={4} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneGain: v })} />
+          <GradientSlider label="Tone Contrast" value={params.hiToneContrast} min={0.2} max={5} defaultValue={1} step={0.05} onChange={(v) => onChange({ ...params, hiToneContrast: v })} />
+          <GradientSlider label="Saturation" value={params.hiToneSaturation} min={0} max={2} defaultValue={1} onChange={(v) => onChange({ ...params, hiToneSaturation: v })} />
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onChange({ ...params, hiToneHueInvert: !params.hiToneHueInvert })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onChange({ ...params, hiToneHueInvert: !params.hiToneHueInvert })
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Hue</span>
+            <ToggleSwitch on={params.hiToneHueInvert} label="Invert Hue" />
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
+/** Edge's independent per-polarity fill-type control (Hinata Tuning Saga Phase 2) — Image/Solid
+ * only, no Gradient (see edgeFillColor.frag.ts's doc comment for why), so this is a plain local
+ * 2-pill row rather than the shared 3-option FillTypeRow. */
+function EdgePolarityFillRow({
+  label, fillType, solidColor, onFillTypeChange, onSolidColorChange,
+}: {
+  label: string
+  fillType: 'image' | 'solid'
+  solidColor: [number, number, number]
+  onFillTypeChange: (v: 'image' | 'solid') => void
+  onSolidColorChange: (rgb: [number, number, number]) => void
+}) {
+  return (
+    <>
+      <div className="field-row">
+        <div className="field-row-label">
+          <span className="font-param-label">{label}</span>
+        </div>
+        <div className="crop-bottomcontent" style={{ padding: 0 }}>
+          {(['image', 'solid'] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              className={`pill-toggle-btn font-button-label${fillType === opt ? ' active' : ''}`}
+              onClick={() => onFillTypeChange(opt)}
+            >
+              {opt === 'image' ? 'Image' : 'Solid Color'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {fillType === 'solid' && <TintColorRow tintColor={solidColor} onChange={onSolidColorChange} />}
     </>
   )
 }
@@ -796,8 +981,6 @@ function OperationModeRow({ fillMode, onChange }: { fillMode: boolean; onChange:
   )
 }
 
-/** Shared between Fill mode's own fill-type row and Line mode's (v0.3 tuning) — both `gumiFillType` and `gumiLineFillType` are the same 'image'|'solid'|'gradient' union. */
-type FillType = 'image' | 'solid' | 'gradient'
 const FILL_TYPE_LABELS: Record<FillType, string> = { image: 'Image', solid: 'Solid Color', gradient: 'Gradient Map' }
 const FILL_TYPE_OPTIONS: FillType[] = ['image', 'solid', 'gradient']
 
@@ -820,6 +1003,72 @@ function FillTypeRow({ value, onChange }: { value: FillType; onChange: (v: FillT
         ))}
       </div>
     </div>
+  )
+}
+
+/** Shared toggle-row markup for the "Invert Fill" boolean — used by Gumi's Line/Fill modes and,
+ * as of the v0.3 Service Update, Botan/Chie/Daiya/Fumiko's shared fillType selector too. */
+function InvertFillRow({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div
+      className="lineart-toggle-row"
+      role="button"
+      tabIndex={0}
+      onClick={() => onChange(!on)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onChange(!on)
+        }
+      }}
+    >
+      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+      <ToggleSwitch on={on} label="Invert Fill" />
+    </div>
+  )
+}
+
+/** Gradient Map subtab's 3-stop (or 2-stop, with Duo Tone) color controls — Botan/Chie/Daiya/
+ * Fumiko's shared `gradientShadow`/`gradientMid`/`gradientHighlight`/`gradientPivot`/
+ * `gradientDuoTone` fields (v0.3 Service Update; Gumi keeps its own separate gumiGradient* fields
+ * and doesn't get Pivot/Duo Tone UI yet — see fillTypeColor.frag.ts for the shared shader math). */
+function GradientFillControls({
+  shadow, mid, highlight, pivot, duoTone,
+  onShadowChange, onMidChange, onHighlightChange, onPivotChange, onDuoToneChange,
+}: {
+  shadow: [number, number, number]
+  mid: [number, number, number]
+  highlight: [number, number, number]
+  pivot: number
+  duoTone: boolean
+  onShadowChange: (rgb: [number, number, number]) => void
+  onMidChange: (rgb: [number, number, number]) => void
+  onHighlightChange: (rgb: [number, number, number]) => void
+  onPivotChange: (v: number) => void
+  onDuoToneChange: (v: boolean) => void
+}) {
+  return (
+    <>
+      <GradientSlider label="Gradient Pivot" value={pivot} min={-1} max={1} defaultValue={0} onChange={onPivotChange} />
+      <div
+        className="lineart-toggle-row"
+        role="button"
+        tabIndex={0}
+        onClick={() => onDuoToneChange(!duoTone)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onDuoToneChange(!duoTone)
+          }
+        }}
+      >
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Duo Tone</span>
+        <ToggleSwitch on={duoTone} label="Duo Tone" />
+      </div>
+      <TintColorRow label="Shadow" tintColor={shadow} onChange={onShadowChange} />
+      {!duoTone && <TintColorRow label="Mid" tintColor={mid} onChange={onMidChange} />}
+      <TintColorRow label="Highlight" tintColor={highlight} onChange={onHighlightChange} />
+    </>
   )
 }
 
@@ -861,30 +1110,6 @@ function RampModeRow({ mode, onChange }: { mode: ToneShapingParams['mode']; onCh
             onClick={() => onChange(opt)}
           >
             {RAMP_MODE_LABELS[opt]}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const COLOR_MODE_LABELS: Record<ColorMode, string> = { findEdge: 'Find Edge', tint: 'Tint', vivid: 'Vivid' }
-
-function ColorModeRow({ mode, options, onChange }: { mode: ColorMode; options: ColorMode[]; onChange: (m: ColorMode) => void }) {
-  return (
-    <div className="field-row">
-      <div className="field-row-label">
-        <span className="font-param-label">Color Mode</span>
-      </div>
-      <div className="crop-bottomcontent" style={{ padding: 0 }}>
-        {options.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            className={`pill-toggle-btn font-button-label${mode === opt ? ' active' : ''}`}
-            onClick={() => onChange(opt)}
-          >
-            {COLOR_MODE_LABELS[opt]}
           </button>
         ))}
       </div>
