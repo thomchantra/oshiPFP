@@ -28,6 +28,10 @@ export function useCropResize(
 ) {
   const [mode, setModeRaw] = useState<ResizeMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
+  // Aspect ratio Custom mode was entered with — held fixed while editing
+  // width/height so the two fields can propagate to each other (see
+  // CropPanel's commitWidth/commitHeight) without drifting on repeated edits.
+  const [customRatio, setCustomRatio] = useState(1)
 
   // Prefill the custom fields with whatever 'original' was already
   // resolving to, so switching to Custom doesn't jolt to an unrelated
@@ -35,6 +39,7 @@ export function useCropResize(
   const setMode = (next: ResizeMode) => {
     if (next === 'custom' && mode !== 'custom' && cropSize) {
       setCustomSize(cropSize)
+      setCustomRatio(cropSize.width / cropSize.height)
     }
     setModeRaw(next)
   }
@@ -45,5 +50,5 @@ export function useCropResize(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, customSize])
 
-  return { mode, setMode, customSize, setCustomSize }
+  return { mode, setMode, customSize, setCustomSize, customRatio }
 }

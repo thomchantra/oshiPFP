@@ -23,13 +23,13 @@ interface ExportPanelProps {
   setFormat: (format: ExportFormat) => void
 }
 
-/** Export's own explicit Original/Composite/Overlay selector — see pipeline.ts's readExportPixels
+/** Export's own explicit Original/Final Composite selector — see pipeline.ts's readExportPixels
  * doc comment for why 'original' here means something stricter than the Line Art tab's own
- * displayMode toggle (bypasses Enhancement too, not just Line Art/Color). */
+ * displayMode toggle (bypasses Enhancement too, not just Line Art/Color). Selecting either option
+ * also live-updates the on-screen canvas via Pipeline.tabPreviewBypass (see App.tsx). */
 const EXPORT_MODE_OPTIONS: { value: ExportDisplayMode; label: string }[] = [
   { value: 'original', label: 'Original' },
-  { value: 'composite', label: 'Composite' },
-  { value: 'overlay', label: 'Overlay' },
+  { value: 'composite', label: 'Final Composite' },
 ]
 
 const RESOLUTION_OPTIONS: { value: ResolutionMode; label: string }[] = [

@@ -80,6 +80,10 @@ export function usePipeline() {
     pipelineRef.current?.setPreviewMode(mode)
   }, [])
 
+  const setTabPreviewBypass = useCallback((bypass: 'none' | 'enhance' | 'resize') => {
+    pipelineRef.current?.setTabPreviewBypass(bypass)
+  }, [])
+
   const setDebugPreviewGumiRamp = useCallback((show: boolean) => {
     pipelineRef.current?.setDebugPreviewGumiRamp(show)
   }, [])
@@ -118,6 +122,7 @@ export function usePipeline() {
     setLineArtParams,
     setLineArtActive,
     setPreviewMode,
+    setTabPreviewBypass,
     setDebugPreviewGumiRamp,
     setDualPane,
     readFinalPixels,

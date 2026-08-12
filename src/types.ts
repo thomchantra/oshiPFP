@@ -69,7 +69,7 @@ export type LineArtDisplayMode = 'composite' | 'overlay' | 'original'
  * (crop rect + Resize) directly, not LineArtDisplayMode's 'original' (which is post-Enhancement).
  * See pipeline.ts's readExportPixels. Independent of whatever the live preview/Dual Pane is
  * currently showing. */
-export type ExportDisplayMode = 'original' | 'composite' | 'overlay'
+export type ExportDisplayMode = 'original' | 'composite'
 
 /** Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — replaces the single DISPLAY_MODE_OPTIONS
  * segmented control with a 3-way pane-PAIR selector when active. Each option names the two

@@ -35,6 +35,10 @@ interface GradientSliderProps {
 }
 
 const DIRECTION_DEADZONE_PX = 6
+// Must match .gradient-slider-thumb's width/height in base.css — used to inset the thumb's
+// travel range so it never bleeds past the track's edges (was causing a brief horizontal
+// scrollbar on desktop and knob clipping on mobile at fillPct 0/100).
+const THUMB_SIZE_PX = 20
 
 function snap(raw: number, min: number, max: number, step: number): number {
   const stepped = Math.round((raw - min) / step) * step + min
@@ -164,7 +168,10 @@ export default function GradientSlider({
            thumb positioned by the browser after a scripted (non-gesture) value change,
            confirmed via direct DOM inspection, not a data/logic bug. Rendering the visible
            thumb ourselves sidesteps that timing dependency entirely. */}
-        <div className="gradient-slider-thumb" style={{ left: `${fillPct}%` }} />
+        <div
+          className="gradient-slider-thumb"
+          style={{ left: `calc((100% - ${THUMB_SIZE_PX}px) * ${fillPct / 100} + ${THUMB_SIZE_PX / 2}px)` }}
+        />
         {curve ? (
           // Tapered sliders drive the native input in slider-position space
           // (0-1000, not real units) so its browser-rendered thumb tracks

@@ -14,6 +14,11 @@ interface LineArtPanelProps {
   onChange: (params: LineArtParams) => void
   /** Resets the currently active algorithm's params to factory defaults and reverts the display mode to Composite — App.tsx owns both (per-mode param cache and the global display-mode toggle), so this is a plain callback rather than something LineArtPanel can derive from params/onChange alone. */
   onReset: () => void
+  /** Lifted to App.tsx (rather than local state) so the mobile vertical meter overlay, a sibling of this panel, can show each meter only while its matching section is expanded here. */
+  toneLiftExpanded: boolean
+  setToneLiftExpanded: (updater: (prev: boolean) => boolean) => void
+  colorLiftExpanded: boolean
+  setColorLiftExpanded: (updater: (prev: boolean) => boolean) => void
 }
 
 const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon' }[] = [
@@ -139,14 +144,15 @@ function ModifiedDot({ show }: { show: boolean }) {
 }
 
 /** Controlled by App.tsx (params live there, not locally) so slider values survive switching away from and back to the Line Art tab — this component used to own the state itself and reset to defaults on every remount. */
-export default function LineArtPanel({ params, onChange, onReset }: LineArtPanelProps) {
+export default function LineArtPanel({
+  params, onChange, onReset,
+  toneLiftExpanded, setToneLiftExpanded, colorLiftExpanded, setColorLiftExpanded,
+}: LineArtPanelProps) {
   const [infoOpen, setInfoOpen] = useState(false)
   // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
   // always apply (their identity defaults are no-ops), so this no longer
   // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
-  const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
   const [denoiseExpanded, setDenoiseExpanded] = useState(false)
-  const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
 
   const set = <K extends keyof LineArtParams>(key: K, value: LineArtParams[K]) =>
     onChange({ ...params, [key]: value })
@@ -208,7 +214,7 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
       {params.mode !== 'pathC' && (
       <div className="lineart-preprocessing">
         <div className="lineart-preprocessing-header">
-          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Pre-processing</span>
+          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Pre-detection Tuning</span>
           <button
             type="button"
             className="text-reset-btn font-value"
@@ -271,14 +277,14 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             {params.toneShaping.mode === 'clip' ? (
               <>
                 <GradientSlider
-                  label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={0.5} defaultValue={0}
+                  label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={1} defaultValue={0}
                   trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: v } })}
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: Math.min(v, params.toneShaping.clipMode.whiteClip) } })}
                 />
                 <GradientSlider
-                  label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0.5} max={1} defaultValue={1}
+                  label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0} max={1} defaultValue={1}
                   trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: v } })}
+                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: Math.max(v, params.toneShaping.clipMode.blackClip) } })}
                 />
               </>
             ) : (
@@ -531,10 +537,12 @@ export default function LineArtPanel({ params, onChange, onReset }: LineArtPanel
             </div>
             <GradientSlider
               label="Low Clip" value={params.gumiRampInnerLow} min={0} max={1} defaultValue={0}
+              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
               onChange={(v) => onChange({ ...params, gumiRampInnerLow: v, gumiRampFloor: Math.min(params.gumiRampFloor, v) })}
             />
             <GradientSlider
               label="High Clip" value={params.gumiRampInnerHigh} min={0} max={1} defaultValue={0.6}
+              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
               onChange={(v) => onChange({ ...params, gumiRampInnerHigh: v, gumiRampCeiling: Math.max(params.gumiRampCeiling, v) })}
             />
             {/* Floor/Ceiling only affect the ramp once Feather > 0 — at Feather=0,

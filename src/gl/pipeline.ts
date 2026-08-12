@@ -333,10 +333,23 @@ export class Pipeline {
   private enhanceDirty = true
   private lineArtDirty = true
   private colorDirty = true
-  /** See setLineArtActive — true by default so the very first render (before App.tsx's tab-driven call lands) still shows Botan. */
+  /** See setLineArtActive — true by default so the very first render (before anything settles it) still shows Botan. */
   private lineArtActive = true
+  /** See armLineArtSettle — non-null while crop interaction has frozen line-art and is waiting to reactivate it. */
+  private lineArtSettleTimer: ReturnType<typeof setTimeout> | null = null
   /** Fullscreen-preview A/B toggle (App.tsx renders it only while no tab is selected) — 'original' blits cropTarget (post-crop, pre-Enhancement/Line Art/Color) instead of the fully-processed colorTarget. Only affects the on-screen canvas; Export always reads the full colorTarget regardless. */
   private previewMode: 'original' | 'result' = 'result'
+  /** Tab-scoped live-preview bypass — lets the Grade tab's Original/Graded toggle and the Export
+   * tab's Original/Final Composite selector peek at an earlier pipeline stage on the live canvas,
+   * same idea as previewMode above but for later stage boundaries previewMode was never built to
+   * express. 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm —
+   * the same boundary Line Art's own "Original" display mode already shows via
+   * resolveLineArtDisplay, deliberately NOT lineArtOutputTarget: Grade's "Original" means "the
+   * photo before any of this ran," not "whatever Line Art display mode happens to be selected
+   * right now"). 'resize' -> resizeTarget (matches readExportPixels('original')). App.tsx computes
+   * this from whichever tab is actually active, resetting to 'none' whenever neither tab is open,
+   * so it can't leak into Crop/Maximizer/deselected views. */
+  private tabPreviewBypass: 'none' | 'enhance' | 'resize' = 'none'
   /**
    * v0.3 tuning diagnostic (docs/oshiPFP-v0.3-tuningspecs.md): Gumi's
    * Luminance Ramp module (plateauRamp.frag.ts) feeds a contrast boost and
@@ -542,6 +555,7 @@ export class Pipeline {
   setCropRect(rect: CropRect): void {
     this.cropRect = rect
     this.cropDirty = true
+    this.armLineArtSettle()
     this.scheduleRender()
   }
 
@@ -624,8 +638,8 @@ export class Pipeline {
   /**
    * Gates the expensive per-algorithm recompute (Botan's JFA alone is ~11
    * full-res passes) by whether the app actually needs to see it live right
-   * now — App.tsx passes false while the Crop tab is active, since crop
-   * pan/zoom fires setCropRect on every pointer-move and cascades into
+   * now. Driven by armLineArtSettle below during crop interaction, since
+   * crop pan/zoom fires setCropRect on every pointer-move and cascades into
    * lineArtDirty regardless. While inactive, a crop change still updates
    * cropTarget cheaply but line-art output is left stale (frozen) rather
    * than recomputed; reactivating forces one fresh recompute to catch up.
@@ -637,6 +651,22 @@ export class Pipeline {
       this.lineArtDirty = true
       this.scheduleRender()
     }
+  }
+
+  /**
+   * Freezes line-art immediately (see setLineArtActive) and arms a settle
+   * timer that reactivates it ~450ms after the last call — so dragging the
+   * crop rect stays smooth (no per-frame JFA), but the line-art preview
+   * catches up on its own shortly after the user stops, instead of only on
+   * tab switch.
+   */
+  private armLineArtSettle(): void {
+    this.lineArtActive = false
+    if (this.lineArtSettleTimer !== null) clearTimeout(this.lineArtSettleTimer)
+    this.lineArtSettleTimer = setTimeout(() => {
+      this.lineArtSettleTimer = null
+      this.setLineArtActive(true)
+    }, 450)
   }
 
   setCropSizeListener(cb: ((size: { width: number; height: number }) => void) | null): void {
@@ -698,6 +728,13 @@ export class Pipeline {
     // No stage is actually dirty — cropTarget/colorTarget are both already
     // current — this just needs the blit (Present) step at the end of
     // render() to re-run and pick the other texture.
+    this.scheduleRender()
+  }
+
+  /** See tabPreviewBypass's doc comment. */
+  setTabPreviewBypass(bypass: 'none' | 'enhance' | 'resize'): void {
+    if (this.tabPreviewBypass === bypass) return
+    this.tabPreviewBypass = bypass
     this.scheduleRender()
   }
 
@@ -2589,9 +2626,12 @@ export class Pipeline {
     }
 
     const showGumiRampDebug = this.debugPreviewGumiRamp && this.lineArt.mode === 'pathG' && this.gumiRampDebugTarget
+    const tabBypassTarget = this.tabPreviewBypass === 'enhance' ? this.enhanceTarget
+      : this.tabPreviewBypass === 'resize' ? this.resizeTarget
+      : null
     const previewTarget = showGumiRampDebug
       ? this.gumiRampDebugTarget!
-      : this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
+      : tabBypassTarget ?? (this.previewMode === 'original' ? this.cropTarget! : this.colorTarget)
     // Debug-only (Gumi radius-refresh investigation, session 11): identifies which target
     // actually got selected for the blit — showGumiRampDebug/'original' preview mode would both
     // paint something entirely unrelated to the just-computed Gumi output, which could explain a
@@ -2603,8 +2643,12 @@ export class Pipeline {
     this.traceSampleGrid('gl:previewTarget-at-blit', previewTarget, {
       mode: this.lineArt.mode,
       previewMode: this.previewMode,
+      tabPreviewBypass: this.tabPreviewBypass,
       showGumiRampDebug,
-      selected: showGumiRampDebug ? 'gumiRampDebugTarget' : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',
+      selected: showGumiRampDebug ? 'gumiRampDebugTarget'
+        : this.tabPreviewBypass === 'enhance' ? 'enhanceTarget'
+        : this.tabPreviewBypass === 'resize' ? 'resizeTarget'
+        : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',
     })
     const naturalWidth = previewTarget.width
     const naturalHeight = previewTarget.height
@@ -2713,7 +2757,7 @@ export class Pipeline {
    * safe since this all happens synchronously within one JS turn, before any browser paint, so
    * the live canvas is never visibly left showing this export-only resolve.
    */
-  readExportPixels(exportMode: 'original' | 'composite' | 'overlay'): { data: Uint8ClampedArray; width: number; height: number } | null {
+  readExportPixels(exportMode: 'original' | 'composite'): { data: Uint8ClampedArray; width: number; height: number } | null {
     this.render()
     if (exportMode === 'original') {
       if (!this.resizeTarget) return null

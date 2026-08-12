@@ -16,6 +16,8 @@ interface CropPanelProps {
   setResizeMode: (mode: ResizeMode) => void
   resizeCustomSize: { width: number; height: number }
   setResizeCustomSize: (updater: (prev: { width: number; height: number }) => { width: number; height: number }) => void
+  /** Aspect ratio (width/height) Custom mode was entered with — see useCropResize. Editing one field propagates the other via this ratio. */
+  resizeCustomRatio: number
 }
 
 const ASPECT_OPTIONS: { value: CropMode; label: string }[] = [
@@ -38,7 +40,7 @@ const RESIZE_OPTIONS: { value: ResizeMode; label: string }[] = [
  */
 export default function CropPanel({
   mode, onModeChange, enhance, setEnhance,
-  cropSize, resizeMode, setResizeMode, resizeCustomSize, setResizeCustomSize,
+  cropSize, resizeMode, setResizeMode, resizeCustomSize, setResizeCustomSize, resizeCustomRatio,
 }: CropPanelProps) {
   const set = <K extends keyof EnhanceParams>(key: K, value: EnhanceParams[K]) =>
     setEnhance((prev) => ({ ...prev, [key]: value }))
@@ -53,12 +55,16 @@ export default function CropPanel({
 
   const commitWidth = () => {
     const n = clampDimension(parseInt(widthText, 10) || resizeCustomSize.width)
-    setResizeCustomSize((prev) => ({ ...prev, width: n }))
+    const pairedHeight = clampDimension(Math.round(n / resizeCustomRatio))
+    setResizeCustomSize(() => ({ width: n, height: pairedHeight }))
     setWidthText(String(n))
+    setHeightText(String(pairedHeight))
   }
   const commitHeight = () => {
     const n = clampDimension(parseInt(heightText, 10) || resizeCustomSize.height)
-    setResizeCustomSize((prev) => ({ ...prev, height: n }))
+    const pairedWidth = clampDimension(Math.round(n * resizeCustomRatio))
+    setResizeCustomSize(() => ({ width: pairedWidth, height: n }))
+    setWidthText(String(pairedWidth))
     setHeightText(String(n))
   }
 

@@ -145,6 +145,22 @@ button, input {
 }
 .blank-state-uploadbox.drag-over { background: var(--accent-lighter); }
 
+/* Desktop drag-and-drop replace-in-place, once an image is already loaded
+   (BlankState above covers the no-image-yet case) — visual affordance only,
+   pointer-events none so the drop event still lands on the wrapper div. */
+.viewport-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-lighter);
+  border: 2px dashed var(--accent-light);
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* Desktop first pass (see docs/oshiPFP-v0.2.1-UIspecs.md Figma desktop
    reference, node 26:3204): below this width the app stays the original
    single-column mobile shell (.body-layout just stacks its two children
@@ -262,10 +278,9 @@ button, input {
   pointer-events: none;
 }
 
-/* Color tab: channel selector row (ColorCurveTopContent, positioned like
-   Line Art's display-mode SegmentedControl) — the curve graph itself draws
-   directly on the viewport with no card backing, see CurveEditor's
-   `opaque` prop and its drop-shadow filter. */
+/* Grade tab's LIGHT sub-tab: curve channel selector row (ColorPanel.tsx, first row before
+   Exposure) — the curve graph itself still draws directly on the viewport with no card backing,
+   see CurveEditor's `opaque` prop and its drop-shadow filter. */
 .curve-overlay-channels {
   display: flex;
   align-items: center;
@@ -277,11 +292,14 @@ button, input {
      (a 14px icon) rendered several px shorter than the text (RGB/R/G/B)
      pills sitting right next to it, since font-button-label's line-height
      is taller than the icon's own box. display:flex centers whichever
-     content (icon or text) sits inside this fixed height. */
+     content (icon or text) sits inside this fixed height. 34px matches the
+     panel's other pill-toggle-btn rows (content-driven, same as
+     .icon-toggle-2's own min-height convention) now that this row lives
+     among them in ColorPanel rather than in the viewport-area chrome. */
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
+  height: 34px;
   box-sizing: border-box;
   border: none;
   border-radius: var(--radius-sm);
@@ -707,7 +725,7 @@ button, input {
 .lineart-algoselector-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
 .lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .lineart-preprocessing-header { display: flex; align-items: center; justify-content: space-between; }
-.text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; }
+.text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; white-space: nowrap; flex-shrink: 0; }
 .lineart-preprocessing-toggles { display: flex; gap: 5px; }
 .lineart-preprocessing-toggles .pill-toggle-btn { background: var(--white-50); }
 .lineart-preprocessing-toggles .pill-toggle-btn.active {

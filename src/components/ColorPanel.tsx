@@ -2,8 +2,10 @@ import BottomSheet from './BottomSheet'
 import SegmentedControl from './SegmentedControl'
 import GradientSlider from './GradientSlider'
 import HslBandSelector from './HslBandSelector'
+import Icon from './Icon'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { IDENTITY_HSL_SHIFT, IDENTITY_INVERT } from '../color/useColorAdjustments'
+import { CURVE_CHANNEL_OPTIONS, type CurveChannel } from '../curve/useColorCurve'
 import type { ColorAdjustParams, ColorSubTab, HslBand, HslByBand, HslShift, InvertParams, LightParams } from '../types'
 
 interface ColorPanelProps {
@@ -19,6 +21,12 @@ interface ColorPanelProps {
   setLight: (light: LightParams) => void
   colorAdjust: ColorAdjustParams
   setColorAdjust: (colorAdjust: ColorAdjustParams) => void
+  curveChannel: CurveChannel
+  setCurveChannel: (channel: CurveChannel) => void
+  curveVisible: boolean
+  setCurveVisible: (visible: boolean) => void
+  /** Resets everything in the Color tab (curve + HSL + Invert + Light + Color basic adjustments) — not just the curve. */
+  onResetGrade: () => void
 }
 
 /** Per docs/oshiPFP-v0.2.1-UIspecs.md's Slider Background Gradient list. */
@@ -105,6 +113,7 @@ export default function ColorPanel({
   invert, setInvert,
   light, setLight,
   colorAdjust, setColorAdjust,
+  curveChannel, setCurveChannel, curveVisible, setCurveVisible, onResetGrade,
 }: ColorPanelProps) {
   const setLightField = <K extends keyof LightParams>(key: K, value: LightParams[K]) =>
     setLight({ ...light, [key]: value })
@@ -124,6 +133,39 @@ export default function ColorPanel({
 
       {subTab === 'light' && (
         <div className="lineart-slidergroup-stack">
+          <div className="crop-topcontent" style={{ gap: 10 }}>
+            <div className="curve-overlay-channels">
+              <button
+                type="button"
+                className={`curve-channel-btn${curveVisible ? ' active' : ''}`}
+                style={{ color: curveVisible ? 'var(--bg-light)' : 'var(--accent-title)', background: curveVisible ? 'var(--accent-title)' : undefined }}
+                onClick={() => setCurveVisible(!curveVisible)}
+                aria-label={curveVisible ? 'Hide curve overlay' : 'Show curve overlay'}
+                aria-pressed={curveVisible}
+              >
+                <Icon name="curve" size={14} color="currentColor" />
+              </button>
+              {CURVE_CHANNEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`curve-channel-btn font-button-label${opt.value === curveChannel ? ' active' : ''}`}
+                  style={{ color: opt.value === curveChannel ? 'var(--bg-light)' : opt.color, background: opt.value === curveChannel ? opt.color : undefined }}
+                  onClick={() => setCurveChannel(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {curveVisible && (
+                <span className="font-value curve-hint" style={{ color: 'var(--accent-dark)', opacity: 0.6 }}>
+                  Double-tap +/- point
+                </span>
+              )}
+            </div>
+            <button type="button" className="text-reset-btn font-value" onClick={onResetGrade}>
+              Reset Grade
+            </button>
+          </div>
           <GradientSlider
             label="Exposure" value={light.exposure} min={-3} max={3} defaultValue={0}
             trackGradient={BLACK_WHITE_GRADIENT}

@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import TabNav from './components/TabNav'
 import HeaderBar from './components/HeaderBar'
 import BlankState from './components/BlankState'
 import PreviewViewport from './components/PreviewViewport'
-import { CropTopContent, CropDebugInfo } from './components/CropChrome'
+import { CropTopContent } from './components/CropChrome'
 import CropPanel from './components/CropPanel'
 import SegmentedControl from './components/SegmentedControl'
 import ColorPanel from './components/ColorPanel'
 import ColorCurveOverlay from './components/ColorCurveOverlay'
-import ColorCurveTopContent from './components/ColorCurveTopContent'
 import LineArtPanel from './components/LineArtPanel'
 import RampMeter from './components/RampMeter'
 import { useIsDesktop } from './hooks/useIsDesktop'
@@ -32,7 +31,7 @@ import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMo
 const TABS: TabDef[] = [
   { id: 'crop', label: 'CROP', icon: 'crop' },
   { id: 'maximizer', label: 'LINEART', icon: 'lineart' },
-  { id: 'color', label: 'COLOR', icon: 'color' },
+  { id: 'color', label: 'GRADE', icon: 'color' },
   { id: 'export', label: 'EXPORT', icon: 'download' },
 ]
 
@@ -67,6 +66,11 @@ const DUAL_PANE_PRIORITY_INDEX: Record<DualPaneMode, 0 | 1> = {
 const PREVIEW_MODE_OPTIONS: { value: 'original' | 'result'; label: string }[] = [
   { value: 'original', label: 'ORIGINAL' },
   { value: 'result', label: 'RESULT' },
+]
+
+const COLOR_DISPLAY_MODE_OPTIONS: { value: 'original' | 'graded'; label: string }[] = [
+  { value: 'original', label: 'ORIGINAL' },
+  { value: 'graded', label: 'GRADED' },
 ]
 
 const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF', 'pathG', 'pathH', 'pathI']
@@ -181,6 +185,13 @@ export default function App() {
   const [lineArtMode, setLineArtMode] = useState<LineArtMode>('pathB')
   const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('color')
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
+  const [colorDisplayMode, setColorDisplayMode] = useState<'original' | 'graded'>('graded')
+  // Lifted out of LineArtPanel (which only owned this as tray-appearance
+  // state before) so the mobile vertical meter overlay below can show each
+  // meter only while its matching section is actually expanded, instead of
+  // both unconditionally whenever the Maximizer tab is open.
+  const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
+  const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
   const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
   // Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — off by default, only meaningful at
@@ -192,11 +203,35 @@ export default function App() {
   // Dual Pane visually reverts to single-pane behavior below the desktop breakpoint even if
   // dualPaneEnabled is still true (e.g. the window was resized narrower after enabling it on
   // desktop) — gated here, once, rather than repeating `dualPaneEnabled && isDesktop` at each of
-  // the toggle's several call sites below.
-  const dualPaneActive = dualPaneEnabled && isDesktop
+  // the toggle's several call sites below. Also locked to the Maximizer tab specifically: the
+  // pipeline's actual dual-pane split (colorTarget/colorTargetB) is built entirely around Line
+  // Art's own [LineArtDisplayMode, LineArtDisplayMode] pair — leaving dualPaneActive true on
+  // Crop/Grade/Export just leaked that same split (and its stale mode pair) into tabs it has
+  // nothing to do with. The toggle itself stays interactable on every tab (per
+  // docs/oshiPFP-v0.3-tuningspecs.md's existing Crop/Export precedent) — only the actual
+  // split-pane rendering is scoped to where it means something.
+  const dualPaneActive = dualPaneEnabled && isDesktop && tab === 'maximizer'
   const pipeline = usePipeline()
   const hasImage = pipeline.sourceSize !== null
   const viewportWrapperRef = useRef<HTMLDivElement | null>(null)
+  // Desktop-only drag-and-drop to replace an already-loaded image (like
+  // Dropbox web) — BlankState already covers drag-and-drop for the initial,
+  // no-image-yet load; this covers the loaded-image case, which previously
+  // had no drop handling at all outside HeaderBar's plain file input.
+  const [viewportDragOver, setViewportDragOver] = useState(false)
+  const handleViewportDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!hasImage || !isDesktop) return
+    e.preventDefault()
+    setViewportDragOver(true)
+  }
+  const handleViewportDragLeave = () => setViewportDragOver(false)
+  const handleViewportDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (!hasImage || !isDesktop) return
+    e.preventDefault()
+    setViewportDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) pipeline.loadFile(file)
+  }
   const colorCurve = useColorCurve(pipeline.setCurveLut)
   const colorAdjustments = useColorAdjustments(pipeline)
   const exportSettings = useExportSettings(pipeline.cropSize)
@@ -205,8 +240,9 @@ export default function App() {
 
   // Promoted from "reset the curve" to "reset everything in the Color tab" —
   // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
-  // since it's the only Reset visible regardless of which Color sub-tab is
-  // open (it lives in the top row, above the viewport).
+  // even though "Reset Grade" now only lives in the LIGHT sub-tab (first row,
+  // alongside the relocated curve controls) rather than a top-of-viewport row
+  // visible from every sub-tab.
   const resetColorTab = () => {
     colorCurve.reset()
     colorAdjustments.setHslByBand(() => IDENTITY_HSL_BY_BAND)
@@ -297,15 +333,9 @@ export default function App() {
     onRectChange: pipeline.setCropRect,
   })
 
-  // Line Art's algorithm chain (JFA etc.) only actually needs to run live
-  // while its own tab is open — freeze it everywhere else so Crop-tab pan/
-  // zoom (which fires setCropRect on every pointer-move) doesn't pay for a
-  // recompute nobody's looking at.
-  useEffect(() => {
-    pipeline.setLineArtActive(tab === 'maximizer')
-    // pipeline identity is stable; only re-run when the active tab changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab])
+  // Line Art's algorithm chain (JFA etc.) is frozen/reactivated by
+  // Pipeline's own settle timer (armed from setCropRect) rather than tab
+  // identity — see armLineArtSettle in pipeline.ts.
 
   // The Original/Result A/B toggle only applies to the deselected
   // (tab === null) fullscreen preview — any active tab always shows the
@@ -317,6 +347,20 @@ export default function App() {
     // pipeline identity is stable; only re-run when tab or previewMode changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, previewMode])
+
+  // Grade tab's Original/Graded toggle and Export tab's Original/Final Composite selector both
+  // want to peek at an earlier pipeline stage on the live canvas — see tabPreviewBypass's doc
+  // comment in pipeline.ts. Only one of these can be "active" at a time since they're keyed off
+  // which tab is actually open, and it resets to 'none' the moment neither tab is selected.
+  useEffect(() => {
+    const bypass =
+      tab === 'color' && colorDisplayMode === 'original' ? 'enhance' :
+      tab === 'export' && exportSettings.exportDisplayMode === 'original' ? 'resize' :
+      'none'
+    pipeline.setTabPreviewBypass(bypass)
+    // pipeline identity is stable; only re-run when the relevant params actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, colorDisplayMode, exportSettings.exportDisplayMode])
 
   useEffect(() => {
     const next = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
@@ -395,9 +439,13 @@ export default function App() {
 
       <div className="body-layout">
       <div className="viewport-area">
-        {hasImage && tab === 'crop' && <CropTopContent zoom={crop.transform.scale} onZoomReset={() => {}} />}
         {hasImage && tab === 'crop' && (
-          <CropDebugInfo sourceSize={pipeline.sourceSize} fileInfo={pipeline.fileInfo} />
+          <CropTopContent
+            zoom={crop.transform.scale}
+            onZoomReset={() => {}}
+            sourceSize={pipeline.sourceSize}
+            fileInfo={pipeline.fileInfo}
+          />
         )}
         {hasImage && tab === 'maximizer' && (
           dualPaneActive ? (
@@ -407,13 +455,7 @@ export default function App() {
           )
         )}
         {hasImage && tab === 'color' && (
-          <ColorCurveTopContent
-            channel={colorCurve.channel}
-            onChannelChange={colorCurve.setChannel}
-            visible={colorCurve.visible}
-            onVisibleChange={colorCurve.setVisible}
-            onResetAll={resetColorTab}
-          />
+          <SegmentedControl options={COLOR_DISPLAY_MODE_OPTIONS} value={colorDisplayMode} onChange={setColorDisplayMode} />
         )}
         {hasImage && tab === null && (
           <SegmentedControl options={PREVIEW_MODE_OPTIONS} value={previewMode} onChange={setPreviewMode} />
@@ -433,7 +475,15 @@ export default function App() {
             minWidth: 0,
             flex: '1 1 auto',
           }}
+          onDragOver={handleViewportDragOver}
+          onDragLeave={handleViewportDragLeave}
+          onDrop={handleViewportDrop}
         >
+          {hasImage && isDesktop && viewportDragOver && (
+            <div className="viewport-drop-overlay" aria-hidden="true">
+              <span className="font-button-label" style={{ color: 'var(--accent-dark)' }}>Drop to replace image</span>
+            </div>
+          )}
           <PreviewViewport
             canvasRef={pipeline.canvasRef}
             viewportRef={crop.viewportRef}
@@ -456,10 +506,10 @@ export default function App() {
               viewport at its own stable 1:1 size (colorCurveSize above),
               independent of whatever shape the photo underneath happens to
               be at the moment. */}
-          {hasImage && tab === 'maximizer' && lineArtMode !== 'pathC' && (
+          {hasImage && tab === 'maximizer' && lineArtMode !== 'pathC' && (toneLiftExpanded || colorLiftExpanded) && (
             <div className="rampmeter-mobile-overlay" aria-hidden="true">
-              <RampMeter kind="tone" toneShaping={lineArtParams.toneShaping} orientation="column" />
-              <RampMeter kind="color" colorLift={lineArtParams.colorLift} orientation="column" />
+              {toneLiftExpanded && <RampMeter kind="tone" toneShaping={lineArtParams.toneShaping} orientation="column" />}
+              {colorLiftExpanded && <RampMeter kind="color" colorLift={lineArtParams.colorLift} orientation="column" />}
             </div>
           )}
           {hasImage && tab === 'color' && colorCurve.visible && (
@@ -529,6 +579,7 @@ export default function App() {
             setResizeMode={cropResize.setMode}
             resizeCustomSize={cropResize.customSize}
             setResizeCustomSize={cropResize.setCustomSize}
+            resizeCustomRatio={cropResize.customRatio}
           />
         )}
 
@@ -546,10 +597,23 @@ export default function App() {
             setLight={colorAdjustments.setLight}
             colorAdjust={colorAdjustments.colorAdjust}
             setColorAdjust={colorAdjustments.setColorAdjust}
+            curveChannel={colorCurve.channel}
+            setCurveChannel={colorCurve.setChannel}
+            curveVisible={colorCurve.visible}
+            setCurveVisible={colorCurve.setVisible}
+            onResetGrade={resetColorTab}
           />
         )}
         {hasImage && tab === 'maximizer' && (
-          <LineArtPanel params={lineArtParams} onChange={handleLineArtChange} onReset={handleLineArtReset} />
+          <LineArtPanel
+            params={lineArtParams}
+            onChange={handleLineArtChange}
+            onReset={handleLineArtReset}
+            toneLiftExpanded={toneLiftExpanded}
+            setToneLiftExpanded={setToneLiftExpanded}
+            colorLiftExpanded={colorLiftExpanded}
+            setColorLiftExpanded={setColorLiftExpanded}
+          />
         )}
         {hasImage && tab === 'export' && (
           <ExportPanel
