@@ -20,6 +20,9 @@ interface ExportPanelProps {
   setResolutionMode: (mode: ResolutionMode) => void
   customSize: { width: number; height: number }
   setCustomSize: (updater: (prev: { width: number; height: number }) => { width: number; height: number }) => void
+  /** Aspect ratio (width/height) Custom mode was entered with — see useExportSettings. Editing one field propagates the other via this ratio. */
+  exportCustomRatio: number
+  setExportCustomRatio: (ratio: number) => void
   resampleMode: ResampleMode
   setResampleMode: (mode: ResampleMode) => void
   format: ExportFormat
@@ -61,6 +64,7 @@ export default function ExportPanel({
   exportColorGrade, setExportColorGrade,
   resolutionMode, setResolutionMode,
   customSize, setCustomSize,
+  exportCustomRatio, setExportCustomRatio,
   resampleMode, setResampleMode,
   format, setFormat,
 }: ExportPanelProps) {
@@ -80,12 +84,16 @@ export default function ExportPanel({
 
   const commitWidth = () => {
     const n = clampDimension(parseInt(widthText, 10) || customSize.width)
-    setCustomSize((prev) => ({ ...prev, width: n }))
+    const pairedHeight = clampDimension(Math.round(n / exportCustomRatio))
+    setCustomSize(() => ({ width: n, height: pairedHeight }))
     setWidthText(String(n))
+    setHeightText(String(pairedHeight))
   }
   const commitHeight = () => {
     const n = clampDimension(parseInt(heightText, 10) || customSize.height)
-    setCustomSize((prev) => ({ ...prev, height: n }))
+    const pairedWidth = clampDimension(Math.round(n * exportCustomRatio))
+    setCustomSize(() => ({ width: pairedWidth, height: n }))
+    setWidthText(String(pairedWidth))
     setHeightText(String(n))
   }
 
@@ -93,11 +101,15 @@ export default function ExportPanel({
 
   // Prefill the custom fields with whatever the previously-selected mode was
   // already resolving to, so switching to Custom doesn't jolt to an
-  // unrelated stale value.
+  // unrelated stale value — and capture that as the ratio commitWidth/commitHeight
+  // will hold fixed while editing (same pattern as CropPanel/useCropResize).
   const selectResolution = (mode: ResolutionMode) => {
     if (mode === 'custom' && resolutionMode !== 'custom') {
       const t = computeTarget(resolutionMode, cropSize, customSize)
-      if (t) setCustomSize(() => t)
+      if (t) {
+        setCustomSize(() => t)
+        setExportCustomRatio(t.width / t.height)
+      }
     }
     setResolutionMode(mode)
   }
@@ -158,16 +170,18 @@ export default function ExportPanel({
       </div>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
-          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Source</span>
-          <span className="pill-toggle-btn font-button-label" style={{ textAlign: 'center', cursor: 'default' }}>
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)', flex: 1, minWidth: 0 }}>Source</span>
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)', flex: 1, minWidth: 0 }}>Target</span>
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span className="pill-toggle-btn font-button-label" style={{ display: 'block', textAlign: 'center', cursor: 'default' }}>
             {cropSize ? `${cropSize.width}x${cropSize.height}` : '—'}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
-          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Target</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
           {resolutionMode === 'custom' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
               <input
                 type="number"
                 className="pill-toggle-btn font-button-label"
@@ -193,7 +207,7 @@ export default function ExportPanel({
               />
             </div>
           ) : (
-            <span className="pill-toggle-btn font-button-label" style={{ textAlign: 'center', cursor: 'default' }}>
+            <span className="pill-toggle-btn font-button-label" style={{ display: 'block', textAlign: 'center', cursor: 'default' }}>
               {target ? `${target.width}x${target.height}` : '—'}
             </span>
           )}

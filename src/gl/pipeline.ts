@@ -411,6 +411,10 @@ export class Pipeline {
    * awareness and will happily render dual-pane at any canvas size if asked. */
   private dualPaneEnabled = false
   private dualPaneModes: [LineArtDisplayMode, LineArtDisplayMode] = ['original', 'composite']
+  /** Grade tab's own Dual Pane — see setGradeDualPane. Always a fixed enhanceTarget|colorTarget
+   * pair (no "modes" tuple like Line Art's above), since both sides already exist every frame
+   * regardless of dual-pane state — this costs zero extra GPU work, just a different blit split. */
+  private gradeDualPaneEnabled = false
 
   private cropRect: CropRect = [0, 0, 1, 1]
   private hslByBand: HslByBand = IDENTITY_HSL_BY_BAND
@@ -745,6 +749,14 @@ export class Pipeline {
     this.lineArtDirty = true
     this.colorDirty = true
     this.exportPreviewDirty = true
+    this.scheduleRender()
+  }
+
+  /** See gradeDualPaneEnabled's doc comment — no dirty-flag cascade needed, enhanceTarget/
+   * colorTarget are already kept current every frame regardless of this flag. */
+  setGradeDualPane(enabled: boolean): void {
+    if (this.gradeDualPaneEnabled === enabled) return
+    this.gradeDualPaneEnabled = enabled
     this.scheduleRender()
   }
 
@@ -2562,6 +2574,52 @@ export class Pipeline {
     this.exportPreviewDirty = false
   }
 
+  /**
+   * Blits two textures side by side into the on-screen canvas, doubling the natural width and
+   * splitting it down the middle via gl.viewport — the shared mechanics both Dual Pane "kinds"
+   * (Line Art's colorTarget/colorTargetB pair, and Grade's fixed enhanceTarget/colorTarget pair)
+   * need identically; only which two textures get bound differs per caller.
+   */
+  private blitSplitPane(leftTexture: WebGLTexture, rightTexture: WebGLTexture, paneWidth0: number, paneHeight0: number): void {
+    const gl = this.gl
+    const dpr = window.devicePixelRatio || 1
+    const naturalWidth = paneWidth0 * 2
+    const naturalHeight = paneHeight0
+    const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)
+    const scale = Math.min(1, boxWidth / naturalWidth, boxHeight / naturalHeight)
+    const renderWidth = Math.max(1, Math.round(naturalWidth * scale))
+    const renderHeight = Math.max(1, Math.round(naturalHeight * scale))
+    const backingWidth = Math.round(renderWidth * dpr)
+    const backingHeight = Math.round(renderHeight * dpr)
+
+    if (this.canvas.width !== backingWidth || this.canvas.height !== backingHeight) {
+      this.canvas.width = backingWidth
+      this.canvas.height = backingHeight
+    }
+    const styleWidth = `${renderWidth}px`
+    const styleHeight = `${renderHeight}px`
+    if (this.canvas.style.width !== styleWidth || this.canvas.style.height !== styleHeight) {
+      this.canvas.style.width = styleWidth
+      this.canvas.style.height = styleHeight
+    }
+
+    const paneWidth = Math.round(backingWidth / 2)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.useProgram(this.blitProgram)
+    bindFullscreenQuadAttribs(gl, this.blitProgram, this.quadBuffer)
+    gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
+
+    gl.viewport(0, 0, paneWidth, backingHeight)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, leftTexture)
+    drawFullscreenQuad(gl)
+
+    gl.viewport(paneWidth, 0, backingWidth - paneWidth, backingHeight)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, rightTexture)
+    drawFullscreenQuad(gl)
+  }
+
   render(): void {
     const gl = this.gl
     if (!this.sourceTexture || !this.sourceBitmap) return
@@ -2710,56 +2768,25 @@ export class Pipeline {
     // as far as needed to fit the box, never up past 1:1. This is what
     // decouples the Resize module's working resolution and Dual Pane's
     // doubled width from the viewport's CSS box size.
-    const dpr = window.devicePixelRatio || 1
+    // Dual Pane, either kind: bypasses previewMode/tabPreviewBypass entirely (a fullscreen A/B
+    // toggle and a split-pane view never coexist in the UI) — see blitSplitPane for the shared
+    // sizing/viewport mechanics.
+    if (this.gradeDualPaneEnabled && this.enhanceTarget && this.colorTarget) {
+      // Grade's Dual Pane compares a fixed pair — enhanceTarget (pre-grade) vs colorTarget
+      // (post-grade) — both already computed every frame regardless of dual-pane state, unlike
+      // Line Art's pair below (which needs an explicit per-mode resolve). No "modes" tuple needed.
+      this.blitSplitPane(this.enhanceTarget.texture, this.colorTarget.texture, this.enhanceTarget.width, this.enhanceTarget.height)
+      return
+    }
 
     if (this.dualPaneEnabled && this.colorTargetB) {
-      // Dual Pane: mirror labPipeline.ts's splitMode — blit each pane into
-      // its own half of the canvas via gl.viewport. Bypasses previewMode
-      // entirely (always shows the two colorTarget/colorTargetB results,
-      // never cropTarget's "original" A/B view) — that toggle only applies
-      // to the deselected fullscreen preview, which Dual Pane (a Line Art
-      // tab-only, desktop-only feature) never coexists with in the UI.
-      const naturalWidth = this.colorTarget.width * 2
-      const naturalHeight = this.colorTarget.height
-      const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)
-      const scale = Math.min(1, boxWidth / naturalWidth, boxHeight / naturalHeight)
-      const renderWidth = Math.max(1, Math.round(naturalWidth * scale))
-      const renderHeight = Math.max(1, Math.round(naturalHeight * scale))
-      const backingWidth = Math.round(renderWidth * dpr)
-      const backingHeight = Math.round(renderHeight * dpr)
-
-      if (this.canvas.width !== backingWidth || this.canvas.height !== backingHeight) {
-        this.canvas.width = backingWidth
-        this.canvas.height = backingHeight
-      }
-      const styleWidth = `${renderWidth}px`
-      const styleHeight = `${renderHeight}px`
-      if (this.canvas.style.width !== styleWidth || this.canvas.style.height !== styleHeight) {
-        this.canvas.style.width = styleWidth
-        this.canvas.style.height = styleHeight
-      }
-
-      const paneWidth = Math.round(backingWidth / 2)
       // "Original" means before-everything — substitute the ungraded lineArtOutputTarget/
       // lineArtOutputTargetB in at blit time for whichever pane resolved to it, rather than ever
       // repointing colorTarget/colorTargetB themselves (see the colorDirty block's own comment on
       // why that corrupted enhanceTarget once already).
       const leftTexture = (this.dualPaneModes[0] === 'original' ? this.lineArtOutputTarget : this.colorTarget).texture
       const rightTexture = (this.dualPaneModes[1] === 'original' && this.lineArtOutputTargetB ? this.lineArtOutputTargetB : this.colorTargetB).texture
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-      gl.useProgram(this.blitProgram)
-      bindFullscreenQuadAttribs(gl, this.blitProgram, this.quadBuffer)
-      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
-
-      gl.viewport(0, 0, paneWidth, backingHeight)
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, leftTexture)
-      drawFullscreenQuad(gl)
-
-      gl.viewport(paneWidth, 0, backingWidth - paneWidth, backingHeight)
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, rightTexture)
-      drawFullscreenQuad(gl)
+      this.blitSplitPane(leftTexture, rightTexture, this.colorTarget.width, this.colorTarget.height)
       return
     }
 
@@ -2792,6 +2819,7 @@ export class Pipeline {
         : this.tabPreviewBypass === 'lineArtOriginal' ? 'lineArtOutputTarget'
         : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',
     })
+    const dpr = window.devicePixelRatio || 1
     const naturalWidth = previewTarget.width
     const naturalHeight = previewTarget.height
     const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)

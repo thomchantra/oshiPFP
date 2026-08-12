@@ -17,6 +17,10 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   const [exportColorGrade, setExportColorGrade] = useState(true)
   const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
+  // Aspect ratio Custom mode was entered with — held fixed while editing width/height so the two
+  // fields can propagate to each other (see ExportPanel's commitWidth/commitHeight) without
+  // drifting on repeated edits. Same shape as useCropResize.ts's own customRatio.
+  const [exportCustomRatio, setExportCustomRatio] = useState(1)
   const [resampleMode, setResampleMode] = useState<ResampleMode>('lanczos3')
   const [format, setFormat] = useState<ExportFormat>('png')
 
@@ -25,6 +29,7 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
     exportColorGrade, setExportColorGrade,
     resolutionMode, setResolutionMode,
     customSize, setCustomSize,
+    exportCustomRatio, setExportCustomRatio,
     resampleMode, setResampleMode,
     format, setFormat,
   }

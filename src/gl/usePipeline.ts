@@ -96,6 +96,10 @@ export function usePipeline() {
     pipelineRef.current?.setDualPane(enabled, modes)
   }, [])
 
+  const setGradeDualPane = useCallback((enabled: boolean) => {
+    pipelineRef.current?.setGradeDualPane(enabled)
+  }, [])
+
   const readFinalPixels = useCallback(() => {
     return pipelineRef.current?.readFinalPixels() ?? null
   }, [])
@@ -130,6 +134,7 @@ export function usePipeline() {
     setExportPreviewParams,
     setDebugPreviewGumiRamp,
     setDualPane,
+    setGradeDualPane,
     readFinalPixels,
     readExportPixels,
     sampleEnhancePixel,

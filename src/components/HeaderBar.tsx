@@ -20,8 +20,16 @@ interface HeaderBarProps {
   showDualPaneToggle: boolean
   dualPaneEnabled: boolean
   onToggleDualPane: () => void
+  /** Whether a dual-pane split is actually rendering right now (App.tsx's gated
+   * dualPaneActive || gradeDualPaneActive) — distinct from dualPaneEnabled (the raw toggle
+   * state), which stays true even on tabs where the pipeline has already reverted to single-pane.
+   * AvatarCornerPreview's own crop math trusts this to know whether the source canvas is
+   * currently single- or double-wide; passing the raw toggle here once corrupted its output after
+   * switching off the tab that actually supports Dual Pane while leaving the toggle on. */
+  dualPaneActive: boolean
   /** Which of the two dual-pane result textures the corner preview mirrors — see
-   * AvatarCornerPreview's doc comment for the composite > overlay > original priority rule. */
+   * AvatarCornerPreview's doc comment for the composite > overlay > original priority rule
+   * (Line Art) — always 1 ("Graded") for Grade's own dual pane, no 3-way ambiguity there. */
   dualPanePriorityIndex: 0 | 1
   /** Dev-only "Dump State" button (see src/debug/dumpState.ts) — the button itself is gated on
    * `import.meta.env.DEV` below, a Vite build-time constant that's `false` in any production
@@ -41,6 +49,7 @@ export default function HeaderBar({
   showDualPaneToggle,
   dualPaneEnabled,
   onToggleDualPane,
+  dualPaneActive,
   dualPanePriorityIndex,
   onDumpState,
 }: HeaderBarProps) {
@@ -106,7 +115,7 @@ export default function HeaderBar({
         sourceCanvasRef={sourceCanvasRef}
         hasImage={hasImage}
         circle={pfpMode === 'circle'}
-        dualPaneActive={dualPaneEnabled}
+        dualPaneActive={dualPaneActive}
         dualPanePriorityIndex={dualPanePriorityIndex}
       />
     </div>

@@ -23,7 +23,8 @@ import { useCropEnhance } from './crop/useCropEnhance'
 import { useCropResize } from './crop/useCropResize'
 import { formatStateDump } from './debug/dumpState'
 import { trace } from './debug/renderTrace'
-import { downloadBlob } from './export/exportPica'
+import { buildResampledCanvas, downloadBlob } from './export/exportPica'
+import { computeTarget } from './export/computeTarget'
 import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
 import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
@@ -71,6 +72,14 @@ const PREVIEW_MODE_OPTIONS: { value: 'original' | 'result'; label: string }[] = 
 const COLOR_DISPLAY_MODE_OPTIONS: { value: 'original' | 'graded'; label: string }[] = [
   { value: 'original', label: 'ORIGINAL' },
   { value: 'graded', label: 'GRADED' },
+]
+
+/** Grade's Dual Pane always shows the same fixed pair — Original left, Graded right — so there's
+ * exactly one combo, rendered as a single always-active pill for row-height parity with the
+ * interactive 2-way toggle it replaces while dual-pane is on (mirrors Line Art's own combo-pill
+ * pattern, DUAL_PANE_MODE_OPTIONS above, but with only one possible option instead of three). */
+const GRADE_DUAL_PANE_OPTIONS: { value: 'original-graded'; label: string }[] = [
+  { value: 'original-graded', label: 'ORIGINAL | GRADED' },
 ]
 
 const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF', 'pathG', 'pathH', 'pathI']
@@ -203,14 +212,12 @@ export default function App() {
   // Dual Pane visually reverts to single-pane behavior below the desktop breakpoint even if
   // dualPaneEnabled is still true (e.g. the window was resized narrower after enabling it on
   // desktop) — gated here, once, rather than repeating `dualPaneEnabled && isDesktop` at each of
-  // the toggle's several call sites below. Also locked to the Maximizer tab specifically: the
-  // pipeline's actual dual-pane split (colorTarget/colorTargetB) is built entirely around Line
-  // Art's own [LineArtDisplayMode, LineArtDisplayMode] pair — leaving dualPaneActive true on
-  // Crop/Grade/Export just leaked that same split (and its stale mode pair) into tabs it has
-  // nothing to do with. The toggle itself stays interactable on every tab (per
-  // docs/oshiPFP-v0.3-tuningspecs.md's existing Crop/Export precedent) — only the actual
-  // split-pane rendering is scoped to where it means something.
+  // the toggle's several call sites below. One shared toggle, two mutually-exclusive-by-tab kinds:
+  // Line Art's own [LineArtDisplayMode, LineArtDisplayMode] pane pair, and Grade's fixed
+  // Original|Graded pair (pipeline.ts's setGradeDualPane) — Crop/Export still have neither, per
+  // docs/oshiPFP-v0.3-tuningspecs.md's existing single-pane-only precedent for those two tabs.
   const dualPaneActive = dualPaneEnabled && isDesktop && tab === 'maximizer'
+  const gradeDualPaneActive = dualPaneEnabled && isDesktop && tab === 'color'
   const pipeline = usePipeline()
   const hasImage = pipeline.sourceSize !== null
   const viewportWrapperRef = useRef<HTMLDivElement | null>(null)
@@ -237,6 +244,36 @@ export default function App() {
   const exportSettings = useExportSettings(pipeline.cropSize)
   const cropEnhance = useCropEnhance(pipeline.setEnhanceParams)
   const cropResize = useCropResize(pipeline.cropSize, pipeline.setResizeParams)
+
+  // Export tab's own live preview: the main viewport, while this tab is open, shows the actual
+  // resampled result at its true target pixel dimensions (shrink-to-fit/never-enlarge, same
+  // convention pipeline.ts's own blit already uses for every other tab) — not just correct
+  // *content* at native working resolution, which the tabPreviewBypass='exportPreview' mechanism
+  // already handles. Rendered via PreviewViewport's `overlay` slot so it sits in the exact same
+  // box the live GL canvas already occupies. Debounced (readExportPixels forces a synchronous GPU
+  // render + readback) and request-id-guarded (a slower in-flight resample, e.g. a large
+  // "Original" target, must not paint over a newer, faster one that already landed).
+  const exportTarget = computeTarget(exportSettings.resolutionMode, pipeline.cropSize, exportSettings.customSize)
+  const [exportPreviewUrl, setExportPreviewUrl] = useState<string | null>(null)
+  const [exportPreviewDims, setExportPreviewDims] = useState<{ width: number; height: number } | null>(null)
+  const exportPreviewRequestId = useRef(0)
+  useEffect(() => {
+    if (tab !== 'export' || !exportTarget) return
+    const timer = setTimeout(() => {
+      const requestId = ++exportPreviewRequestId.current
+      void (async () => {
+        const pixels = pipeline.readExportPixels(exportSettings.exportDisplayMode, exportSettings.exportColorGrade)
+        if (!pixels) return
+        const resampled = await buildResampledCanvas(pixels, exportTarget.width, exportTarget.height, exportSettings.resampleMode)
+        if (requestId !== exportPreviewRequestId.current) return
+        setExportPreviewUrl(resampled.toDataURL())
+        setExportPreviewDims({ width: exportTarget.width, height: exportTarget.height })
+      })()
+    }, 300)
+    return () => clearTimeout(timer)
+    // pipeline identity is stable; only re-run when the relevant params actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.resampleMode, exportTarget?.width, exportTarget?.height])
 
   // Promoted from "reset the curve" to "reset everything in the Color tab" —
   // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
@@ -394,6 +431,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dualPaneActive, dualPaneMode])
 
+  useEffect(() => {
+    pipeline.setGradeDualPane(gradeDualPaneActive)
+    // pipeline identity is stable; only re-run when the relevant params actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradeDualPaneActive])
+
   // Fumiko's "Find Edge" mode only supports Multiply (see pipeline.ts's
   // forcedMultiply) — LineArtPanel hides the other blend options for that combo,
   // but if a user had Screen/Overlay selected with Find Edge off and switches
@@ -442,10 +485,11 @@ export default function App() {
         hasImage={hasImage}
         theme={theme}
         onToggleTheme={() => setTheme(toggleTheme())}
-        showDualPaneToggle={isDesktop}
+        showDualPaneToggle={isDesktop && (tab === 'maximizer' || tab === 'color')}
         dualPaneEnabled={dualPaneEnabled}
         onToggleDualPane={() => setDualPaneEnabled((v) => !v)}
-        dualPanePriorityIndex={DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
+        dualPaneActive={dualPaneActive || gradeDualPaneActive}
+        dualPanePriorityIndex={gradeDualPaneActive ? 1 : DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
         onDumpState={handleDumpState}
       />
 
@@ -467,7 +511,11 @@ export default function App() {
           )
         )}
         {hasImage && tab === 'color' && (
-          <SegmentedControl options={COLOR_DISPLAY_MODE_OPTIONS} value={colorDisplayMode} onChange={setColorDisplayMode} />
+          gradeDualPaneActive ? (
+            <SegmentedControl options={GRADE_DUAL_PANE_OPTIONS} value="original-graded" onChange={() => {}} />
+          ) : (
+            <SegmentedControl options={COLOR_DISPLAY_MODE_OPTIONS} value={colorDisplayMode} onChange={setColorDisplayMode} />
+          )
         )}
         {hasImage && tab === null && (
           <SegmentedControl options={PREVIEW_MODE_OPTIONS} value={previewMode} onChange={setPreviewMode} />
@@ -502,10 +550,30 @@ export default function App() {
             cropMode={cropMode}
             squareSize={squareSize}
             originalSize={originalSize}
-            fillWrapper={dualPaneActive}
+            fillWrapper={dualPaneActive || gradeDualPaneActive}
             circle={pfpMode === 'circle'}
             interactive={tab === 'crop' && cropMode === 'square'}
-            overlay={!hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} /> : undefined}
+            overlay={
+              !hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} /> :
+              tab === 'export' && exportPreviewUrl && exportPreviewDims ? (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-light)' }}>
+                  {/* Shows the actual resampled output at its true target pixel dimensions —
+                      shrink-to-fit/never-enlarge via width/height attrs (intrinsic size) + CSS
+                      max-width/max-height with width/height:auto, the same "contain, don't
+                      distort, don't upscale" convention pipeline.ts's own blit sizing uses for
+                      the live GL canvas everywhere else. Closes the remaining WYSIWYG gap: this
+                      is what the file will actually look like at its real size, not just correct
+                      content shown at native working resolution. */}
+                  <img
+                    src={exportPreviewUrl}
+                    width={exportPreviewDims.width}
+                    height={exportPreviewDims.height}
+                    alt="Export preview at target size"
+                    style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', imageRendering: 'pixelated', display: 'block' }}
+                  />
+                </div>
+              ) : undefined
+            }
             onPointerDown={crop.handlePointerDown}
             onPointerMove={crop.handlePointerMove}
             onPointerUp={crop.endPointer}
@@ -640,6 +708,8 @@ export default function App() {
             setResolutionMode={exportSettings.setResolutionMode}
             customSize={exportSettings.customSize}
             setCustomSize={exportSettings.setCustomSize}
+            exportCustomRatio={exportSettings.exportCustomRatio}
+            setExportCustomRatio={exportSettings.setExportCustomRatio}
             resampleMode={exportSettings.resampleMode}
             setResampleMode={exportSettings.setResampleMode}
             format={exportSettings.format}

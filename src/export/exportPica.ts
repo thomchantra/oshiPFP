@@ -45,14 +45,17 @@ const JPEG_QUALITY: Record<'jpegHd' | 'jpegTiny', number> = { jpegHd: 0.8, jpegT
  * tab's Custom width x height fields both resolve correctly — resizing to
  * a forced square regardless of source aspect was the old MVP-era
  * behavior, wrong now that non-square export targets are a real option.
+ *
+ * Factored out of exportImage so ExportPanel's live "preview at target size"
+ * thumbnail can reuse the exact same resample path without the format/JPEG/
+ * blob steps that are specific to the actual downloaded file.
  */
-export async function exportImage(
+export async function buildResampledCanvas(
   pixels: FinalPixels,
   targetWidth: number,
   targetHeight: number,
   resampleMode: ResampleMode,
-  format: ExportFormat,
-): Promise<Blob> {
+): Promise<HTMLCanvasElement> {
   const sourceCanvas = document.createElement('canvas')
   sourceCanvas.width = pixels.width
   sourceCanvas.height = pixels.height
@@ -73,6 +76,18 @@ export async function exportImage(
     if (resampleMode === 'bilinear') destCtx.imageSmoothingQuality = 'low'
     destCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight)
   }
+
+  return destCanvas
+}
+
+export async function exportImage(
+  pixels: FinalPixels,
+  targetWidth: number,
+  targetHeight: number,
+  resampleMode: ResampleMode,
+  format: ExportFormat,
+): Promise<Blob> {
+  const destCanvas = await buildResampledCanvas(pixels, targetWidth, targetHeight, resampleMode)
 
   if (format !== 'png') {
     const destCtx = destCanvas.getContext('2d')
