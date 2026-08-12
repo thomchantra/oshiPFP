@@ -43,6 +43,7 @@ import { identityLutBuffer } from '../curve/spline'
 import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { pinchToPlateau } from '../tone/pinchRamp'
+import { trace } from '../debug/renderTrace'
 
 export type CropRect = [number, number, number, number]
 
@@ -584,6 +585,13 @@ export class Pipeline {
 
   setLineArtParams(params: LineArtParams): void {
     const prev = this.lineArt
+    trace('pipeline:setLineArtParams', {
+      prevMode: prev.mode,
+      nextMode: params.mode,
+      prevFillInvert: (prev as { fillInvert?: boolean }).fillInvert,
+      nextFillInvert: (params as { fillInvert?: boolean }).fillInvert,
+      botanSeedDirtyBefore: this.botanSeedDirty,
+    })
     if (
       params.mode !== prev.mode ||
       params.threshold !== prev.threshold ||
@@ -787,6 +795,65 @@ export class Pipeline {
    * it (fillMaskProgram/maskFillColorProgram/gradientMapProgram). Exists specifically so no call
    * site can forget one — see docs/oshiPFP-v0.3-tuningspecs.md's Gumi footnote on shared GL
    * programs silently leaking uniform state across call sites in the same render() pass. */
+  /** Debug-only (see src/debug/renderTrace.ts) — sets an int uniform and immediately reads it back
+   * via gl.getUniform so a live repro of the Invert Fill Flip-Flop Bug can confirm what actually
+   * landed on the GPU, not just what the JS call site intended to set. Cheap enough per-draw
+   * (one extra sync GL call) to leave wired in dev builds; no-ops in prod via trace()'s own gate. */
+  /** Debug-only companion to traceUniformSet — reads back a single center pixel of a target
+   * texture right after it's rendered, so a trace can catch a genuinely different mask/seed
+   * *content* (e.g. a texture-unit mix-up, stale cache) even when every uInvert uniform checks
+   * out clean. RGBA8 targets only (float targets like seedTargetA/B need a different read path
+   * and aren't sampled here — maskTarget, the binary threshold output, is the relevant one for
+   * the current investigation). */
+  private traceSamplePixel(tag: string, target: TargetTexture, extra: Record<string, unknown> = {}): void {
+    if (!import.meta.env.DEV) return
+    const gl = this.gl
+    const buf = new Uint8Array(4)
+    const cx = Math.floor(target.width / 2)
+    const cy = Math.floor(target.height / 2)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+    gl.readPixels(cx, cy, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+    trace(tag, { centerPixel: [buf[0], buf[1], buf[2], buf[3]], width: target.width, height: target.height, ...extra })
+  }
+
+  /** Debug-only, wider-coverage sibling of traceSamplePixel — a single center pixel can land on
+   * a flat/background region that's identical across two renders even when the actual content
+   * differs elsewhere (e.g. right where detected line-art draws), silently missing a real bug.
+   * Samples a 5x5 grid spread across the target instead, plus a cheap additive checksum so two
+   * traces can be eyeballed-compared at a glance without diffing 25 arrays by hand. */
+  private traceSampleGrid(tag: string, target: TargetTexture, extra: Record<string, unknown> = {}): void {
+    if (!import.meta.env.DEV) return
+    const gl = this.gl
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+    const buf = new Uint8Array(4)
+    const points: number[][] = []
+    let checksum = 0
+    for (let gy = 0; gy < 5; gy++) {
+      for (let gx = 0; gx < 5; gx++) {
+        const x = Math.floor(((gx + 0.5) / 5) * target.width)
+        const y = Math.floor(((gy + 0.5) / 5) * target.height)
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+        points.push([buf[0], buf[1], buf[2], buf[3]])
+        checksum += buf[0] + buf[1] + buf[2] + buf[3]
+      }
+    }
+    trace(tag, { checksum, points, width: target.width, height: target.height, ...extra })
+  }
+
+  private traceUniformSet(
+    tag: string,
+    program: WebGLProgram,
+    uniformName: string,
+    intendedValue: number,
+    extra: Record<string, unknown> = {},
+  ): void {
+    if (!import.meta.env.DEV) return
+    const gl = this.gl
+    const loc = gl.getUniformLocation(program, uniformName)
+    const actual = loc ? gl.getUniform(program, loc) : null
+    trace(tag, { uniform: uniformName, intended: intendedValue, actualOnGpu: actual, ...extra })
+  }
+
   private setFillTypeColorUniforms(
     program: WebGLProgram,
     opts: {
@@ -1298,6 +1365,7 @@ export class Pipeline {
 
       const seedStale =
         this.botanSeedDirty || !this.botanSeedTarget || this.botanSeedTarget.width !== width || this.botanSeedTarget.height !== height
+      trace('render:pathB-entry', { fillInvert: p.fillInvert, fillType: p.fillType, seedStale, botanSeedDirty: this.botanSeedDirty })
 
       if (seedStale) {
       this.maskTarget = this.ensureTarget(this.maskTarget, width, height)
@@ -1314,11 +1382,26 @@ export class Pipeline {
         // whatever the last renderer (e.g. Gumi) left behind. See threshold.frag.ts's own doc
         // comment, which predicted exactly this fragility.
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
+        this.traceUniformSet('gl:thresholdProgram(Botan)', this.thresholdProgram, 'uInvert', 0, {
+          mode: p.mode,
+          threshold: p.threshold,
+        })
       })
+      this.traceSamplePixel('gl:maskTarget-after-threshold(Botan)', this.maskTarget!, { mode: p.mode })
       this.runPass(this.distanceSeedProgram, this.seedTargetA, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, this.maskTarget!.texture)
         gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
+        // Shared-uniform-leak fix (Invert Fill Flip-Flop Bug root cause, found session 11):
+        // distanceSeedProgram is also used by Gumi's default Line mode (runGumiDistanceTransform
+        // called with invert=true), which leaves uInvert=1 sitting on this program object. Botan
+        // never set it explicitly, so a Gumi->Botan round-trip silently seeded Botan's distance
+        // transform from the wrong side of the mask — the toggle and every downstream uInvert
+        // uniform stayed correct at 0, but the underlying shape was already computed backwards
+        // by this point. Same fragility class as thresholdProgram/minFilterProgram, just one
+        // layer further upstream than either of those fixes reached.
+        gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
+        this.traceUniformSet('gl:distanceSeedProgram(Botan)', this.distanceSeedProgram, 'uInvert', 0, { mode: p.mode })
       })
 
       const numPasses = Math.max(1, Math.ceil(Math.log2(Math.max(width, height))))
@@ -1364,6 +1447,18 @@ export class Pipeline {
         gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), botanFused ? 1 : 0)
         gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
         gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), botanFused && p.fillInvert ? 1 : 0)
+        this.traceUniformSet('gl:distanceToEdgeProgram', this.distanceToEdgeProgram, 'uInvert', botanFused && p.fillInvert ? 1 : 0, {
+          mode: p.mode,
+          fillType: p.fillType,
+          fillInvert: p.fillInvert,
+          botanFused,
+        })
+      })
+      this.traceSamplePixel('gl:distanceMaskTarget-after-distanceToEdge(Botan)', this.distanceMaskTarget!, {
+        mode: p.mode,
+        fillType: p.fillType,
+        fillInvert: p.fillInvert,
+        botanFused,
       })
 
       if (botanFused) {
@@ -1382,6 +1477,11 @@ export class Pipeline {
           gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
           gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
           gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+          this.traceUniformSet('gl:maskFillColorProgram(Botan)', this.maskFillColorProgram, 'uInvert', p.fillInvert ? 1 : 0, {
+            mode: p.mode,
+            fillType: p.fillType,
+            fillInvert: p.fillInvert,
+          })
           this.setFillTypeColorUniforms(this.maskFillColorProgram, {
             fillType: p.fillType,
             solidColor: p.tintColor,
@@ -1607,6 +1707,7 @@ export class Pipeline {
       })
       outputTarget = this.gradientMapTarget
     } else if (p.mode === 'pathG') {
+      trace('render:pathG-entry', { gumiLineInvert: p.gumiLineInvert, gumiFillInvert: p.gumiFillInvert, botanSeedDirty: this.botanSeedDirty })
       // Path G (Gumi): luminance-band isolation (always-on plateau ramp) ->
       // contrast boost (reuses colorCorrect's pivot-at-0.5 contrast curve)
       // -> threshold into a binary mask (uInvert=1 — ramp's high
@@ -1659,6 +1760,17 @@ export class Pipeline {
         gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
         gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), gumiRadius)
         gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+        // Shared-uniform-leak fix (Gumi radius-refresh investigation, session 11) — REVISED:
+        // this pass never set uMode explicitly. The surrounding comment's "min mode" framing
+        // turned out to describe intent, not actual correct behavior here: forcing uMode=0
+        // (session 11's first attempt) made detection consistent but *consistently empty* —
+        // user-confirmed regression, permanently locked into the "looks off" state instead of
+        // occasionally self-correcting. The value Gap Closing used to leak in here (uMode=1,
+        // left over from its own trailing shrink phase) was what actually produced real
+        // detected ink. Pinning uMode=1 explicitly here reproduces that previously-leaked-in
+        // value consistently on every render, rather than only after some other trigger left it
+        // on the shared program by accident.
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
       })
       this.runPass(this.minFilterProgram, this.gumiMaxVTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -1667,6 +1779,7 @@ export class Pipeline {
         gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
         gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), gumiRadius)
         gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+        gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
       })
 
       // Gap Closing prototype: a proper morphological closing (grow by a fixed small
@@ -1796,6 +1909,11 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uGamma'), p.gumiBlobGamma)
           gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSoftOutput'), p.gumiSoftDetection ? 1 : 0)
         })
+        this.traceSampleGrid('gl:gumiBlobTarget-after-blobMask(Gumi)', this.gumiBlobTarget, {
+          mode: p.mode,
+          blobMaxDt: p.blobMaxDt,
+          radius: p.radius,
+        })
         const linePostProcessed = this.runGumiLinePostProcess(this.gumiBlobTarget, p, width, height)
         this.gumiLineColorTarget = this.ensureTarget(this.gumiLineColorTarget, width, height)
         this.runPass(this.maskFillColorProgram, this.gumiLineColorTarget, width, height, () => {
@@ -1821,6 +1939,11 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividDeadzone'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorContrast'), 1)
+        })
+        this.traceSampleGrid('gl:gumiLineColorTarget-final(Gumi)', this.gumiLineColorTarget, {
+          mode: p.mode,
+          blobMaxDt: p.blobMaxDt,
+          radius: p.radius,
         })
         outputTarget = this.gumiLineColorTarget
       }
@@ -2469,6 +2592,20 @@ export class Pipeline {
     const previewTarget = showGumiRampDebug
       ? this.gumiRampDebugTarget!
       : this.previewMode === 'original' ? this.cropTarget! : this.colorTarget
+    // Debug-only (Gumi radius-refresh investigation, session 11): identifies which target
+    // actually got selected for the blit — showGumiRampDebug/'original' preview mode would both
+    // paint something entirely unrelated to the just-computed Gumi output, which could explain a
+    // real on-screen difference even when the algorithm's own output texture is provably
+    // unchanged (confirmed via gl:gumiLineColorTarget-final(Gumi) in an earlier round). Uses the
+    // 5x5-grid sampler, not the single-center-pixel one — a center sample already proved capable
+    // of missing a real, confirmed-via-toDataURL() difference that turned out to be localized
+    // away from the center (most likely right where Gumi's detected line-art actually draws).
+    this.traceSampleGrid('gl:previewTarget-at-blit', previewTarget, {
+      mode: this.lineArt.mode,
+      previewMode: this.previewMode,
+      showGumiRampDebug,
+      selected: showGumiRampDebug ? 'gumiRampDebugTarget' : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',
+    })
     const naturalWidth = previewTarget.width
     const naturalHeight = previewTarget.height
     const { width: boxWidth, height: boxHeight } = this.boxSize(naturalWidth, naturalHeight)

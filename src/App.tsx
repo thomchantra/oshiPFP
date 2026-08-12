@@ -23,6 +23,7 @@ import { useColorCurve } from './curve/useColorCurve'
 import { useCropEnhance } from './crop/useCropEnhance'
 import { useCropResize } from './crop/useCropResize'
 import { formatStateDump } from './debug/dumpState'
+import { trace } from './debug/renderTrace'
 import { downloadBlob } from './export/exportPica'
 import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
@@ -318,7 +319,12 @@ export default function App() {
   }, [tab, previewMode])
 
   useEffect(() => {
-    pipeline.setLineArtParams({ ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode })
+    const next = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
+    trace('react:effect->pipeline.setLineArtParams', {
+      mode: next.mode,
+      fillInvert: (next as { fillInvert?: boolean }).fillInvert,
+    })
+    pipeline.setLineArtParams(next)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsByMode, lineArtMode, lineArtDisplayMode])
@@ -349,9 +355,11 @@ export default function App() {
   // touch the cache) or an in-place edit (cache it under the active mode).
   const handleLineArtChange = (next: LineArtParams) => {
     if (next.mode !== lineArtMode) {
+      trace('react:mode-switch', { from: lineArtMode, to: next.mode })
       setLineArtMode(next.mode)
       return
     }
+    trace('react:param-edit', { mode: lineArtMode, fillInvert: (next as { fillInvert?: boolean }).fillInvert })
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
   }
 

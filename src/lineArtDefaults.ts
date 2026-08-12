@@ -37,6 +37,11 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
   },
   pathD: {
     // Recalibrated from jsonconfig/daiya-default-oshipfp-state-1786466157705.json (v0.3 JSON loop, session 9).
+    // fillInvert temporarily forced to false (session 11) — was true from the session 9 JSON
+    // recalibration, but the user reported it wasn't reliably rendering correctly and there were
+    // several fixing attempts since (thresholdProgram leak fix, distanceSeedProgram leak fix).
+    // Set to false here so the user can validate against a known-clean baseline before deciding
+    // whether true was ever actually correct. See changelog/oshipfp-v0.3-saga.md session 11.
     opacity: 0.94,
     threshold: 0.6,
     radius: 2,
@@ -46,7 +51,7 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     vividDeadzone: 0.15,
     vividBoost: 1,
     fillType: 'image',
-    fillInvert: true,
+    fillInvert: false,
   },
   pathF: {
     opacity: 1,

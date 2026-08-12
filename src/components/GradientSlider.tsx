@@ -1,5 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useDoubleTapReset } from './useDoubleTapReset'
+import { trace } from '../debug/renderTrace'
 
 /**
  * Value <-> slider-position (0-1) taper: a value of `breakpoint` sits at
@@ -73,6 +74,17 @@ export default function GradientSlider({
   const handleDoubleTap = useDoubleTapReset(defaultValue, onChange)
   const fillPct = valueToPos(value, min, max, curve) * 100
   const dragRef = useRef<DragState | null>(null)
+
+  // Debug-only (see docs/oshiPFP-invert-bug-devtool-trace-method.md): scoped to just Gumi's
+  // "Detection Radius" slider, the one with the long-standing "looks stuck at 0 on fresh Gumi
+  // entry" report (docs/oshiPFP-v0.3-tuningspecs.md's "Post-Hinata/Tsukiko saga" footnote).
+  // GradientSlider itself has no internal state — fillPct is recomputed fresh from `value` every
+  // render — so if this ever logs value=0 right after a fresh Gumi entry while the default is 1,
+  // that's a real upstream params bug; if it logs the correct value the whole time, the bug is a
+  // pure paint/CSS issue this component's own render can't explain.
+  if (label === 'Detection Radius') {
+    trace('render:GradientSlider(DetectionRadius)', { value, fillPct, min, max, curve })
+  }
 
   // Relative drag, not absolute jump-to-touch-point: touching down anywhere
   // in the (generous, label-covering) hit zone "grabs" the slider at its
