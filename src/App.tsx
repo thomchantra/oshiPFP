@@ -348,19 +348,31 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, previewMode])
 
-  // Grade tab's Original/Graded toggle and Export tab's Original/Final Composite selector both
-  // want to peek at an earlier pipeline stage on the live canvas — see tabPreviewBypass's doc
-  // comment in pipeline.ts. Only one of these can be "active" at a time since they're keyed off
-  // which tab is actually open, and it resets to 'none' the moment neither tab is selected.
+  // Grade tab's Original/Graded toggle and Line Art tab's own "Original" display-mode button both
+  // peek at an earlier pipeline stage on the live canvas — see tabPreviewBypass's doc comment in
+  // pipeline.ts. Export tab is the sole WYSIWYG authority for its own (displayMode, colorGrade)
+  // selection — its own resolve (renderExportPreview) is fully decoupled from Line Art's/Grade's
+  // live tab state, not just an earlier-stage peek. Only one of these can be "active" at a time
+  // since they're keyed off which tab is actually open, and it resets to 'none' the moment none
+  // of them apply (including Grade's own "Graded" mode, which must show true full grading
+  // regardless of what Line Art's displayMode happens to be).
   useEffect(() => {
     const bypass =
       tab === 'color' && colorDisplayMode === 'original' ? 'enhance' :
-      tab === 'export' && exportSettings.exportDisplayMode === 'original' ? 'resize' :
+      tab === 'export' ? 'exportPreview' :
+      tab === 'maximizer' && lineArtDisplayMode === 'original' ? 'lineArtOriginal' :
       'none'
     pipeline.setTabPreviewBypass(bypass)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, colorDisplayMode, exportSettings.exportDisplayMode])
+  }, [tab, colorDisplayMode, lineArtDisplayMode])
+
+  useEffect(() => {
+    if (tab !== 'export') return
+    pipeline.setExportPreviewParams(exportSettings.exportDisplayMode, exportSettings.exportColorGrade)
+    // pipeline identity is stable; only re-run when the relevant params actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade])
 
   useEffect(() => {
     const next = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
@@ -622,6 +634,8 @@ export default function App() {
             readExportPixels={pipeline.readExportPixels}
             exportDisplayMode={exportSettings.exportDisplayMode}
             setExportDisplayMode={exportSettings.setExportDisplayMode}
+            exportColorGrade={exportSettings.exportColorGrade}
+            setExportColorGrade={exportSettings.setExportColorGrade}
             resolutionMode={exportSettings.resolutionMode}
             setResolutionMode={exportSettings.setResolutionMode}
             customSize={exportSettings.customSize}

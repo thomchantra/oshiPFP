@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import Icon from './Icon'
+import ToggleSwitch from './ToggleSwitch'
 import { downloadBlob, exportImage, type FinalPixels } from '../export/exportPica'
 import { computeTarget, clampDimension } from '../export/computeTarget'
 import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } from '../types'
@@ -10,9 +11,11 @@ interface ExportPanelProps {
   cropSize: { width: number; height: number } | null
   /** Original upload's filename (usePipeline's fileInfo) — used to build the download filename, see handleExport. */
   fileName: string | null
-  readExportPixels: (mode: ExportDisplayMode) => FinalPixels | null
+  readExportPixels: (mode: ExportDisplayMode, colorGrade: boolean) => FinalPixels | null
   exportDisplayMode: ExportDisplayMode
   setExportDisplayMode: (mode: ExportDisplayMode) => void
+  exportColorGrade: boolean
+  setExportColorGrade: (colorGrade: boolean) => void
   resolutionMode: ResolutionMode
   setResolutionMode: (mode: ResolutionMode) => void
   customSize: { width: number; height: number }
@@ -23,13 +26,16 @@ interface ExportPanelProps {
   setFormat: (format: ExportFormat) => void
 }
 
-/** Export's own explicit Original/Final Composite selector — see pipeline.ts's readExportPixels
- * doc comment for why 'original' here means something stricter than the Line Art tab's own
- * displayMode toggle (bypasses Enhancement too, not just Line Art/Color). Selecting either option
- * also live-updates the on-screen canvas via Pipeline.tabPreviewBypass (see App.tsx). */
+/** Export tab is the sole WYSIWYG authority for what gets exported — this selector (and the Color
+ * Grade toggle below it) are fully decoupled from whatever Line Art's/Grade's own live tab state
+ * currently shows; the live canvas while this tab is open exactly mirrors this group's selection
+ * (Pipeline.tabPreviewBypass==='exportPreview', see App.tsx/pipeline.ts's renderExportPreview).
+ * 'original' means something stricter than the Line Art tab's own displayMode toggle — see
+ * pipeline.ts's readExportPixels doc comment (bypasses Enhancement too, not just Line Art/Color). */
 const EXPORT_MODE_OPTIONS: { value: ExportDisplayMode; label: string }[] = [
   { value: 'original', label: 'Original' },
-  { value: 'composite', label: 'Final Composite' },
+  { value: 'composite', label: 'Composite' },
+  { value: 'overlay', label: 'Overlay' },
 ]
 
 const RESOLUTION_OPTIONS: { value: ResolutionMode; label: string }[] = [
@@ -52,6 +58,7 @@ const FORMAT_OPTIONS: { value: ExportFormat; label: string; ext: string }[] = [
 export default function ExportPanel({
   cropSize, fileName, readExportPixels,
   exportDisplayMode, setExportDisplayMode,
+  exportColorGrade, setExportColorGrade,
   resolutionMode, setResolutionMode,
   customSize, setCustomSize,
   resampleMode, setResampleMode,
@@ -96,7 +103,7 @@ export default function ExportPanel({
   }
 
   const handleExport = async () => {
-    const pixels = readExportPixels(exportDisplayMode)
+    const pixels = readExportPixels(exportDisplayMode, exportColorGrade)
     if (!pixels || !target) {
       setStatus('error')
       setErrorMessage('No image loaded yet — upload one from the Crop tab first.')
@@ -118,8 +125,8 @@ export default function ExportPanel({
 
   return (
     <BottomSheet>
-      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Export</span>
-      <div className="crop-bottomcontent" style={{ padding: 0, marginTop: 8, marginBottom: 16 }}>
+      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Export Output</span>
+      <div className="crop-bottomcontent" style={{ padding: 0, marginTop: 8 }}>
         {EXPORT_MODE_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -130,6 +137,24 @@ export default function ExportPanel({
             {opt.label}
           </button>
         ))}
+      </div>
+      <div
+        className="lineart-toggle-row"
+        role="button"
+        tabIndex={exportDisplayMode === 'original' ? -1 : 0}
+        aria-disabled={exportDisplayMode === 'original'}
+        style={{ marginTop: 8, marginBottom: 16, opacity: exportDisplayMode === 'original' ? 0.4 : 1, cursor: exportDisplayMode === 'original' ? 'default' : 'pointer' }}
+        onClick={() => { if (exportDisplayMode !== 'original') setExportColorGrade(!exportColorGrade) }}
+        onKeyDown={(e) => {
+          if (exportDisplayMode === 'original') return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setExportColorGrade(!exportColorGrade)
+          }
+        }}
+      >
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Grade</span>
+        <ToggleSwitch on={exportColorGrade} label="Color Grade" />
       </div>
 
       <div style={{ display: 'flex', gap: 10 }}>

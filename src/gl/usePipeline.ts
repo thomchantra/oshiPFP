@@ -80,8 +80,12 @@ export function usePipeline() {
     pipelineRef.current?.setPreviewMode(mode)
   }, [])
 
-  const setTabPreviewBypass = useCallback((bypass: 'none' | 'enhance' | 'resize') => {
+  const setTabPreviewBypass = useCallback((bypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOriginal') => {
     pipelineRef.current?.setTabPreviewBypass(bypass)
+  }, [])
+
+  const setExportPreviewParams = useCallback((mode: ExportDisplayMode, colorGrade: boolean) => {
+    pipelineRef.current?.setExportPreviewParams(mode, colorGrade)
   }, [])
 
   const setDebugPreviewGumiRamp = useCallback((show: boolean) => {
@@ -96,8 +100,8 @@ export function usePipeline() {
     return pipelineRef.current?.readFinalPixels() ?? null
   }, [])
 
-  const readExportPixels = useCallback((exportMode: ExportDisplayMode) => {
-    return pipelineRef.current?.readExportPixels(exportMode) ?? null
+  const readExportPixels = useCallback((exportMode: ExportDisplayMode, colorGrade: boolean) => {
+    return pipelineRef.current?.readExportPixels(exportMode, colorGrade) ?? null
   }, [])
 
   const sampleEnhancePixel = useCallback((u: number, v: number) => {
@@ -123,6 +127,7 @@ export function usePipeline() {
     setLineArtActive,
     setPreviewMode,
     setTabPreviewBypass,
+    setExportPreviewParams,
     setDebugPreviewGumiRamp,
     setDualPane,
     readFinalPixels,

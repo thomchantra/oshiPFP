@@ -40,7 +40,7 @@ import { inkColorRecombineFrag } from './shaders/inkColorRecombine.frag'
 import { createSourceTexture, createLutTexture, updateLutTexture } from './texture'
 import { loadSourceBitmap } from '../imageLoad'
 import { identityLutBuffer } from '../curve/spline'
-import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
+import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, ExportDisplayMode, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { pinchToPlateau } from '../tone/pinchRamp'
 import { trace } from '../debug/renderTrace'
@@ -288,6 +288,22 @@ export class Pipeline {
   private lightColorTargetB: TargetTexture | null = null
   private colorTargetB: TargetTexture | null = null
 
+  // Export tab's own live-preview resolve — a THIRD independent slot alongside the primary/B pair
+  // above, for when Export's own (displayMode, colorGrade) selection differs from whatever Line
+  // Art's live displayMode/Grade tab's live adjustments currently show. See renderExportPreview.
+  // lineArtRawTarget caches computeLineArtRaw's output (expensive — e.g. Botan's JFA) across the
+  // frame so this preview never pays for a second compute; it doesn't depend on displayMode so the
+  // same raw target from the main render is always valid to reuse here.
+  private lineArtRawTarget: TargetTexture | null = null
+  private exportLineArtBlendTarget: TargetTexture | null = null
+  private exportLineArtOverlayTarget: TargetTexture | null = null
+  private exportLightColorTarget: TargetTexture | null = null
+  private exportColorTarget: TargetTexture | null = null
+  /** Whichever existing target actually answers the current Export selection — never a fresh
+   * allocation, just a pointer to colorTarget/resizeTarget/exportColorTarget/the raw resolve
+   * output, whichever applies. See renderExportPreview. */
+  private exportPreviewResult: TargetTexture | null = null
+
   // Path G (Gumi) / H (Hinata) / I (Inori) — see renderLineArt's pathG/H/I
   // branches, ported 1:1 from src/lab/labPipeline.ts's render().
   private rampTarget: TargetTexture | null = null
@@ -339,17 +355,30 @@ export class Pipeline {
   private lineArtSettleTimer: ReturnType<typeof setTimeout> | null = null
   /** Fullscreen-preview A/B toggle (App.tsx renders it only while no tab is selected) — 'original' blits cropTarget (post-crop, pre-Enhancement/Line Art/Color) instead of the fully-processed colorTarget. Only affects the on-screen canvas; Export always reads the full colorTarget regardless. */
   private previewMode: 'original' | 'result' = 'result'
-  /** Tab-scoped live-preview bypass — lets the Grade tab's Original/Graded toggle and the Export
-   * tab's Original/Final Composite selector peek at an earlier pipeline stage on the live canvas,
-   * same idea as previewMode above but for later stage boundaries previewMode was never built to
-   * express. 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm —
-   * the same boundary Line Art's own "Original" display mode already shows via
-   * resolveLineArtDisplay, deliberately NOT lineArtOutputTarget: Grade's "Original" means "the
-   * photo before any of this ran," not "whatever Line Art display mode happens to be selected
-   * right now"). 'resize' -> resizeTarget (matches readExportPixels('original')). App.tsx computes
-   * this from whichever tab is actually active, resetting to 'none' whenever neither tab is open,
-   * so it can't leak into Crop/Maximizer/deselected views. */
-  private tabPreviewBypass: 'none' | 'enhance' | 'resize' = 'none'
+  /** Tab-scoped live-preview bypass — lets the Grade tab's Original/Graded toggle, Export tab's own
+   * group, and Line Art tab's own "Original" display-mode button peek at an earlier pipeline stage
+   * (or Export's own independent resolve) on the live canvas, same idea as previewMode above but
+   * for later stage boundaries previewMode was never built to express. 'enhance' -> enhanceTarget
+   * (post-crop+resize+Enhancement, pre-Line-Art-algorithm — the same boundary Line Art's own
+   * "Original" display mode already shows via resolveLineArtDisplay, deliberately NOT
+   * lineArtOutputTarget: Grade's "Original" means "the photo before any of this ran," not "whatever
+   * Line Art display mode happens to be selected right now"). 'exportPreview' -> exportPreviewResult,
+   * see renderExportPreview — Export tab is the sole WYSIWYG authority for its own (displayMode,
+   * colorGrade) selection, fully decoupled from Line Art's/Grade's own live tab state.
+   * 'lineArtOriginal' -> lineArtOutputTarget directly, used ONLY while tab==='maximizer' AND its own
+   * displayMode==='original' — colorTarget itself must never be repointed to lineArtOutputTarget to
+   * achieve this (see the colorDirty block's own comment: doing so once corrupted enhanceTarget by
+   * violating ensureTarget's "this field always owns its own private texture" invariant), so the
+   * substitution happens here, at the point of consumption, instead. App.tsx computes this from
+   * whichever tab is actually active, resetting to 'none' whenever none of these apply, so it can't
+   * leak into Crop/deselected views or Grade's own "Graded" mode. */
+  private tabPreviewBypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOriginal' = 'none'
+  /** Export tab's own (displayMode, colorGrade) selection — see setExportPreviewParams/
+   * renderExportPreview. Independent of this.lineArt.displayMode; that's the whole point. */
+  private exportDisplayMode: ExportDisplayMode = 'composite'
+  private exportColorGrade = true
+  /** True whenever anything upstream of the Export preview changed — set alongside every colorDirty=true site, since the preview depends on everything colorDirty does plus Export's own selection. */
+  private exportPreviewDirty = true
   /**
    * v0.3 tuning diagnostic (docs/oshiPFP-v0.3-tuningspecs.md): Gumi's
    * Luminance Ramp module (plateauRamp.frag.ts) feeds a contrast boost and
@@ -474,6 +503,7 @@ export class Pipeline {
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
       'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
+      'lineArtRawTarget', 'exportLineArtBlendTarget', 'exportLineArtOverlayTarget', 'exportLightColorTarget', 'exportColorTarget',
       'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget',
       'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
       'gumiSeedTargetA',
@@ -534,6 +564,7 @@ export class Pipeline {
     this.enhanceDirty = true
     this.lineArtDirty = true
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
@@ -562,30 +593,35 @@ export class Pipeline {
   setCurveLut(lut: Uint8Array): void {
     updateLutTexture(this.gl, this.lutTexture, lut, 3)
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
   setHsl(hslByBand: HslByBand): void {
     this.hslByBand = hslByBand
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
   setInvert(invert: InvertParams): void {
     this.invert = invert
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
   setLight(light: LightParams): void {
     this.light = light
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
   setColorAdjust(colorAdjust: ColorAdjustParams): void {
     this.colorAdjust = colorAdjust
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
@@ -708,6 +744,7 @@ export class Pipeline {
     // switching its pane-pair) doesn't leave a stale texture on screen.
     this.lineArtDirty = true
     this.colorDirty = true
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
@@ -732,9 +769,18 @@ export class Pipeline {
   }
 
   /** See tabPreviewBypass's doc comment. */
-  setTabPreviewBypass(bypass: 'none' | 'enhance' | 'resize'): void {
+  setTabPreviewBypass(bypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOriginal'): void {
     if (this.tabPreviewBypass === bypass) return
     this.tabPreviewBypass = bypass
+    this.scheduleRender()
+  }
+
+  /** See exportDisplayMode/exportColorGrade's doc comments. */
+  setExportPreviewParams(mode: ExportDisplayMode, colorGrade: boolean): void {
+    if (this.exportDisplayMode === mode && this.exportColorGrade === colorGrade) return
+    this.exportDisplayMode = mode
+    this.exportColorGrade = colorGrade
+    this.exportPreviewDirty = true
     this.scheduleRender()
   }
 
@@ -2280,9 +2326,10 @@ export class Pipeline {
    * `this.lineArt.displayMode`) against a raw algorithm-chain output from
    * computeLineArtRaw — factored out of what used to be the tail end of
    * renderLineArt so Dual Pane can call this twice (once per pane) against
-   * the one shared rawTarget, each writing into its own set of target
-   * textures (isSecondary picks pane B's fields over pane A's/the single-
-   * pane defaults) so the two invocations within one frame don't clobber
+   * the one shared rawTarget, and Export's own live-preview resolve a third
+   * time (see renderExportPreview), each writing into its own set of target
+   * textures (slot picks pane B's or Export's fields over pane A's/the
+   * single-pane defaults) so the invocations within one frame don't clobber
    * each other's framebuffers.
    */
   private resolveLineArtDisplay(
@@ -2291,7 +2338,7 @@ export class Pipeline {
     mode: LineArtDisplayMode,
     width: number,
     height: number,
-    isSecondary: boolean,
+    slot: 'primary' | 'secondary' | 'export',
   ): TargetTexture {
     const gl = this.gl
     const p = this.lineArt
@@ -2303,12 +2350,16 @@ export class Pipeline {
       // it onto plain white for this raw preview instead of blitting the
       // partial alpha straight to the (alpha-enabled) canvas, which would
       // let the page background show through.
-      if (isSecondary) {
+      if (slot === 'secondary') {
         this.lineArtOverlayPreviewTargetB = this.ensureTarget(this.lineArtOverlayPreviewTargetB, width, height)
+      } else if (slot === 'export') {
+        this.exportLineArtOverlayTarget = this.ensureTarget(this.exportLineArtOverlayTarget, width, height)
       } else {
         this.lineArtOverlayPreviewTarget = this.ensureTarget(this.lineArtOverlayPreviewTarget, width, height)
       }
-      const target = isSecondary ? this.lineArtOverlayPreviewTargetB! : this.lineArtOverlayPreviewTarget!
+      const target = slot === 'secondary' ? this.lineArtOverlayPreviewTargetB!
+        : slot === 'export' ? this.exportLineArtOverlayTarget!
+        : this.lineArtOverlayPreviewTarget!
       this.runPass(this.alphaOverWhiteProgram, target, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, rawTarget.texture)
@@ -2340,12 +2391,16 @@ export class Pipeline {
       // what the opacity slider's 100-300% range already did per algorithm.
       opacities[0] = p.mode === 'pathB' || p.mode === 'pathC' ? Math.min(p.opacity, 1) : p.opacity
     }
-    if (isSecondary) {
+    if (slot === 'secondary') {
       this.lineArtBlendTargetB = this.ensureTarget(this.lineArtBlendTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportLineArtBlendTarget = this.ensureTarget(this.exportLineArtBlendTarget, width, height)
     } else {
       this.lineArtBlendTarget = this.ensureTarget(this.lineArtBlendTarget, width, height)
     }
-    const target = isSecondary ? this.lineArtBlendTargetB! : this.lineArtBlendTarget!
+    const target = slot === 'secondary' ? this.lineArtBlendTargetB!
+      : slot === 'export' ? this.exportLineArtBlendTarget!
+      : this.lineArtBlendTarget!
     this.runPass(this.compositeProgram, target, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, base.texture)
@@ -2360,10 +2415,10 @@ export class Pipeline {
     return target
   }
 
-  /** Runs the full algorithm chain and resolves it against the single active LineArtParams.displayMode — the non-Dual-Pane case. See computeLineArtRaw/resolveLineArtDisplay for the two halves this composes. */
+  /** Runs the full algorithm chain and resolves it against the single active LineArtParams.displayMode — the non-Dual-Pane case. See computeLineArtRaw/resolveLineArtDisplay for the two halves this composes. Caches the raw output onto lineArtRawTarget so renderExportPreview can reuse it without a second (expensive) compute. */
   private renderLineArt(base: TargetTexture, width: number, height: number): TargetTexture {
-    const rawTarget = this.computeLineArtRaw(base, width, height)
-    return this.resolveLineArtDisplay(base, rawTarget, this.lineArt.displayMode, width, height, false)
+    this.lineArtRawTarget = this.computeLineArtRaw(base, width, height)
+    return this.resolveLineArtDisplay(base, this.lineArtRawTarget, this.lineArt.displayMode, width, height, 'primary')
   }
 
   /**
@@ -2373,19 +2428,25 @@ export class Pipeline {
    * of render()'s single-path colorDirty block so Dual Pane can invoke it
    * twice (pane A into the primary lightColorTarget/colorTarget fields,
    * pane B into the *B-suffixed pair) against the two different line-art
-   * variants resolveLineArtDisplay produced. Every uniform here reads from
-   * this.colorAdjust/light/hslByBand/invert/lutTexture, identical for both
-   * panes — only `source` (and thus the output) differs.
+   * variants resolveLineArtDisplay produced, and Export's own live-preview
+   * resolve a third time (see renderExportPreview) into its own pair. Every
+   * uniform here reads from this.colorAdjust/light/hslByBand/invert/
+   * lutTexture, identical for every slot — only `source` (and thus the
+   * output) differs.
    */
-  private runColorChain(source: TargetTexture, width: number, height: number, isSecondary: boolean): TargetTexture {
+  private runColorChain(source: TargetTexture, width: number, height: number, slot: 'primary' | 'secondary' | 'export'): TargetTexture {
     const gl = this.gl
 
-    if (isSecondary) {
+    if (slot === 'secondary') {
       this.lightColorTargetB = this.ensureTarget(this.lightColorTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportLightColorTarget = this.ensureTarget(this.exportLightColorTarget, width, height)
     } else {
       this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
     }
-    const lightColor = isSecondary ? this.lightColorTargetB! : this.lightColorTarget!
+    const lightColor = slot === 'secondary' ? this.lightColorTargetB!
+      : slot === 'export' ? this.exportLightColorTarget!
+      : this.lightColorTarget!
     this.runPass(this.lightColorProgram, lightColor, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, source.texture)
@@ -2402,12 +2463,16 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
     })
 
-    if (isSecondary) {
+    if (slot === 'secondary') {
       this.colorTargetB = this.ensureTarget(this.colorTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportColorTarget = this.ensureTarget(this.exportColorTarget, width, height)
     } else {
       this.colorTarget = this.ensureTarget(this.colorTarget, width, height)
     }
-    const colorOut = isSecondary ? this.colorTargetB! : this.colorTarget!
+    const colorOut = slot === 'secondary' ? this.colorTargetB!
+      : slot === 'export' ? this.exportColorTarget!
+      : this.colorTarget!
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, colorOut.framebuffer)
     gl.viewport(0, 0, width, height)
@@ -2443,6 +2508,58 @@ export class Pipeline {
     drawFullscreenQuad(gl)
 
     return colorOut
+  }
+
+  /**
+   * Export tab's own live-preview resolve — the sole WYSIWYG authority for its (exportDisplayMode,
+   * exportColorGrade) selection, fully decoupled from whatever Line Art's/Grade's own live tab
+   * state currently shows (that's the whole point: Export's group, not the live editing tabs,
+   * decides what actually gets exported, and the live canvas while Export is open must match it
+   * exactly). Only invoked from render() while tabPreviewBypass==='exportPreview', i.e. only while
+   * the Export tab is actually open — see App.tsx.
+   */
+  private renderExportPreview(): void {
+    if (!this.exportPreviewDirty) return
+    if (!this.enhanceTarget || !this.resizeTarget) return
+
+    if (this.exportDisplayMode === 'original') {
+      // Matches readExportPixels('original')'s own "bypasses Enhancement too" semantics — a
+      // stricter boundary than Line Art's own 'original' displayMode (which only bypasses the
+      // algorithm, not Enhancement). Color Grade is a no-op here regardless of its value.
+      this.exportPreviewResult = this.resizeTarget
+      this.exportPreviewDirty = false
+      return
+    }
+
+    // Fast path: Export's own (composite/overlay, grade) selection already matches what the main
+    // pipeline just computed for whichever tab is actually live — colorTarget already IS the
+    // answer, zero extra GPU work. dualPaneModes[0] (not this.lineArt.displayMode, which keeps
+    // whatever it last held while Dual Pane is active) is what actually drove colorTarget in that
+    // case — see the colorDirty block above.
+    const primaryMode = this.dualPaneEnabled ? this.dualPaneModes[0] : this.lineArt.displayMode
+    if (this.exportDisplayMode === primaryMode && this.exportColorGrade && this.colorTarget) {
+      this.exportPreviewResult = this.colorTarget
+      this.exportPreviewDirty = false
+      return
+    }
+
+    if (!this.lineArtActive || !this.lineArtRawTarget) {
+      // Line art is frozen (mid crop-drag) or hasn't computed a raw target yet this session —
+      // fall back to the pre-line-art photo (optionally graded) rather than resolve against a
+      // stale/missing raw target; this is a transient state that self-corrects next frame.
+      this.exportPreviewResult = this.exportColorGrade ? this.colorTarget : this.enhanceTarget
+      this.exportPreviewDirty = false
+      return
+    }
+
+    const { width, height } = this.enhanceTarget
+    const resolved = this.resolveLineArtDisplay(
+      this.enhanceTarget, this.lineArtRawTarget, this.exportDisplayMode, width, height, 'export',
+    )
+    this.exportPreviewResult = this.exportColorGrade
+      ? this.runColorChain(resolved, width, height, 'export')
+      : resolved
+    this.exportPreviewDirty = false
   }
 
   render(): void {
@@ -2525,13 +2642,14 @@ export class Pipeline {
         if (this.dualPaneEnabled) {
           // Shared raw algorithm output (Botan JFA etc. — the expensive
           // part) computed once, then resolved against each pane's own
-          // displayMode — see computeLineArtRaw/resolveLineArtDisplay.
-          const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
+          // displayMode — see computeLineArtRaw/resolveLineArtDisplay. Cached
+          // onto lineArtRawTarget so renderExportPreview can reuse it too.
+          this.lineArtRawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
           this.lineArtOutputTarget = this.resolveLineArtDisplay(
-            this.enhanceTarget, rawTarget, this.dualPaneModes[0], width, height, false,
+            this.enhanceTarget, this.lineArtRawTarget, this.dualPaneModes[0], width, height, 'primary',
           )
           this.lineArtOutputTargetB = this.resolveLineArtDisplay(
-            this.enhanceTarget, rawTarget, this.dualPaneModes[1], width, height, true,
+            this.enhanceTarget, this.lineArtRawTarget, this.dualPaneModes[1], width, height, 'secondary',
           )
         } else {
           this.lineArtOutputTarget = this.renderLineArt(this.enhanceTarget, width, height)
@@ -2546,15 +2664,29 @@ export class Pipeline {
         this.lineArtOutputTargetB = this.dualPaneEnabled ? this.enhanceTarget : null
       }
       this.colorDirty = true
+      this.exportPreviewDirty = true
     }
     if (!this.lineArtOutputTarget) return
 
     if (this.colorDirty) {
+      // Always run the full grading chain here, unconditionally, regardless of display mode —
+      // colorTarget/colorTargetB are ensureTarget-managed fields that MUST always own their own
+      // private texture (never a bare alias to some other field's texture, e.g. lineArtOutputTarget/
+      // enhanceTarget): ensureTarget's reuse-by-dimension check trusts whatever texture a field
+      // currently holds is safe to render fresh content into. An earlier version of this code
+      // aliased colorTarget straight to lineArtOutputTarget when displayMode was 'original' (to
+      // skip grading) — the NEXT time displayMode became non-'original', runColorChain's own
+      // ensureTarget(this.colorTarget, ...) call reused that alias (same dimensions) and rendered
+      // graded output directly into enhanceTarget's own framebuffer, permanently corrupting the
+      // pre-line-art source for every future frame. "Original means before-everything" is instead
+      // applied only at the point of consumption (the blit below, readFinalPixels) by picking
+      // lineArtOutputTarget/lineArtOutputTargetB over colorTarget/colorTargetB there — never by
+      // repointing the shared fields themselves.
       const { width, height } = this.lineArtOutputTarget
-      this.runColorChain(this.lineArtOutputTarget, width, height, false)
+      this.runColorChain(this.lineArtOutputTarget, width, height, 'primary')
       if (this.dualPaneEnabled && this.lineArtOutputTargetB) {
         const { width: widthB, height: heightB } = this.lineArtOutputTargetB
-        this.runColorChain(this.lineArtOutputTargetB, widthB, heightB, true)
+        this.runColorChain(this.lineArtOutputTargetB, widthB, heightB, 'secondary')
       }
       this.colorDirty = false
     }
@@ -2608,6 +2740,12 @@ export class Pipeline {
       }
 
       const paneWidth = Math.round(backingWidth / 2)
+      // "Original" means before-everything — substitute the ungraded lineArtOutputTarget/
+      // lineArtOutputTargetB in at blit time for whichever pane resolved to it, rather than ever
+      // repointing colorTarget/colorTargetB themselves (see the colorDirty block's own comment on
+      // why that corrupted enhanceTarget once already).
+      const leftTexture = (this.dualPaneModes[0] === 'original' ? this.lineArtOutputTarget : this.colorTarget).texture
+      const rightTexture = (this.dualPaneModes[1] === 'original' && this.lineArtOutputTargetB ? this.lineArtOutputTargetB : this.colorTargetB).texture
       gl.bindFramebuffer(gl.FRAMEBUFFER, null)
       gl.useProgram(this.blitProgram)
       bindFullscreenQuadAttribs(gl, this.blitProgram, this.quadBuffer)
@@ -2615,19 +2753,22 @@ export class Pipeline {
 
       gl.viewport(0, 0, paneWidth, backingHeight)
       gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, this.colorTarget.texture)
+      gl.bindTexture(gl.TEXTURE_2D, leftTexture)
       drawFullscreenQuad(gl)
 
       gl.viewport(paneWidth, 0, backingWidth - paneWidth, backingHeight)
       gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, this.colorTargetB.texture)
+      gl.bindTexture(gl.TEXTURE_2D, rightTexture)
       drawFullscreenQuad(gl)
       return
     }
 
+    if (this.tabPreviewBypass === 'exportPreview') this.renderExportPreview()
+
     const showGumiRampDebug = this.debugPreviewGumiRamp && this.lineArt.mode === 'pathG' && this.gumiRampDebugTarget
     const tabBypassTarget = this.tabPreviewBypass === 'enhance' ? this.enhanceTarget
-      : this.tabPreviewBypass === 'resize' ? this.resizeTarget
+      : this.tabPreviewBypass === 'exportPreview' ? (this.exportPreviewResult ?? this.colorTarget)
+      : this.tabPreviewBypass === 'lineArtOriginal' ? this.lineArtOutputTarget
       : null
     const previewTarget = showGumiRampDebug
       ? this.gumiRampDebugTarget!
@@ -2647,7 +2788,8 @@ export class Pipeline {
       showGumiRampDebug,
       selected: showGumiRampDebug ? 'gumiRampDebugTarget'
         : this.tabPreviewBypass === 'enhance' ? 'enhanceTarget'
-        : this.tabPreviewBypass === 'resize' ? 'resizeTarget'
+        : this.tabPreviewBypass === 'exportPreview' ? 'exportPreviewResult'
+        : this.tabPreviewBypass === 'lineArtOriginal' ? 'lineArtOutputTarget'
         : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',
     })
     const naturalWidth = previewTarget.width
@@ -2745,19 +2887,18 @@ export class Pipeline {
   /**
    * Export tab's own explicit Original/Composite/Overlay selector (independent of whatever the
    * live single-pane preview's displayMode or Dual Pane is currently showing) — see
-   * ExportPanel.tsx's top "Export" group. 'original' bypasses Enhancement/Line Art/Color
+   * ExportPanel.tsx's "Export Output" group. 'original' bypasses Enhancement/Line Art/Color
    * entirely and reads the Crop module's own finished output (crop rect + Resize) directly —
    * `resizeTarget`, not `enhanceTarget` — per explicit product direction: Export's "Original"
    * means "post crop, bypass everything, even Enhancement," a stricter/different meaning than
-   * LineArtDisplayMode's 'original' (which is `enhanceTarget`, i.e. post-Enhancement). For
-   * 'composite'/'overlay', recomputes a fresh resolve for that specific mode (reusing
-   * computeLineArtRaw/resolveLineArtDisplay/runColorChain's primary-pane fields — same fields
-   * the non-Dual-Pane live preview uses) regardless of the actual live displayMode/Dual Pane
-   * state, then immediately forces a real recompute of whatever should actually be on screen —
-   * safe since this all happens synchronously within one JS turn, before any browser paint, so
-   * the live canvas is never visibly left showing this export-only resolve.
+   * LineArtDisplayMode's 'original' (which is `enhanceTarget`, i.e. post-Enhancement); colorGrade
+   * is a no-op here regardless of its value, for the same reason. For 'composite'/'overlay',
+   * recomputes a fresh resolve for that specific mode using the dedicated 'export' slot fields
+   * (renderExportPreview's own targets, not the primary pipeline's — so this never clobbers
+   * whatever's actually live on screen, unlike the old primary-slot-reuse approach this replaced).
+   * colorGrade false skips runColorChain entirely, reading pixels straight off the resolve.
    */
-  readExportPixels(exportMode: 'original' | 'composite'): { data: Uint8ClampedArray; width: number; height: number } | null {
+  readExportPixels(exportMode: ExportDisplayMode, colorGrade: boolean): { data: Uint8ClampedArray; width: number; height: number } | null {
     this.render()
     if (exportMode === 'original') {
       if (!this.resizeTarget) return null
@@ -2766,13 +2907,9 @@ export class Pipeline {
     if (!this.enhanceTarget) return null
     const { width, height } = this.enhanceTarget
     const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
-    const resolved = this.resolveLineArtDisplay(this.enhanceTarget, rawTarget, exportMode, width, height, false)
-    const finalTarget = this.runColorChain(resolved, width, height, false)
-    const pixels = this.readTargetPixels(finalTarget)
-    this.lineArtDirty = true
-    this.colorDirty = true
-    this.render()
-    return pixels
+    const resolved = this.resolveLineArtDisplay(this.enhanceTarget, rawTarget, exportMode, width, height, 'export')
+    const finalTarget = colorGrade ? this.runColorChain(resolved, width, height, 'export') : resolved
+    return this.readTargetPixels(finalTarget)
   }
 
   destroy(): void {
@@ -2789,6 +2926,8 @@ export class Pipeline {
       this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
       this.tintTarget, this.lineArtBlendTarget, this.lineArtOverlayPreviewTarget, this.colorTarget,
       this.lineArtBlendTargetB, this.lineArtOverlayPreviewTargetB, this.colorTargetB,
+      this.lineArtRawTarget, this.exportLineArtBlendTarget, this.exportLineArtOverlayTarget,
+      this.exportLightColorTarget, this.exportColorTarget,
       this.rampTarget, this.gumiBoostTarget, this.gumiMaskTarget, this.gumiMaxHTarget, this.gumiMaxVTarget,
       this.gumiCloseHTarget, this.gumiCloseVTarget,
       this.gumiOverdriveHTarget, this.gumiOverdriveVTarget,

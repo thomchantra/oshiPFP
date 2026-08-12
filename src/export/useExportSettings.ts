@@ -11,6 +11,10 @@ import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } fr
  */
 export function useExportSettings(cropSize: { width: number; height: number } | null) {
   const [exportDisplayMode, setExportDisplayMode] = useState<ExportDisplayMode>('composite')
+  // Independent of exportDisplayMode — whether Grade tab's adjustments are included in the
+  // export/preview at all. Defaults true to match today's actual behavior (Composite/Overlay
+  // already included grading unconditionally before this toggle existed).
+  const [exportColorGrade, setExportColorGrade] = useState(true)
   const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
   const [resampleMode, setResampleMode] = useState<ResampleMode>('lanczos3')
@@ -18,6 +22,7 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
 
   return {
     exportDisplayMode, setExportDisplayMode,
+    exportColorGrade, setExportColorGrade,
     resolutionMode, setResolutionMode,
     customSize, setCustomSize,
     resampleMode, setResampleMode,
