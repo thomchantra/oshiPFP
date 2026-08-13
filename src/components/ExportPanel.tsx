@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import Icon from './Icon'
 import ToggleSwitch from './ToggleSwitch'
+import GradientSlider from './GradientSlider'
 import { downloadBlob, exportImage, type FinalPixels } from '../export/exportPica'
 import { computeTarget, clampDimension } from '../export/computeTarget'
 import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } from '../types'
@@ -11,11 +12,14 @@ interface ExportPanelProps {
   cropSize: { width: number; height: number } | null
   /** Original upload's filename (usePipeline's fileInfo) — used to build the download filename, see handleExport. */
   fileName: string | null
-  readExportPixels: (mode: ExportDisplayMode, colorGrade: boolean) => FinalPixels | null
+  readExportPixels: (mode: ExportDisplayMode, colorGrade: boolean, colorGradeIntensity: number) => FinalPixels | null
   exportDisplayMode: ExportDisplayMode
   setExportDisplayMode: (mode: ExportDisplayMode) => void
   exportColorGrade: boolean
   setExportColorGrade: (colorGrade: boolean) => void
+  /** "Grade Intensity" slider (v0.3 post-Hinata close-out) — 0..1, blends ungraded/graded via pipeline.ts's blendGradeIntensity. Only meaningful while exportColorGrade is on. */
+  exportColorGradeIntensity: number
+  setExportColorGradeIntensity: (intensity: number) => void
   resolutionMode: ResolutionMode
   setResolutionMode: (mode: ResolutionMode) => void
   customSize: { width: number; height: number }
@@ -62,6 +66,7 @@ export default function ExportPanel({
   cropSize, fileName, readExportPixels,
   exportDisplayMode, setExportDisplayMode,
   exportColorGrade, setExportColorGrade,
+  exportColorGradeIntensity, setExportColorGradeIntensity,
   resolutionMode, setResolutionMode,
   customSize, setCustomSize,
   exportCustomRatio, setExportCustomRatio,
@@ -115,7 +120,7 @@ export default function ExportPanel({
   }
 
   const handleExport = async () => {
-    const pixels = readExportPixels(exportDisplayMode, exportColorGrade)
+    const pixels = readExportPixels(exportDisplayMode, exportColorGrade, exportColorGradeIntensity)
     if (!pixels || !target) {
       setStatus('error')
       setErrorMessage('No image loaded yet — upload one from the Crop tab first.')
@@ -167,6 +172,18 @@ export default function ExportPanel({
       >
         <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Color Grade</span>
         <ToggleSwitch on={exportColorGrade} label="Color Grade" />
+      </div>
+      <div
+        style={{
+          marginBottom: 16,
+          opacity: exportDisplayMode === 'original' || !exportColorGrade ? 0.4 : 1,
+          pointerEvents: exportDisplayMode === 'original' || !exportColorGrade ? 'none' : 'auto',
+        }}
+      >
+        <GradientSlider
+          label="Grade Intensity" value={exportColorGradeIntensity} min={0} max={1} defaultValue={1}
+          onChange={setExportColorGradeIntensity}
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 10 }}>

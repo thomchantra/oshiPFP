@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pipeline, type CropRect } from './pipeline'
-import type { ColorAdjustParams, EnhanceParams, ExportDisplayMode, HslByBand, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
+import type { ColorAdjustParams, EnhanceParams, ExportDisplayMode, GradeGradientMapParams, HslByBand, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 
 export function usePipeline() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -60,6 +60,10 @@ export function usePipeline() {
     pipelineRef.current?.setColorAdjust(colorAdjust)
   }, [])
 
+  const setGradeGradientMap = useCallback((gradeGradientMap: GradeGradientMapParams) => {
+    pipelineRef.current?.setGradeGradientMap(gradeGradientMap)
+  }, [])
+
   const setEnhanceParams = useCallback((params: EnhanceParams) => {
     pipelineRef.current?.setEnhanceParams(params)
   }, [])
@@ -84,8 +88,8 @@ export function usePipeline() {
     pipelineRef.current?.setTabPreviewBypass(bypass)
   }, [])
 
-  const setExportPreviewParams = useCallback((mode: ExportDisplayMode, colorGrade: boolean) => {
-    pipelineRef.current?.setExportPreviewParams(mode, colorGrade)
+  const setExportPreviewParams = useCallback((mode: ExportDisplayMode, colorGrade: boolean, colorGradeIntensity: number) => {
+    pipelineRef.current?.setExportPreviewParams(mode, colorGrade, colorGradeIntensity)
   }, [])
 
   const setDebugPreviewGumiRamp = useCallback((show: boolean) => {
@@ -104,8 +108,8 @@ export function usePipeline() {
     return pipelineRef.current?.readFinalPixels() ?? null
   }, [])
 
-  const readExportPixels = useCallback((exportMode: ExportDisplayMode, colorGrade: boolean) => {
-    return pipelineRef.current?.readExportPixels(exportMode, colorGrade) ?? null
+  const readExportPixels = useCallback((exportMode: ExportDisplayMode, colorGrade: boolean, colorGradeIntensity: number) => {
+    return pipelineRef.current?.readExportPixels(exportMode, colorGrade, colorGradeIntensity) ?? null
   }, [])
 
   const sampleEnhancePixel = useCallback((u: number, v: number) => {
@@ -125,6 +129,7 @@ export function usePipeline() {
     setInvert,
     setLight,
     setColorAdjust,
+    setGradeGradientMap,
     setEnhanceParams,
     setResizeParams,
     setLineArtParams,

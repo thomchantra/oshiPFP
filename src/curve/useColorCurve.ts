@@ -57,5 +57,5 @@ export function useColorCurve(onCurveChange: (lut: Uint8Array) => void) {
   const setActivePoints = (points: CurvePoint[]) => setCurves((prev) => ({ ...prev, [channel]: points }))
   const reset = () => setCurves(initialCurves())
 
-  return { channel, setChannel, curves, setActivePoints, reset, visible, setVisible }
+  return { channel, setChannel, curves, setCurves, setActivePoints, reset, visible, setVisible }
 }

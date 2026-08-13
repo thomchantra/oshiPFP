@@ -14,7 +14,7 @@ import { useIsDesktop } from './hooks/useIsDesktop'
 import { LINE_ART_MODE_DEFAULTS, LINE_ART_LABELS } from './lineArtDefaults'
 import ExportPanel from './components/ExportPanel'
 import { useExportSettings } from './export/useExportSettings'
-import { getTheme, toggleTheme } from './theme'
+import { initTheme, toggleTheme } from './theme'
 import { usePipeline } from './gl/usePipeline'
 import { useCropInteraction } from './crop/useCropInteraction'
 import { useElementSize } from './crop/useElementSize'
@@ -22,10 +22,12 @@ import { useColorCurve } from './curve/useColorCurve'
 import { useCropEnhance } from './crop/useCropEnhance'
 import { useCropResize } from './crop/useCropResize'
 import { formatStateDump } from './debug/dumpState'
+import { PRESET_MANIFEST } from './presets/presetManifest'
+import { applyPreset } from './presets/applyPreset'
 import { trace } from './debug/renderTrace'
 import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
-import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST } from './color/useColorAdjustments'
+import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST, IDENTITY_GRADE_GRADIENT_MAP } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
 import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
 
@@ -100,6 +102,8 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
   blendMode: 'multiply',
+  overlayPassthrough: false,
+  matteColor: [1, 1, 1],
   threshold: 0,
   radius: 1,
   hardness: 1,
@@ -188,11 +192,11 @@ function buildInitialParamsByMode(): Record<LineArtMode, LineArtParams> {
 
 export default function App() {
   const [tab, setTab] = useState<string | null>('crop')
-  const [theme, setTheme] = useState(getTheme)
+  const [theme, setTheme] = useState(initTheme)
   const [pfpMode, setPfpMode] = useState<PfpMode>('square')
   const [cropMode, setCropMode] = useState<CropMode>('square')
   const [lineArtMode, setLineArtMode] = useState<LineArtMode>('pathB')
-  const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('color')
+  const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('light')
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
   const [colorDisplayMode, setColorDisplayMode] = useState<'original' | 'graded'>('graded')
   // Lifted out of LineArtPanel (which only owned this as tray-appearance
@@ -262,18 +266,18 @@ export default function App() {
     const timer = setTimeout(() => {
       const requestId = ++exportPreviewRequestId.current
       void (async () => {
-        const pixels = pipeline.readExportPixels(exportSettings.exportDisplayMode, exportSettings.exportColorGrade)
+        const pixels = pipeline.readExportPixels(exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.exportColorGradeIntensity)
         if (!pixels) return
         const resampled = await buildResampledCanvas(pixels, exportTarget.width, exportTarget.height, exportSettings.resampleMode)
         if (requestId !== exportPreviewRequestId.current) return
         setExportPreviewUrl(resampled.toDataURL())
         setExportPreviewDims({ width: exportTarget.width, height: exportTarget.height })
       })()
-    }, 300)
+    }, 80)
     return () => clearTimeout(timer)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.resampleMode, exportTarget?.width, exportTarget?.height])
+  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.exportColorGradeIntensity, exportSettings.resampleMode, exportTarget?.width, exportTarget?.height])
 
   // Promoted from "reset the curve" to "reset everything in the Color tab" —
   // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
@@ -286,19 +290,30 @@ export default function App() {
     colorAdjustments.setInvert(IDENTITY_INVERT)
     colorAdjustments.setLight(IDENTITY_LIGHT)
     colorAdjustments.setColorAdjust(IDENTITY_COLOR_ADJUST)
+    colorAdjustments.setGradeGradientMap(IDENTITY_GRADE_GRADIENT_MAP)
   }
 
   const lineArtParams: LineArtParams = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
 
   // Dev-only debug aid (see HeaderBar's dev-only Dump State button, gated on import.meta.env.DEV)
-  // — a plain-text snapshot of every tab's current config, for reproducing/comparing algo-tuning
-  // results across sessions without hand-transcribing slider values. Line Art is deliberately
-  // scoped to just the active algorithm (lineArtParams above), not the full paramsByMode cache.
+  // — a JSON snapshot of every tab's current config, for reproducing/comparing algo-tuning
+  // results across sessions without hand-transcribing slider values. Line Art dumps all 7
+  // algorithms' cached params (paramsByMode), not just the active one, so a report/comparison
+  // isn't silently missing the other 6 — activeMode/activeLabel mark which is actually live.
   const handleDumpState = () => {
     const text = formatStateDump({
       fileInfo: pipeline.fileInfo,
       crop: { mode: cropMode, transform: crop.transform, enhance: cropEnhance.enhance, resize: { mode: cropResize.mode, customSize: cropResize.customSize } },
-      lineArt: { label: LINE_ART_LABELS[lineArtMode], params: lineArtParams },
+      lineArt: {
+        activeMode: lineArtMode,
+        activeLabel: LINE_ART_LABELS[lineArtMode],
+        paramsByAlgorithm: Object.fromEntries(
+          LINE_ART_MODES.map((mode) => [
+            mode,
+            { label: LINE_ART_LABELS[mode], params: mode === lineArtMode ? lineArtParams : paramsByMode[mode] },
+          ]),
+        ) as Record<LineArtMode, { label: string; params: LineArtParams }>,
+      },
       color: {
         subTab: colorSubTab,
         light: colorAdjustments.light,
@@ -307,16 +322,45 @@ export default function App() {
         hslByBand: colorAdjustments.hslByBand,
         curveChannel: colorCurve.channel,
         curves: colorCurve.curves,
+        curveVisible: colorCurve.visible,
+        gradeGradientMap: colorAdjustments.gradeGradientMap,
       },
       export: {
+        displayMode: exportSettings.exportDisplayMode,
+        colorGrade: exportSettings.exportColorGrade,
+        colorGradeIntensity: exportSettings.exportColorGradeIntensity,
         resolutionMode: exportSettings.resolutionMode,
         customSize: exportSettings.customSize,
+        customRatio: exportSettings.exportCustomRatio,
         resampleMode: exportSettings.resampleMode,
         format: exportSettings.format,
       },
       view: { pfpMode, theme, previewMode, dualPaneEnabled, dualPaneMode },
     })
-    downloadBlob(new Blob([text], { type: 'application/json' }), `oshipfp-state-${Date.now()}.json`)
+    downloadBlob(new Blob([text], { type: 'application/json' }), `${lineArtMode}-oshipfp-state-${Date.now()}.json`)
+  }
+
+  // Dev-only "Load Demo" trigger (see HeaderBar's PRESET_MANIFEST-driven buttons, gated the same
+  // as handleDumpState) — exercises applyPreset.ts's real code path for the JSON preset saga's
+  // round-trip validation. Not the eventual gallery UI (deferred), just *a* way to invoke it.
+  const handleLoadPreset = (presetId: string) => {
+    const preset = PRESET_MANIFEST.find((p) => p.id === presetId)
+    if (!preset) return
+    void applyPreset(preset, {
+      loadFile: pipeline.loadFile,
+      setLineArtMode,
+      setLineArtDisplayMode,
+      setParamsByMode,
+      setLight: colorAdjustments.setLight,
+      setColorAdjust: colorAdjustments.setColorAdjust,
+      setInvert: colorAdjustments.setInvert,
+      setHslByBand: colorAdjustments.setHslByBand,
+      setCurveChannel: colorCurve.setChannel,
+      setCurves: colorCurve.setCurves,
+      setCurveVisible: colorCurve.setVisible,
+      setGradeGradientMap: colorAdjustments.setGradeGradientMap,
+      setEnhance: cropEnhance.setEnhance,
+    })
   }
 
   // Measured from the wrapper (a pure CSS-layout box) rather than the canvas
@@ -406,10 +450,10 @@ export default function App() {
 
   useEffect(() => {
     if (tab !== 'export') return
-    pipeline.setExportPreviewParams(exportSettings.exportDisplayMode, exportSettings.exportColorGrade)
+    pipeline.setExportPreviewParams(exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.exportColorGradeIntensity)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade])
+  }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.exportColorGradeIntensity])
 
   useEffect(() => {
     const next = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
@@ -551,6 +595,7 @@ export default function App() {
             squareSize={squareSize}
             originalSize={originalSize}
             fillWrapper={dualPaneActive || gradeDualPaneActive}
+            hasImage={hasImage}
             circle={pfpMode === 'circle'}
             interactive={tab === 'crop' && cropMode === 'square'}
             overlay={
@@ -677,6 +722,8 @@ export default function App() {
             setLight={colorAdjustments.setLight}
             colorAdjust={colorAdjustments.colorAdjust}
             setColorAdjust={colorAdjustments.setColorAdjust}
+            gradeGradientMap={colorAdjustments.gradeGradientMap}
+            setGradeGradientMap={colorAdjustments.setGradeGradientMap}
             curveChannel={colorCurve.channel}
             setCurveChannel={colorCurve.setChannel}
             curveVisible={colorCurve.visible}
@@ -693,6 +740,7 @@ export default function App() {
             setToneLiftExpanded={setToneLiftExpanded}
             colorLiftExpanded={colorLiftExpanded}
             setColorLiftExpanded={setColorLiftExpanded}
+            onLoadPreset={handleLoadPreset}
           />
         )}
         {hasImage && tab === 'export' && (
@@ -704,6 +752,8 @@ export default function App() {
             setExportDisplayMode={exportSettings.setExportDisplayMode}
             exportColorGrade={exportSettings.exportColorGrade}
             setExportColorGrade={exportSettings.setExportColorGrade}
+            exportColorGradeIntensity={exportSettings.exportColorGradeIntensity}
+            setExportColorGradeIntensity={exportSettings.setExportColorGradeIntensity}
             resolutionMode={exportSettings.resolutionMode}
             setResolutionMode={exportSettings.setResolutionMode}
             customSize={exportSettings.customSize}

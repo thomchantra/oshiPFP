@@ -40,7 +40,7 @@ import { inkColorRecombineFrag } from './shaders/inkColorRecombine.frag'
 import { createSourceTexture, createLutTexture, updateLutTexture } from './texture'
 import { loadSourceBitmap } from '../imageLoad'
 import { identityLutBuffer } from '../curve/spline'
-import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, ExportDisplayMode, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
+import type { ColorAdjustParams, ColorLiftParams, EnhanceParams, ExportDisplayMode, GradeGradientMapParams, HslByBand, HslShift, InvertParams, LightParams, LineArtDisplayMode, LineArtParams, ResizeParams } from '../types'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { pinchToPlateau } from '../tone/pinchRamp'
 import { trace } from '../debug/renderTrace'
@@ -62,6 +62,16 @@ export const IDENTITY_HSL_BY_BAND: HslByBand = {
 export const IDENTITY_INVERT: InvertParams = { rgb: false, r: false, g: false, b: false }
 export const IDENTITY_LIGHT: LightParams = { exposure: 0, contrast: 0, brilliance: 0, whites: 0, highlights: 0, shadows: 0, blacks: 0 }
 export const IDENTITY_COLOR_ADJUST: ColorAdjustParams = { temperature: 0, tint: 0, vibrance: 0 }
+export const IDENTITY_GRADE_GRADIENT_MAP: GradeGradientMapParams = {
+  enabled: false,
+  shadow: [0, 0, 0],
+  mid: [0.5, 0.5, 0.5],
+  highlight: [1, 1, 1],
+  pivot: 0,
+  duoTone: false,
+  intensity: 1,
+  blendMode: 'overwrite',
+}
 const IDENTITY_ENHANCE: EnhanceParams = { smooth: 0, sharpen: 0 }
 const IDENTITY_RESIZE: ResizeParams = { mode: 'original', customSize: { width: 512, height: 512 } }
 export const IDENTITY_COLOR_LIFT: ColorLiftParams = {
@@ -82,6 +92,8 @@ const IDENTITY_LINE_ART: LineArtParams = {
   colorLift: IDENTITY_COLOR_LIFT,
   opacity: 1,
   blendMode: 'multiply',
+  overlayPassthrough: false,
+  matteColor: [1, 1, 1],
   threshold: 0,
   radius: 1,
   hardness: 1,
@@ -162,7 +174,7 @@ function hardnessToFeather(hardness: number, base: number): number {
 }
 
 /** uBlendMode ints for composite.frag.ts's blendLayer. */
-const BLEND_MODE_INT: Record<LineArtParams['blendMode'], number> = { overwrite: 0, multiply: 1, screen: 2, overlay: 3 }
+const BLEND_MODE_INT: Record<LineArtParams['blendMode'], number> = { overwrite: 0, multiply: 1, screen: 2, overlay: 3, normal: 4, difference: 5 }
 
 /** Dual Pane "which pane is canonical" priority — composite beats overlay beats original. Mirrors
  * App.tsx's DUAL_PANE_PRIORITY_INDEX (UI-side precedent for the corner preview); kept here as the
@@ -274,6 +286,13 @@ export class Pipeline {
   private lineArtOutputTarget: TargetTexture | null = null
   private lightColorTarget: TargetTexture | null = null
   private colorTarget: TargetTexture | null = null
+  // Grade tab's Gradient Map processor (v0.3 post-Hinata close-out) — own dedicated targets,
+  // never aliasing colorTarget itself (see CLAUDE.md's Recurring Gotchas entry on exactly this
+  // class of bug, from an earlier session's colorTarget-aliasing incident). gradeGradientMapTarget
+  // holds gradientMapProgram's raw remapped output; gradeGradientMapCompositeTarget holds that
+  // blended back over the pre-gradient-map color via compositeProgram (intensity/blend mode).
+  private gradeGradientMapTarget: TargetTexture | null = null
+  private gradeGradientMapCompositeTarget: TargetTexture | null = null
 
   // Dual Pane (desktop-only, Workstream C) — second independent copy of the
   // display-mode-resolution and Color-chain targets above, only populated
@@ -287,6 +306,8 @@ export class Pipeline {
   private lineArtOutputTargetB: TargetTexture | null = null
   private lightColorTargetB: TargetTexture | null = null
   private colorTargetB: TargetTexture | null = null
+  private gradeGradientMapTargetB: TargetTexture | null = null
+  private gradeGradientMapCompositeTargetB: TargetTexture | null = null
 
   // Export tab's own live-preview resolve — a THIRD independent slot alongside the primary/B pair
   // above, for when Export's own (displayMode, colorGrade) selection differs from whatever Line
@@ -299,6 +320,13 @@ export class Pipeline {
   private exportLineArtOverlayTarget: TargetTexture | null = null
   private exportLightColorTarget: TargetTexture | null = null
   private exportColorTarget: TargetTexture | null = null
+  private exportGradeGradientMapTarget: TargetTexture | null = null
+  private exportGradeGradientMapCompositeTarget: TargetTexture | null = null
+  /** Export tab's "Grade Intensity" slider blend output (v0.3 post-Hinata close-out) — see
+   * blendGradeIntensity. Export's own preview/readback never run concurrently with each other (both
+   * force a synchronous render() first), so a single shared field is safe, unlike Dual Pane's
+   * primary/secondary pairs elsewhere in this class. */
+  private exportGradeIntensityTarget: TargetTexture | null = null
   /** Whichever existing target actually answers the current Export selection — never a fresh
    * allocation, just a pointer to colorTarget/resizeTarget/exportColorTarget/the raw resolve
    * output, whichever applies. See renderExportPreview. */
@@ -377,6 +405,10 @@ export class Pipeline {
    * renderExportPreview. Independent of this.lineArt.displayMode; that's the whole point. */
   private exportDisplayMode: ExportDisplayMode = 'composite'
   private exportColorGrade = true
+  /** Export tab's "Grade Intensity" slider (v0.3 post-Hinata close-out) — 1 = fully graded (today's
+   * default, zero extra cost), 0 = fully ungraded (also zero extra cost, same as colorGrade=false),
+   * strictly between blends the two via blendGradeIntensity's mixBlendProgram pass. */
+  private exportColorGradeIntensity = 1
   /** True whenever anything upstream of the Export preview changed — set alongside every colorDirty=true site, since the preview depends on everything colorDirty does plus Export's own selection. */
   private exportPreviewDirty = true
   /**
@@ -421,6 +453,7 @@ export class Pipeline {
   private invert: InvertParams = IDENTITY_INVERT
   private light: LightParams = IDENTITY_LIGHT
   private colorAdjust: ColorAdjustParams = IDENTITY_COLOR_ADJUST
+  private gradeGradientMap: GradeGradientMapParams = IDENTITY_GRADE_GRADIENT_MAP
   private lineArt: LineArtParams = IDENTITY_LINE_ART
   private enhance: EnhanceParams = IDENTITY_ENHANCE
   private resizeParams: ResizeParams = IDENTITY_RESIZE
@@ -629,6 +662,13 @@ export class Pipeline {
     this.scheduleRender()
   }
 
+  setGradeGradientMap(gradeGradientMap: GradeGradientMapParams): void {
+    this.gradeGradientMap = gradeGradientMap
+    this.colorDirty = true
+    this.exportPreviewDirty = true
+    this.scheduleRender()
+  }
+
   setEnhanceParams(params: EnhanceParams): void {
     this.enhance = params
     this.enhanceDirty = true
@@ -787,11 +827,12 @@ export class Pipeline {
     this.scheduleRender()
   }
 
-  /** See exportDisplayMode/exportColorGrade's doc comments. */
-  setExportPreviewParams(mode: ExportDisplayMode, colorGrade: boolean): void {
-    if (this.exportDisplayMode === mode && this.exportColorGrade === colorGrade) return
+  /** See exportDisplayMode/exportColorGrade/exportColorGradeIntensity's doc comments. */
+  setExportPreviewParams(mode: ExportDisplayMode, colorGrade: boolean, colorGradeIntensity: number): void {
+    if (this.exportDisplayMode === mode && this.exportColorGrade === colorGrade && this.exportColorGradeIntensity === colorGradeIntensity) return
     this.exportDisplayMode = mode
     this.exportColorGrade = colorGrade
+    this.exportColorGradeIntensity = colorGradeIntensity
     this.exportPreviewDirty = true
     this.scheduleRender()
   }
@@ -2357,11 +2398,15 @@ export class Pipeline {
 
     if (mode === 'original') return base
 
-    if (mode === 'overlay') {
+    // overlayPassthrough (v0.3 JSON preset saga) redirects the Composite branch into this exact
+    // same raw-alpha-flatten pass instead of the blendLayer/opacity compositing below — safe to
+    // share this branch's own target fields with the plain 'overlay' mode case since the two are
+    // mutually exclusive per frame (mode is never both 'overlay' and 'composite' at once).
+    if (mode === 'overlay' || (mode === 'composite' && p.overlayPassthrough)) {
       // rawTarget carries straight (non-premultiplied) alpha now — flatten
-      // it onto plain white for this raw preview instead of blitting the
-      // partial alpha straight to the (alpha-enabled) canvas, which would
-      // let the page background show through.
+      // it onto a solid matte color for this raw preview instead of blitting
+      // the partial alpha straight to the (alpha-enabled) canvas, which
+      // would let the page background show through.
       if (slot === 'secondary') {
         this.lineArtOverlayPreviewTargetB = this.ensureTarget(this.lineArtOverlayPreviewTargetB, width, height)
       } else if (slot === 'export') {
@@ -2376,6 +2421,7 @@ export class Pipeline {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, rawTarget.texture)
         gl.uniform1i(gl.getUniformLocation(this.alphaOverWhiteProgram, 'uSource'), 0)
+        gl.uniform3fv(gl.getUniformLocation(this.alphaOverWhiteProgram, 'uMatteColor'), p.matteColor)
       })
       return target
     }
@@ -2519,7 +2565,102 @@ export class Pipeline {
     ])
     drawFullscreenQuad(gl)
 
+    // Gradient Map (v0.3 post-Hinata close-out) — general post-grade color remap, applied after
+    // Curve/HSL/Invert above. Bypass applied here at the point of consumption (skip both extra
+    // passes, return colorOut untouched) rather than by aliasing a field, per CLAUDE.md's
+    // Recurring Gotchas entry on ensureTarget field-ownership bugs.
+    if (!this.gradeGradientMap.enabled) return colorOut
+    const gm = this.gradeGradientMap
+
+    if (slot === 'secondary') {
+      this.gradeGradientMapTargetB = this.ensureTarget(this.gradeGradientMapTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportGradeGradientMapTarget = this.ensureTarget(this.exportGradeGradientMapTarget, width, height)
+    } else {
+      this.gradeGradientMapTarget = this.ensureTarget(this.gradeGradientMapTarget, width, height)
+    }
+    const gradientMapped = slot === 'secondary' ? this.gradeGradientMapTargetB!
+      : slot === 'export' ? this.exportGradeGradientMapTarget!
+      : this.gradeGradientMapTarget!
+    // Every uniform gradientMapProgram declares is set explicitly here, every call — this
+    // program's sibling uniforms (fillTypeColor.frag.ts's pivot/duoTone) have leaked stale state
+    // across call sites before (CLAUDE.md's Recurring Gotchas), so nothing is left to "default".
+    this.runPass(this.gradientMapProgram, gradientMapped, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, colorOut.texture)
+      gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uSource'), 0)
+      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), gm.shadow)
+      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), gm.mid)
+      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), gm.highlight)
+      gl.uniform1f(gl.getUniformLocation(this.gradientMapProgram, 'uGradientPivot'), gm.pivot)
+      gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uGradientDuoTone'), gm.duoTone ? 1 : 0)
+    })
+
+    if (slot === 'secondary') {
+      this.gradeGradientMapCompositeTargetB = this.ensureTarget(this.gradeGradientMapCompositeTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportGradeGradientMapCompositeTarget = this.ensureTarget(this.exportGradeGradientMapCompositeTarget, width, height)
+    } else {
+      this.gradeGradientMapCompositeTarget = this.ensureTarget(this.gradeGradientMapCompositeTarget, width, height)
+    }
+    const composited = slot === 'secondary' ? this.gradeGradientMapCompositeTargetB!
+      : slot === 'export' ? this.exportGradeGradientMapCompositeTarget!
+      : this.gradeGradientMapCompositeTarget!
+    // compositeProgram reused as a plain 2-input blend (uLayerCount=1) — "Blending Mode" reuses
+    // blendLayer()'s existing multiply/screen/overlay math instead of a new shader, "Intensity"
+    // is just uOpacities[0]. uMask's alpha is implicitly 1 everywhere (gradientMapProgram always
+    // outputs vec4(mapped, 1.0)), so blend strength is purely intensity-driven.
+    this.runPass(this.compositeProgram, composited, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, colorOut.texture)
+      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBase'), 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, gradientMapped.texture)
+      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uMask'), 1)
+      gl.uniform1fv(gl.getUniformLocation(this.compositeProgram, 'uOpacities'), new Float32Array([gm.intensity, 0, 0, 0]))
+      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBlendMode'), BLEND_MODE_INT[gm.blendMode])
+      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uLayerCount'), 1)
+    })
+
+    // Copy back into colorOut itself (colorTarget/colorTargetB/exportColorTarget) rather than
+    // just returning `composited` — every downstream consumer (the main blit, blitSplitPane,
+    // readFinalPixels) reads this.colorTarget/colorTargetB directly, not runColorChain's return
+    // value (only the 'export' slot's callers use the return value). A plain blitProgram copy
+    // (composited -> colorOut, distinct textures) avoids the same-texture read/write feedback
+    // loop a direct render-into-colorOut would cause, since colorOut is also gradientMapProgram's
+    // and compositeProgram's own uBase source above.
+    this.runPass(this.blitProgram, colorOut, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, composited.texture)
+      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
+    })
+
     return colorOut
+  }
+
+  /**
+   * Export tab's "Grade Intensity" slider (v0.3 post-Hinata close-out) — blends the ungraded
+   * `base` and fully graded `graded` textures via the existing mixBlendProgram (already used for
+   * the maximizer's "hardness" blend elsewhere in this class), reused here as a plain two-input
+   * mix rather than a new shader. intensity>=1 and intensity<=0 are both zero-extra-cost: they
+   * just return one of the two inputs directly without running a pass, so the common default
+   * (Color Grade on, intensity 1) pays nothing beyond what runColorChain already did.
+   */
+  private blendGradeIntensity(base: TargetTexture, graded: TargetTexture, intensity: number, width: number, height: number): TargetTexture {
+    if (intensity >= 1) return graded
+    if (intensity <= 0) return base
+    const gl = this.gl
+    this.exportGradeIntensityTarget = this.ensureTarget(this.exportGradeIntensityTarget, width, height)
+    this.runPass(this.mixBlendProgram, this.exportGradeIntensityTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, base.texture)
+      gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uBase'), 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, graded.texture)
+      gl.uniform1i(gl.getUniformLocation(this.mixBlendProgram, 'uOverlay'), 1)
+      gl.uniform1f(gl.getUniformLocation(this.mixBlendProgram, 'uOpacity'), intensity)
+    })
+    return this.exportGradeIntensityTarget
   }
 
   /**
@@ -2549,8 +2690,9 @@ export class Pipeline {
     // whatever it last held while Dual Pane is active) is what actually drove colorTarget in that
     // case — see the colorDirty block above.
     const primaryMode = this.dualPaneEnabled ? this.dualPaneModes[0] : this.lineArt.displayMode
-    if (this.exportDisplayMode === primaryMode && this.exportColorGrade && this.colorTarget) {
-      this.exportPreviewResult = this.colorTarget
+    if (this.exportDisplayMode === primaryMode && this.exportColorGrade && this.colorTarget && this.lineArtOutputTarget) {
+      const { width, height } = this.colorTarget
+      this.exportPreviewResult = this.blendGradeIntensity(this.lineArtOutputTarget, this.colorTarget, this.exportColorGradeIntensity, width, height)
       this.exportPreviewDirty = false
       return
     }
@@ -2559,7 +2701,9 @@ export class Pipeline {
       // Line art is frozen (mid crop-drag) or hasn't computed a raw target yet this session —
       // fall back to the pre-line-art photo (optionally graded) rather than resolve against a
       // stale/missing raw target; this is a transient state that self-corrects next frame.
-      this.exportPreviewResult = this.exportColorGrade ? this.colorTarget : this.enhanceTarget
+      this.exportPreviewResult = this.exportColorGrade && this.colorTarget
+        ? this.blendGradeIntensity(this.enhanceTarget, this.colorTarget, this.exportColorGradeIntensity, this.enhanceTarget.width, this.enhanceTarget.height)
+        : this.enhanceTarget
       this.exportPreviewDirty = false
       return
     }
@@ -2569,7 +2713,7 @@ export class Pipeline {
       this.enhanceTarget, this.lineArtRawTarget, this.exportDisplayMode, width, height, 'export',
     )
     this.exportPreviewResult = this.exportColorGrade
-      ? this.runColorChain(resolved, width, height, 'export')
+      ? this.blendGradeIntensity(resolved, this.runColorChain(resolved, width, height, 'export'), this.exportColorGradeIntensity, width, height)
       : resolved
     this.exportPreviewDirty = false
   }
@@ -2925,8 +3069,10 @@ export class Pipeline {
    * (renderExportPreview's own targets, not the primary pipeline's — so this never clobbers
    * whatever's actually live on screen, unlike the old primary-slot-reuse approach this replaced).
    * colorGrade false skips runColorChain entirely, reading pixels straight off the resolve.
+   * colorGradeIntensity blends the two via blendGradeIntensity (see its doc comment) — 1 and 0
+   * are both zero-extra-cost, matching colorGrade true/false's existing cost exactly.
    */
-  readExportPixels(exportMode: ExportDisplayMode, colorGrade: boolean): { data: Uint8ClampedArray; width: number; height: number } | null {
+  readExportPixels(exportMode: ExportDisplayMode, colorGrade: boolean, colorGradeIntensity: number): { data: Uint8ClampedArray; width: number; height: number } | null {
     this.render()
     if (exportMode === 'original') {
       if (!this.resizeTarget) return null
@@ -2936,7 +3082,9 @@ export class Pipeline {
     const { width, height } = this.enhanceTarget
     const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
     const resolved = this.resolveLineArtDisplay(this.enhanceTarget, rawTarget, exportMode, width, height, 'export')
-    const finalTarget = colorGrade ? this.runColorChain(resolved, width, height, 'export') : resolved
+    const finalTarget = colorGrade
+      ? this.blendGradeIntensity(resolved, this.runColorChain(resolved, width, height, 'export'), colorGradeIntensity, width, height)
+      : resolved
     return this.readTargetPixels(finalTarget)
   }
 
@@ -2953,9 +3101,12 @@ export class Pipeline {
       this.softHardnessHTarget, this.softHardnessVTarget, this.softHardnessMixTarget,
       this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
       this.tintTarget, this.lineArtBlendTarget, this.lineArtOverlayPreviewTarget, this.colorTarget,
+      this.gradeGradientMapTarget, this.gradeGradientMapCompositeTarget,
       this.lineArtBlendTargetB, this.lineArtOverlayPreviewTargetB, this.colorTargetB,
+      this.gradeGradientMapTargetB, this.gradeGradientMapCompositeTargetB,
       this.lineArtRawTarget, this.exportLineArtBlendTarget, this.exportLineArtOverlayTarget,
       this.exportLightColorTarget, this.exportColorTarget,
+      this.exportGradeGradientMapTarget, this.exportGradeGradientMapCompositeTarget, this.exportGradeIntensityTarget,
       this.rampTarget, this.gumiBoostTarget, this.gumiMaskTarget, this.gumiMaxHTarget, this.gumiMaxVTarget,
       this.gumiCloseHTarget, this.gumiCloseVTarget,
       this.gumiOverdriveHTarget, this.gumiOverdriveVTarget,

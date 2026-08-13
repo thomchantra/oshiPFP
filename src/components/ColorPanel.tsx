@@ -3,10 +3,14 @@ import SegmentedControl from './SegmentedControl'
 import GradientSlider from './GradientSlider'
 import HslBandSelector from './HslBandSelector'
 import Icon from './Icon'
+import ToggleSwitch from './ToggleSwitch'
+import { GradientFillControls, BlendModeRow } from './GradientFillControls'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { IDENTITY_HSL_SHIFT, IDENTITY_INVERT } from '../color/useColorAdjustments'
 import { CURVE_CHANNEL_OPTIONS, type CurveChannel } from '../curve/useColorCurve'
-import type { ColorAdjustParams, ColorSubTab, HslBand, HslByBand, HslShift, InvertParams, LightParams } from '../types'
+import type { BlendMode, ColorAdjustParams, ColorSubTab, GradeGradientMapParams, HslBand, HslByBand, HslShift, InvertParams, LightParams } from '../types'
+
+const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'overlay']
 
 interface ColorPanelProps {
   subTab: ColorSubTab
@@ -21,6 +25,8 @@ interface ColorPanelProps {
   setLight: (light: LightParams) => void
   colorAdjust: ColorAdjustParams
   setColorAdjust: (colorAdjust: ColorAdjustParams) => void
+  gradeGradientMap: GradeGradientMapParams
+  setGradeGradientMap: (gradeGradientMap: GradeGradientMapParams) => void
   curveChannel: CurveChannel
   setCurveChannel: (channel: CurveChannel) => void
   curveVisible: boolean
@@ -113,12 +119,15 @@ export default function ColorPanel({
   invert, setInvert,
   light, setLight,
   colorAdjust, setColorAdjust,
+  gradeGradientMap, setGradeGradientMap,
   curveChannel, setCurveChannel, curveVisible, setCurveVisible, onResetGrade,
 }: ColorPanelProps) {
   const setLightField = <K extends keyof LightParams>(key: K, value: LightParams[K]) =>
     setLight({ ...light, [key]: value })
   const setColorAdjustField = <K extends keyof ColorAdjustParams>(key: K, value: ColorAdjustParams[K]) =>
     setColorAdjust({ ...colorAdjust, [key]: value })
+  const setGradeGradientMapField = <K extends keyof GradeGradientMapParams>(key: K, value: GradeGradientMapParams[K]) =>
+    setGradeGradientMap({ ...gradeGradientMap, [key]: value })
 
   const activeShift = hslByBand[activeBand]
   const setActiveShift = <K extends keyof HslShift>(key: K, value: HslShift[K]) =>
@@ -156,11 +165,6 @@ export default function ColorPanel({
                   {opt.label}
                 </button>
               ))}
-              {curveVisible && (
-                <span className="font-value curve-hint" style={{ color: 'var(--accent-dark)', opacity: 0.6 }}>
-                  Double-tap +/- point
-                </span>
-              )}
             </div>
             <button type="button" className="text-reset-btn font-value" onClick={onResetGrade}>
               Reset Grade
@@ -249,6 +253,49 @@ export default function ColorPanel({
               </button>
             </div>
           </div>
+          <div className="lineart-divider" />
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => setGradeGradientMapField('enabled', !gradeGradientMap.enabled)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setGradeGradientMapField('enabled', !gradeGradientMap.enabled)
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Gradient Map</span>
+            <ToggleSwitch on={gradeGradientMap.enabled} label="Gradient Map" />
+          </div>
+          {gradeGradientMap.enabled && (
+            <>
+              <GradientSlider
+                label="Intensity" value={gradeGradientMap.intensity} min={0} max={1} defaultValue={1}
+                onChange={(v) => setGradeGradientMapField('intensity', v)}
+              />
+              <div className="field-row">
+                <div className="field-row-label">
+                  <span className="font-param-label">Blend Mode</span>
+                </div>
+              </div>
+              <BlendModeRow
+                mode={gradeGradientMap.blendMode}
+                options={ALL_BLEND_OPTIONS}
+                onChange={(m) => setGradeGradientMapField('blendMode', m)}
+              />
+              <GradientFillControls
+                shadow={gradeGradientMap.shadow} mid={gradeGradientMap.mid} highlight={gradeGradientMap.highlight}
+                pivot={gradeGradientMap.pivot} duoTone={gradeGradientMap.duoTone}
+                onShadowChange={(rgb) => setGradeGradientMapField('shadow', rgb)}
+                onMidChange={(rgb) => setGradeGradientMapField('mid', rgb)}
+                onHighlightChange={(rgb) => setGradeGradientMapField('highlight', rgb)}
+                onPivotChange={(v) => setGradeGradientMapField('pivot', v)}
+                onDuoToneChange={(v) => setGradeGradientMapField('duoTone', v)}
+              />
+            </>
+          )}
         </div>
       )}
 

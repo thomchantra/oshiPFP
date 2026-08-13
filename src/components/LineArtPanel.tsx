@@ -6,7 +6,9 @@ import ToggleSwitch from './ToggleSwitch'
 import Modal from './Modal'
 import Icon from './Icon'
 import RampMeter from './RampMeter'
+import { GradientFillControls, BlendModeRow, TintColorRow } from './GradientFillControls'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
+import { PRESET_MANIFEST } from '../presets/presetManifest'
 import type { BlendMode, FillType, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
 
 interface LineArtPanelProps {
@@ -19,6 +21,11 @@ interface LineArtPanelProps {
   setToneLiftExpanded: (updater: (prev: boolean) => boolean) => void
   colorLiftExpanded: boolean
   setColorLiftExpanded: (updater: (prev: boolean) => boolean) => void
+  /** Applies a demo preset (src/presets/applyPreset.ts) — the info modal's per-algorithm gallery
+   * card "Load Demo" button calls this with a PRESET_MANIFEST entry's id. Lifted to App.tsx since
+   * it needs setters from several other lifted-state hooks (colorAdjustments, colorCurve,
+   * cropEnhance), not just this panel's own params. */
+  onLoadPreset: (presetId: string) => void
 }
 
 const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon' }[] = [
@@ -126,15 +133,6 @@ function isToneShapingModified(current: ToneShapingParams, identity: ToneShaping
   )
 }
 
-function rgbToHex([r, g, b]: [number, number, number]): string {
-  const c = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0')
-  return `#${c(r)}${c(g)}${c(b)}`
-}
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16)
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
-}
-
 const COLOR_LIFT_SWATCHES = HUE_BAND_SWATCHES
 
 /** Small accent-color dot shown next to a pre-processing submodule's pill label when its params have drifted from identity — lets the user spot which submodules have edits without expanding each one (see App.tsx-adjacent feedback: expand/collapse is tray-appearance-only now, so this is the only at-a-glance signal left). */
@@ -147,8 +145,18 @@ function ModifiedDot({ show }: { show: boolean }) {
 export default function LineArtPanel({
   params, onChange, onReset,
   toneLiftExpanded, setToneLiftExpanded, colorLiftExpanded, setColorLiftExpanded,
+  onLoadPreset,
 }: LineArtPanelProps) {
   const [infoOpen, setInfoOpen] = useState(false)
+  // Which algorithm's tab is showing inside the info modal — independent of params.mode (the
+  // live/active algorithm): switching tabs in here only changes what the modal displays, it
+  // doesn't touch the app's actual state. Initialized to the live algorithm each time the modal
+  // opens (see the info-btn's onClick below), not hardcoded to Botan.
+  const [modalAlgo, setModalAlgo] = useState<LineArtMode>(params.mode)
+  // Which preset (within modalAlgo's own PRESET_MANIFEST entries) the gallery card shows — reset
+  // to 0 whenever modalAlgo changes so a stale index from a previous tab can't point past the
+  // new tab's own (possibly shorter) preset list.
+  const [galleryIndex, setGalleryIndex] = useState(0)
   // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
   // always apply (their identity defaults are no-ops), so this no longer
   // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
@@ -164,26 +172,90 @@ export default function LineArtPanel({
 
   const opacityPct = Math.round(params.opacity * 100)
 
+  const modalAlgoInfo = ALGO_INFO.find((info) => info.mode === modalAlgo)!
+  const modalPresets = PRESET_MANIFEST.filter((p) => p.algo === modalAlgo)
+  const activePreset = modalPresets[galleryIndex] ?? modalPresets[0]
+
   return (
     <BottomSheet>
       <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Line Expansion Algorithms">
-        {ALGO_INFO.map((info) => (
-          <div key={info.mode} className="algo-info-entry">
-            <div className="algo-info-entry-title">
-              <Icon name={info.icon} size={20} color="var(--accent-title)" className="icon" />
-              <span className="font-button-label" style={{ color: 'var(--accent-title)' }}>{info.label}</span>
-              <span className="font-value algo-info-entry-technique" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>{info.technique}</span>
+        {/* Modal-local tab row — switches which algorithm's info/gallery this modal shows, entirely
+            separate from selectMode/params.mode below (the live/active algorithm in the main
+            panel). Reuses .lineart-algoselector-row's existing flex-wrap so 7 pills wrap onto
+            multiple lines at the modal's fixed width instead of overflowing into a horizontal
+            scroll strip (a deliberate deviation from the Figma reference, which showed a scroll
+            strip — wrapping matches the rest of this app's pill rows). */}
+        <div className="lineart-algoselector-row algo-modal-tabs">
+          {ALGO_OPTIONS.map((opt) => (
+            <IconButton
+              key={opt.mode}
+              icon={opt.icon}
+              variant="secondary"
+              active={opt.mode === modalAlgo}
+              onClick={() => { setModalAlgo(opt.mode); setGalleryIndex(0) }}
+            >
+              {opt.label}
+            </IconButton>
+          ))}
+        </div>
+
+        {/* Only algorithms with at least one PRESET_MANIFEST entry get a gallery card — today
+            that's Chie/Fumiko/Hinata only; the other 4 just show the tab + info blurb below,
+            same as before this modal grew a gallery. */}
+        {activePreset && (
+          <div className="preset-gallery">
+            <div className="preset-gallery-images">
+              <img src={activePreset.beforeImage} alt={`${activePreset.algoLabel} demo, before`} className="preset-gallery-image" />
+              <img src={activePreset.afterImage} alt={`${activePreset.algoLabel} demo, after`} className="preset-gallery-image" />
             </div>
-            <p className="algo-info-entry-body">{info.blurb}</p>
+            <div className="preset-gallery-attribute">
+              {/* Attribution framework laid out ahead of need — credit is optional and unset on
+                  every preset today (the app author's own work), so this stays empty/hidden
+                  until real credits are supplied. */}
+              {activePreset.credit ? (
+                <span className="preset-gallery-credit font-button-label">{activePreset.credit}</span>
+              ) : <span />}
+              <IconButton icon="upload" onClick={() => { onLoadPreset(activePreset.id); setInfoOpen(false) }}>
+                Load Demo
+              </IconButton>
+            </div>
+            {modalPresets.length > 1 && (
+              <div className="preset-gallery-pager">
+                {modalPresets.map((p, i) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`pill-toggle-btn font-button-label${i === galleryIndex ? ' active' : ''}`}
+                    onClick={() => setGalleryIndex(i)}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+        )}
+
+        <div className="algo-info-entry">
+          <div className="algo-info-entry-title">
+            <Icon name={modalAlgoInfo.icon} size={20} color="var(--accent-title)" className="icon" />
+            <span className="font-button-label" style={{ color: 'var(--accent-title)' }}>{modalAlgoInfo.label}</span>
+            <span className="font-value algo-info-entry-technique" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>{modalAlgoInfo.technique}</span>
+          </div>
+          <p className="algo-info-entry-body">{modalAlgoInfo.blurb}</p>
+        </div>
       </Modal>
 
       <div className="lineart-algoselector">
         <div className="lineart-algoselector-header">
           <div className="lineart-algoselector-header-label">
             <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Line Expansion Algorithm</p>
-            <button type="button" className="info-btn" aria-label="About these algorithms" onClick={() => setInfoOpen(true)}>
+            <button
+              type="button"
+              className="info-btn"
+              aria-label="About these algorithms"
+              onClick={() => { setModalAlgo(params.mode); setGalleryIndex(0); setInfoOpen(true) }}
+            >
               i
             </button>
           </div>
@@ -352,21 +424,47 @@ export default function LineArtPanel({
         <button
           type="button"
           className="text-reset-btn font-value"
-          onClick={() => onChange({ ...params, blendMode: 'multiply', opacity: 1 })}
+          onClick={() => onChange({ ...params, blendMode: 'multiply', opacity: 1, overlayPassthrough: false, matteColor: [1, 1, 1] })}
         >
           Reset
         </button>
       </div>
-      <BlendModeRow
-        mode={params.blendMode}
-        options={params.mode === 'pathF' && params.findEdge ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
-        onChange={(v) => set('blendMode', v)}
-      />
-      <GradientSlider
-        label="Overlay Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
-        formatValue={() => `${opacityPct}%`}
-        onChange={(v) => set('opacity', v)}
-      />
+      {/* v0.3 JSON preset saga — bypasses Blend Mode/Opacity entirely, reusing the exact raw
+          alpha-flattened-on-matteColor computation the Overlay display mode already produces,
+          but for Composite (so it flows downstream through Color/Export). See pipeline.ts's
+          resolveLineArtDisplay and LineArtParams.overlayPassthrough's own doc comment. */}
+      <div
+        className="lineart-toggle-row"
+        role="button"
+        tabIndex={0}
+        onClick={() => set('overlayPassthrough', !params.overlayPassthrough)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            set('overlayPassthrough', !params.overlayPassthrough)
+          }
+        }}
+      >
+        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Overlay Passthrough</span>
+        <ToggleSwitch on={params.overlayPassthrough} label="Overlay Passthrough" />
+      </div>
+      {params.overlayPassthrough ? (
+        <TintColorRow label="Matte Color" tintColor={params.matteColor} onChange={(rgb) => set('matteColor', rgb)} />
+      ) : (
+        <>
+          <BlendModeRow
+            mode={params.blendMode}
+            options={params.mode === 'pathF' && params.findEdge ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
+            onChange={(v) => set('blendMode', v)}
+            wrap
+          />
+          <GradientSlider
+            label="Overlay Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
+            formatValue={() => `${opacityPct}%`}
+            onChange={(v) => set('opacity', v)}
+          />
+        </>
+      )}
       <div className="lineart-divider" />
 
       <div className="lineart-slidergroup-stack">
@@ -962,8 +1060,7 @@ function EdgePolarityFillRow({
   )
 }
 
-const BLEND_MODE_LABELS: Record<BlendMode, string> = { overwrite: 'Overwrite', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay' }
-const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'overlay']
+const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'overlay', 'normal', 'difference']
 /** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply, which hard-overrides the blend mode regardless of selection. Overwrite is deliberately excluded here (unlike every other blend-mode row) so this row never shows a selectable option that would silently do nothing. */
 const FIND_EDGE_BLEND_OPTIONS: BlendMode[] = ['multiply']
 
@@ -1036,68 +1133,6 @@ function InvertFillRow({ on, onChange }: { on: boolean; onChange: (v: boolean) =
   )
 }
 
-/** Gradient Map subtab's 3-stop (or 2-stop, with Duo Tone) color controls — Botan/Chie/Daiya/
- * Fumiko's shared `gradientShadow`/`gradientMid`/`gradientHighlight`/`gradientPivot`/
- * `gradientDuoTone` fields (v0.3 Service Update; Gumi keeps its own separate gumiGradient* fields
- * and doesn't get Pivot/Duo Tone UI yet — see fillTypeColor.frag.ts for the shared shader math). */
-function GradientFillControls({
-  shadow, mid, highlight, pivot, duoTone,
-  onShadowChange, onMidChange, onHighlightChange, onPivotChange, onDuoToneChange,
-}: {
-  shadow: [number, number, number]
-  mid: [number, number, number]
-  highlight: [number, number, number]
-  pivot: number
-  duoTone: boolean
-  onShadowChange: (rgb: [number, number, number]) => void
-  onMidChange: (rgb: [number, number, number]) => void
-  onHighlightChange: (rgb: [number, number, number]) => void
-  onPivotChange: (v: number) => void
-  onDuoToneChange: (v: boolean) => void
-}) {
-  return (
-    <>
-      <GradientSlider label="Gradient Pivot" value={pivot} min={-1} max={1} defaultValue={0} onChange={onPivotChange} />
-      <div
-        className="lineart-toggle-row"
-        role="button"
-        tabIndex={0}
-        onClick={() => onDuoToneChange(!duoTone)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onDuoToneChange(!duoTone)
-          }
-        }}
-      >
-        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Duo Tone</span>
-        <ToggleSwitch on={duoTone} label="Duo Tone" />
-      </div>
-      <TintColorRow label="Shadow" tintColor={shadow} onChange={onShadowChange} />
-      {!duoTone && <TintColorRow label="Mid" tintColor={mid} onChange={onMidChange} />}
-      <TintColorRow label="Highlight" tintColor={highlight} onChange={onHighlightChange} />
-    </>
-  )
-}
-
-/** Just the pill row — the "Blend Mode" label now lives on the shared group header above (see the Blend Mode + Overlay Opacity grouping in the main render). */
-function BlendModeRow({ mode, options, onChange }: { mode: BlendMode; options: BlendMode[]; onChange: (m: BlendMode) => void }) {
-  return (
-    <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16 }}>
-      {options.map((opt) => (
-        <button
-          key={opt}
-          type="button"
-          className={`pill-toggle-btn font-button-label${mode === opt ? ' active' : ''}`}
-          onClick={() => onChange(opt)}
-        >
-          {BLEND_MODE_LABELS[opt]}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 const RAMP_MODE_LABELS: Record<ToneShapingParams['mode'], string> = { clip: 'Clip', pinch: 'Pinch' }
 
 /** Standard 2-point clip vs. Pinch Mode's 4-point plateau isolation — see docs/oshiPFP-v0.3-spec.md.
@@ -1125,26 +1160,3 @@ function RampModeRow({ mode, onChange }: { mode: ToneShapingParams['mode']; onCh
   )
 }
 
-function TintColorRow({
-  label = 'Tint Color',
-  tintColor,
-  onChange,
-}: {
-  label?: string
-  tintColor: [number, number, number]
-  onChange: (rgb: [number, number, number]) => void
-}) {
-  return (
-    <div className="field-row">
-      <div className="field-row-label">
-        <span className="font-param-label">{label}</span>
-      </div>
-      <input
-        type="color"
-        value={rgbToHex(tintColor)}
-        onChange={(e) => onChange(hexToRgb(e.target.value))}
-        className="tint-color-input"
-      />
-    </div>
-  )
-}

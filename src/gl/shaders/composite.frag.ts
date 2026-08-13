@@ -31,6 +31,13 @@
  * still fills every used slot with the same opacity-derived scalar for
  * every mode except Path F, so its output is otherwise unaffected — only
  * Path F exploits per-index variation.
+ *
+ * uBlendMode 4 ("Normal", v0.3 JSON preset saga) forces layerAlpha to 1.0 in main() below —
+ * blendLayer()'s own return value for mode 4 is identical to mode 0 (Overwrite)'s, `layer`
+ * unchanged; the actual difference is that Overwrite still respects the mask's own per-pixel
+ * alpha (mix(result, layer, opacity*alpha)), letting the base show through wherever alpha is
+ * partial/zero, while Normal ignores alpha entirely — a full, unblended pass of the algorithm's
+ * own raw output at the given opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer).
  */
 export const compositeFrag = `#version 300 es
 precision highp float;
@@ -52,6 +59,7 @@ vec3 blendLayer(vec3 base, vec3 layer, int mode) {
     vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - layer);
     return mix(lo, hi, step(0.5, base));
   }
+  if (mode == 5) return abs(base - layer);
   return layer;
 }
 
@@ -59,7 +67,7 @@ void main() {
   vec3 base = texture(uBase, vUV).rgb;
   vec4 layerSample = texture(uMask, vUV);
   vec3 layerColor = layerSample.rgb;
-  float layerAlpha = layerSample.a;
+  float layerAlpha = uBlendMode == 4 ? 1.0 : layerSample.a;
 
   vec3 result = base;
   for (int i = 0; i < MAX_LAYERS; i++) {

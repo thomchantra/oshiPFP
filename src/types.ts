@@ -54,8 +54,34 @@ export interface InvertParams {
   b: boolean
 }
 
-/** How each algorithm's resolved "ink" color composites onto the base image — shared across all 4 modes (see composite.frag.ts's blendLayer). */
-export type BlendMode = 'overwrite' | 'multiply' | 'screen' | 'overlay'
+/** How each algorithm's resolved "ink" color composites onto the base image — see
+ * composite.frag.ts's blendLayer. 'normal' (v0.3, added to unblock the JSON preset saga's demo
+ * creation — the raw algorithm output wasn't reachable through Color/Export any other clean way)
+ * is a full, alpha-ignoring pass of the algorithm's own output — unlike 'overwrite', which still
+ * lets the base show through wherever the mask's own alpha is partial/zero. 'difference' is a
+ * standard abs(base-layer) blend, added alongside since it reads well for line work; only Line
+ * Art's own main compositing selector offers both today (Grade tab's Gradient Map blend selector
+ * still only offers the original 4 — 'normal'/'difference' don't add value there, see
+ * ColorPanel.tsx's own ALL_BLEND_OPTIONS). */
+export type BlendMode = 'overwrite' | 'multiply' | 'screen' | 'overlay' | 'normal' | 'difference'
+
+/** Grade tab's Gradient Map processor (v0.3 post-Hinata close-out) — a general post-grade 3-stop
+ * (or 2-stop, with Duo Tone) color remap applied to the whole graded image, distinct from Line
+ * Art's per-algorithm Gradient Fill Type (a mask/shape-scoped insertion point, see
+ * fillTypeColor.frag.ts). Shares its shader math (gradientMap.frag.ts) and ramp editor UI
+ * (GradientFillControls.tsx) with that Line Art feature, but is entirely separate state — see
+ * pipeline.ts's runColorChain for how `intensity`/`blendMode` composite the mapped result back
+ * over the pre-gradient-map graded color via the existing compositeProgram. */
+export interface GradeGradientMapParams {
+  enabled: boolean
+  shadow: [number, number, number]
+  mid: [number, number, number]
+  highlight: [number, number, number]
+  pivot: number
+  duoTone: boolean
+  intensity: number
+  blendMode: BlendMode
+}
 
 /** Botan/Chie/Daiya/Fumiko/Gumi/Hinata/Inori, kept as their internal pathB/C/D/F/G/H/I ids (ported straight from the lab harness) — display names are cosmetic only. Botan is the default from first load; the expensive recompute itself is gated by Pipeline.setLineArtActive (tab-based), not by mode. */
 export type LineArtMode = 'pathB' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
@@ -154,6 +180,20 @@ export interface LineArtParams {
 
   opacity: number
   blendMode: BlendMode
+  /** v0.3 JSON preset saga — bypasses blendMode/opacity compositing entirely, reusing the exact
+   * same raw-alpha-flattened-onto-matteColor computation the "Overlay" viewport display mode
+   * already produces (see pipeline.ts's resolveLineArtDisplay), but for the *Composite* display
+   * mode — meaning it flows downstream through Color grading and Export like Composite normally
+   * does, unlike switching the top-level display mode to Overlay itself would (a separate,
+   * preview-only toggle). LineArtPanel.tsx hides the Blend Mode row and Overlay Opacity slider
+   * while this is on, since neither has any effect once compositing is bypassed. */
+  overlayPassthrough: boolean
+  /** Backdrop color for the raw alpha-flatten both Overlay display mode and overlayPassthrough
+   * use (alphaOverWhite.frag.ts) — defaults to white, matching the name's original hardcoded
+   * behavior before this became configurable. Shared by both consumers (same shader call site),
+   * so changing it while overlayPassthrough is on also affects the plain Overlay tab's own
+   * preview — that's intentional single-source-of-truth behavior, not a bug. */
+  matteColor: [number, number, number]
   threshold: number
   radius: number
   /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi (v0.3 tuning) reuses this same field with its own, unrelated meaning — see pipeline.ts's runGumiLinePostProcess: 1 (default) = untouched, 0 = final Line-mode mask box-blurred and mixed in at full strength (a soft/antialiased edge instead of a hard one). Each mode interprets its own shared fields independently, same convention `radius` etc. already follow. */

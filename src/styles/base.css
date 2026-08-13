@@ -111,6 +111,11 @@ button, input {
 }
 
 .avatar-corner-preview {
+  /* content-box (overriding the project's global border-box reset) so the border below adds
+     outside this 60x60, matching the inner canvas's own 60x60 sizing (AvatarCornerPreview.tsx)
+     exactly — border-box would shrink the content area to 56x56, clipping a 2px ring of actual
+     image content under the border instead of just decorating the edge. */
+  box-sizing: content-box;
   width: 60px;
   height: 60px;
   flex-shrink: 0;
@@ -277,6 +282,26 @@ button, input {
   -webkit-touch-callout: none;
   pointer-events: none;
 }
+/* Circle crop clip, applied directly to the canvas element (clip-path/mask are sized relative to
+   the element's own rendered box) rather than via a wrapper div — see PreviewViewport.tsx's
+   comment on why a wrapper div here previously broke pipeline.ts's own canvas-sizing math. */
+.preview-canvas-circle {
+  clip-path: circle(50% at 50% 50%);
+  -webkit-clip-path: circle(50% at 50% 50%);
+}
+/* Dual Pane's single wide canvas holds two side-by-side panes (pipeline.ts's blitSplitPane
+   splits it into two exact, non-letterboxed halves) — one clip-path circle can't produce two
+   independent circles on one element, so mask two closest-side circles, each centered in its
+   own 50%-width half. closest-side (not the radial-gradient default farthest-corner) makes the
+   circle radius equal the pane's own half-dimension, so it's inscribed exactly touching all 4
+   edges of a square pane instead of a bigger corner-reaching one. */
+.preview-canvas-dualcircle {
+  --dual-circle-mask:
+    radial-gradient(circle closest-side, #000 99%, transparent 100%) 0% 50% / 50% 100% no-repeat,
+    radial-gradient(circle closest-side, #000 99%, transparent 100%) 100% 50% / 50% 100% no-repeat;
+  -webkit-mask: var(--dual-circle-mask);
+  mask: var(--dual-circle-mask);
+}
 
 /* Grade tab's LIGHT sub-tab: curve channel selector row (ColorPanel.tsx, first row before
    Exposure) — the curve graph itself still draws directly on the viewport with no card backing,
@@ -309,13 +334,6 @@ button, input {
   touch-action: manipulation;
   flex-shrink: 0;
 }
-.curve-hint {
-  margin-left: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Crop tab chrome */
 .crop-topcontent {
   display: flex;
@@ -980,6 +998,27 @@ button, input {
 }
 .algo-info-entry { margin-bottom: 20px; }
 .algo-info-entry:last-child { margin-bottom: 0; }
+/* Info modal's per-algorithm tab row (LineArtPanel.tsx) — reuses .lineart-algoselector-row's
+   existing flex-wrap for the pill row itself; this class only adds the modal-specific spacing
+   below it, before the gallery/info content. */
+.algo-modal-tabs { margin-bottom: 16px; }
+/* Demo preset gallery card (src/presets/presetManifest.ts-driven) — images + attribute strip
+   bleed edge-to-edge against .modal-body's 16px padding via negative margins; safe since
+   .modal-card has overflow:hidden and clips to its own border-radius. */
+.preset-gallery { margin: 0 -16px 20px; }
+.preset-gallery-images { display: flex; }
+.preset-gallery-image { flex: 1 1 0; min-width: 0; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
+.preset-gallery-attribute {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--white-50);
+}
+.preset-gallery-credit { color: var(--accent-dark); text-decoration: underline; }
+.preset-gallery-pager { display: flex; gap: 5px; flex-wrap: wrap; padding: 10px 16px 0; }
+.preset-gallery-pager .pill-toggle-btn { flex: 0 0 auto; }
 .algo-info-entry-title {
   display: flex;
   align-items: baseline;

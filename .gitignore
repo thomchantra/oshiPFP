@@ -1,4 +1,8 @@
 referencecode/
+# JSON preset saga — raw staging triplets for scripts/import-presets.sh. Disposable: the script
+# consumes and archives these into presetsprep/_imported/; the real shipped artifacts are
+# public/presets/ (webp) + src/presets/data/ (trimmed JSON), both tracked normally.
+presetsprep/
 node_modules/
 dist/
 dist-ssr/

@@ -15,6 +15,10 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   // export/preview at all. Defaults true to match today's actual behavior (Composite/Overlay
   // already included grading unconditionally before this toggle existed).
   const [exportColorGrade, setExportColorGrade] = useState(true)
+  // "Grade Intensity" slider (v0.3 post-Hinata close-out) — 0..1, blends ungraded/graded via
+  // pipeline.ts's blendGradeIntensity. Defaults to 1 (fully graded) so it's a no-op alongside
+  // exportColorGrade's own existing default, matching today's behavior exactly until touched.
+  const [exportColorGradeIntensity, setExportColorGradeIntensity] = useState(1)
   const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
   // Aspect ratio Custom mode was entered with — held fixed while editing width/height so the two
@@ -27,6 +31,7 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   return {
     exportDisplayMode, setExportDisplayMode,
     exportColorGrade, setExportColorGrade,
+    exportColorGradeIntensity, setExportColorGradeIntensity,
     resolutionMode, setResolutionMode,
     customSize, setCustomSize,
     exportCustomRatio, setExportCustomRatio,
