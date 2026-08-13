@@ -1,0 +1,301 @@
+{
+  "id": "pathI-01",
+  "algo": "pathI",
+  "algoLabel": "Tsukiko",
+  "beforeImage": "/presets/pathI/01/before.webp",
+  "afterImage": "/presets/pathI/01/after.webp",
+  "lineArtParams": {
+    "mode": "pathI",
+    "displayMode": "composite",
+    "toneShaping": {
+      "exposure": 0,
+      "contrast": 0,
+      "mode": "clip",
+      "clipMode": {
+        "blackClip": 0,
+        "whiteClip": 1
+      },
+      "pinchMode": {
+        "position": 0.5,
+        "expand": 0.3,
+        "feathering": 0.5
+      }
+    },
+    "denoise": {
+      "intensity": 0,
+      "threshold": 0
+    },
+    "colorLift": {
+      "red": 0,
+      "orange": 0,
+      "yellow": 0,
+      "green": 0,
+      "teal": 0,
+      "blue": 0,
+      "purple": 0,
+      "magenta": 0
+    },
+    "opacity": 1.21,
+    "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
+    "threshold": 0.48,
+    "radius": 1.5,
+    "hardness": 1,
+    "blobContrast": 1,
+    "colorExpansion": false,
+    "colorContrast": 1,
+    "gateThreshold": 0,
+    "sensitivity": 3,
+    "saturation": 0.5,
+    "findEdge": false,
+    "tintColor": [
+      1,
+      0.475,
+      0.886
+    ],
+    "vividDeadzone": 0.15,
+    "vividBoost": 1,
+    "fillType": "image",
+    "fillInvert": false,
+    "gradientShadow": [
+      0,
+      0,
+      0
+    ],
+    "gradientMid": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "gradientHighlight": [
+      1,
+      1,
+      1
+    ],
+    "gradientPivot": 0,
+    "gradientDuoTone": false,
+    "gumiContrastBoost": 1,
+    "blobMaxDt": 8,
+    "gumiOverdrive": 0,
+    "gumiLineFillType": "solid",
+    "gumiLineSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "gumiLineInvert": false,
+    "gumiGapClosing": true,
+    "gumiBlobGamma": 1,
+    "gumiColorBleed": false,
+    "gumiBleedFeather": 1.5,
+    "gumiBleedRadius": 8,
+    "gumiSoftDetection": false,
+    "gumiSoftness": 0.1,
+    "gumiFillMode": false,
+    "gumiFillRadius": 8,
+    "gumiFillInvert": false,
+    "gumiFillType": "image",
+    "gumiFillSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "gumiFillPixelThreshold": false,
+    "gumiGradientMap": false,
+    "gumiGradientShadow": [
+      0,
+      0,
+      0
+    ],
+    "gumiGradientMid": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "gumiGradientHighlight": [
+      1,
+      1,
+      1
+    ],
+    "gumiRampFloor": 0,
+    "gumiRampInnerLow": 0.3,
+    "gumiRampInnerHigh": 0.7,
+    "gumiRampCeiling": 1,
+    "gumiRampFeather": 0,
+    "thresholdEnabled": false,
+    "hiToneTarget": "off",
+    "hiToneGain": 1,
+    "hiToneContrast": 1,
+    "hiRawDarkenLighten": 0.5900000000000001,
+    "hiThresholdContrast": 1,
+    "hiRawContrast": 1.22,
+    "hiToneSaturation": 1,
+    "hiToneHueInvert": false,
+    "hiThresholdInvert": false,
+    "highPassStrength": 1,
+    "highPassResponsiveColor": false,
+    "responsiveCrossover": 0.5,
+    "responsiveGrow": 0,
+    "responsiveGrowBias": 0,
+    "edgeInkOverDarkFillType": "solid",
+    "edgeInkOverDarkSolidColor": [
+      1,
+      1,
+      1
+    ],
+    "edgeInkOverLightFillType": "solid",
+    "edgeInkOverLightSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "laplacianStrength": 4.45,
+    "laplacianPreBlur": 0,
+    "laplacianSharpenAmount": 0.5,
+    "laplacianGrow": 0
+  },
+  "color": {
+    "light": {
+      "exposure": 0,
+      "contrast": 0,
+      "brilliance": 0,
+      "whites": 0,
+      "highlights": 0,
+      "shadows": 0,
+      "blacks": 0
+    },
+    "colorAdjust": {
+      "temperature": 0,
+      "tint": 0,
+      "vibrance": 0
+    },
+    "invert": {
+      "rgb": false,
+      "r": false,
+      "g": false,
+      "b": false
+    },
+    "hslByBand": {
+      "master": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "red": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "orange": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "yellow": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "green": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "teal": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "blue": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "purple": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      },
+      "magenta": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0
+      }
+    },
+    "curveChannel": "rgb",
+    "curves": {
+      "rgb": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 255,
+          "y": 255
+        }
+      ],
+      "r": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 255,
+          "y": 255
+        }
+      ],
+      "g": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 255,
+          "y": 255
+        }
+      ],
+      "b": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 255,
+          "y": 255
+        }
+      ]
+    },
+    "curveVisible": true,
+    "gradeGradientMap": {
+      "enabled": false,
+      "shadow": [
+        0,
+        0,
+        0
+      ],
+      "mid": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "highlight": [
+        1,
+        1,
+        1
+      ],
+      "pivot": 0,
+      "duoTone": false,
+      "intensity": 1,
+      "blendMode": "overwrite"
+    }
+  },
+  "enhance": {
+    "smooth": 0,
+    "sharpen": 0
+  }
+}

@@ -92,10 +92,6 @@ export function usePipeline() {
     pipelineRef.current?.setExportPreviewParams(mode, colorGrade, colorGradeIntensity)
   }, [])
 
-  const setDebugPreviewGumiRamp = useCallback((show: boolean) => {
-    pipelineRef.current?.setDebugPreviewGumiRamp(show)
-  }, [])
-
   const setDualPane = useCallback((enabled: boolean, modes: [LineArtDisplayMode, LineArtDisplayMode]) => {
     pipelineRef.current?.setDualPane(enabled, modes)
   }, [])
@@ -137,7 +133,6 @@ export function usePipeline() {
     setPreviewMode,
     setTabPreviewBypass,
     setExportPreviewParams,
-    setDebugPreviewGumiRamp,
     setDualPane,
     setGradeDualPane,
     readFinalPixels,

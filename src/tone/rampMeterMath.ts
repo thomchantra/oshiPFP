@@ -22,15 +22,6 @@ export function toneRampDisplayMarkers(toneShaping: ToneShapingParams): number[]
   return toneShaping.mode === 'pinch' ? markers.slice(1, 3) : markers
 }
 
-/** Gumi's Luminance Detection ramp meter (v0.3 tuning) — unlike Pinch mode's fixed 0/1
- * floor/ceiling (hidden by toneRampDisplayMarkers as uninformative), Gumi's Floor/Ceiling are
- * genuinely user-adjustable and only equal Low/High Clip when Feather=0 — showing all 4 points
- * is real, meaningful feedback (Floor/Ceiling markers visibly separating from Low/High Clip's
- * exactly when Feather makes them start to matter, see plateauRamp.frag.ts's own doc comment). */
-export function gumiRampMarkers(p: { gumiRampFloor: number; gumiRampInnerLow: number; gumiRampInnerHigh: number; gumiRampCeiling: number }): number[] {
-  return [p.gumiRampFloor, p.gumiRampInnerLow, p.gumiRampInnerHigh, p.gumiRampCeiling]
-}
-
 function hexToRgb01(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16)
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]

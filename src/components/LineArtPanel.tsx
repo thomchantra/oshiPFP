@@ -9,6 +9,7 @@ import RampMeter from './RampMeter'
 import { GradientFillControls, BlendModeRow, TintColorRow } from './GradientFillControls'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { PRESET_MANIFEST } from '../presets/presetManifest'
+import { pinchToPlateau } from '../tone/pinchRamp'
 import type { BlendMode, FillType, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
 
 interface LineArtPanelProps {
@@ -161,6 +162,9 @@ export default function LineArtPanel({
   // always apply (their identity defaults are no-ops), so this no longer
   // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
   const [denoiseExpanded, setDenoiseExpanded] = useState(false)
+  // Which Dual Line band's controls are showing — UI-only, not a LineArtParams field, since
+  // this doesn't need to round-trip through JSON presets (v0.3 tuning saga, session 14 polish).
+  const [dualBandTab, setDualBandTab] = useState<'black' | 'white'>('black')
 
   const set = <K extends keyof LineArtParams>(key: K, value: LineArtParams[K]) =>
     onChange({ ...params, [key]: value })
@@ -528,7 +532,7 @@ export default function LineArtPanel({
         {params.mode === 'pathD' && (
           <>
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={2} step={1} onChange={(v) => set('radius', v)} />
+            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={2} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
             <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
             <div className="lineart-divider" />
             <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
@@ -611,65 +615,6 @@ export default function LineArtPanel({
 
         {params.mode === 'pathG' && (
           <>
-            {/* Luminance Detection sits above Operation Mode (v0.3 tuning UI pass) — it's the
-                shared upstream stage both Line and Fill operation modes read their detection
-                input from, not something scoped to either one. "(always on)" dropped from the
-                old label since that's now self-evident from its position. */}
-            <div className="lineart-preprocessing-header">
-              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Luminance Detection</span>
-              <button
-                type="button"
-                className="text-reset-btn font-value"
-                onClick={() =>
-                  onChange({ ...params, gumiRampFloor: 0, gumiRampInnerLow: 0, gumiRampInnerHigh: 0.6, gumiRampCeiling: 1, gumiRampFeather: 0.12 })
-                }
-              >
-                Reset
-              </button>
-            </div>
-            {/* Desktop-only for now, matching Tone Lift/Color Lift's own meters — mobile's
-                vertical-stack placement deferred until all algos are tuned (docs/oshiPFP-v0.3-
-                tuningspecs.md). */}
-            <div className="rampmeter-desktop-only">
-              <RampMeter kind="gumiRamp" gumiRamp={params} />
-            </div>
-            <GradientSlider
-              label="Low Clip" value={params.gumiRampInnerLow} min={0} max={1} defaultValue={0}
-              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-              onChange={(v) => onChange({ ...params, gumiRampInnerLow: v, gumiRampFloor: Math.min(params.gumiRampFloor, v) })}
-            />
-            <GradientSlider
-              label="High Clip" value={params.gumiRampInnerHigh} min={0} max={1} defaultValue={0.6}
-              trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-              onChange={(v) => onChange({ ...params, gumiRampInnerHigh: v, gumiRampCeiling: Math.max(params.gumiRampCeiling, v) })}
-            />
-            {/* Floor/Ceiling only affect the ramp once Feather > 0 — at Feather=0,
-                plateauRamp.frag.ts's rampStart/rampEnd snap straight to Low/High Clip
-                regardless of what Floor/Ceiling are set to (see its own doc comment), so
-                they're structural no-ops here, not just untouched. Greyed out instead of
-                left silently inert.
-
-                Also clamped to Low/High Clip themselves: the shader wraps each in its own
-                outer min()/max() (rampStart = min(mix(...), LowClip - eps); rampEnd =
-                max(mix(...), HighClip + eps)), so Floor can never push past Low Clip and
-                Ceiling can never fall below High Clip no matter what they're set to —
-                anything past that boundary was a dead zone on the slider. Capped here
-                instead, and Low/High Clip's own onChange drags Floor/Ceiling back inside
-                bounds if they'd otherwise end up on the wrong side of a newly-moved
-                boundary. */}
-            <GradientSlider
-              label="Floor" value={params.gumiRampFloor} min={0} max={params.gumiRampInnerLow} defaultValue={0}
-              disabled={params.gumiRampFeather === 0 || params.gumiRampInnerLow === 0}
-              onChange={(v) => set('gumiRampFloor', v)}
-            />
-            <GradientSlider
-              label="Ceiling" value={params.gumiRampCeiling} min={params.gumiRampInnerHigh} max={1} defaultValue={1}
-              disabled={params.gumiRampFeather === 0 || params.gumiRampInnerHigh === 1}
-              onChange={(v) => set('gumiRampCeiling', v)}
-            />
-            <GradientSlider label="Feather" value={params.gumiRampFeather} min={0} max={1} defaultValue={0.12} step={0.001} curve={FEATHER_CURVE} onChange={(v) => set('gumiRampFeather', v)} />
-
-            <div className="lineart-divider" />
             <div className="lineart-preprocessing-header">
               <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Operation Mode</span>
               <button
@@ -683,7 +628,7 @@ export default function LineArtPanel({
                     radius: 1,
                     gumiContrastBoost: 1,
                     blobMaxDt: 2,
-                    gumiGapClosing: true,
+                    gumiGapClosing: false,
                     gumiBlobGamma: 1,
                     gumiOverdrive: 0,
                     hardness: 1,
@@ -695,6 +640,19 @@ export default function LineArtPanel({
                     gumiFillType: 'image',
                     gumiFillSolidColor: [0, 0, 0],
                     gumiFillPixelThreshold: false,
+                    // Dual Line's own reset scope was folded in here rather than getting a
+                    // dedicated button (v0.3 tuning saga, session 14) — Luminance Detection's
+                    // own Reset button, which used to be Dual Line's closest analog, is gone.
+                    gumiDualLine: false,
+                    gumiDualBlack: { position: 0.2, expand: 0.3, feathering: 0.15 },
+                    gumiDualWhite: { position: 0.8, expand: 0.3, feathering: 0.15 },
+                    gumiDualBlackFillType: 'solid',
+                    gumiDualBlackSolidColor: [0, 0, 0],
+                    gumiDualBlackInvert: false,
+                    gumiDualWhiteFillType: 'solid',
+                    gumiDualWhiteSolidColor: [1, 1, 1],
+                    gumiDualWhiteInvert: false,
+                    gumiDualWhiteOnTop: true,
                   })
                 }
               >
@@ -706,74 +664,183 @@ export default function LineArtPanel({
             {!params.gumiFillMode ? (
               <>
                 <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => set('threshold', v)} />
-                <GradientSlider label="Detection Radius" value={params.radius} min={0} max={40} defaultValue={1} step={1} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
                 <GradientSlider label="Contrast Boost" value={params.gumiContrastBoost} min={0} max={2} defaultValue={1} onChange={(v) => set('gumiContrastBoost', v)} />
-                <GradientSlider label="Maximum Blob Size" value={params.blobMaxDt} min={1} max={20} defaultValue={2} onChange={(v) => set('blobMaxDt', v)} />
-                {/* Prototype (v0.3 tuning) — fixed-radius grow-then-shrink closing pass applied
-                    before the blob-suppression/fill split below, meant to bridge small gaps at
-                    V/Y stroke intersections without thickening straight runs the way cranking
-                    Detection Radius does. Boolean-only for now; see pipeline.ts's
-                    GUMI_GAP_CLOSING_RADIUS for the hardcoded value being validated. Also feeds
-                    Fill mode's boundary (same closed mask both read), same cross-cutting
-                    relationship Maximum Blob Size doesn't have but this and Detection Contrast
-                    do — kept here since both are mask-geometry refinements of this same
-                    detection, not a Fill-specific concern. */}
-                <div
-                  className="lineart-toggle-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => set('gumiGapClosing', !params.gumiGapClosing)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      set('gumiGapClosing', !params.gumiGapClosing)
-                    }
-                  }}
-                >
-                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Gap Closing (prototype)</span>
-                  <ToggleSwitch on={params.gumiGapClosing} label="Gap Closing" />
-                </div>
-                {/* Also shared with Fill mode's boundary (v0.3 tuning, "detection offset") —
-                    reshapes the distance-to-edge boundary from a hard single-pixel cutoff into
+                <GradientSlider label="Detection Radius" value={params.radius} min={0} max={40} defaultValue={1} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+                {/* Reshapes the distance-to-edge boundary from a hard single-pixel cutoff into
                     an antialiased, contrast-adjustable falloff, to help clean up residual
-                    speckle at blob edges without touching the main ramp/threshold. */}
+                    speckle at blob edges without touching the main ramp/threshold. Also shared
+                    with Fill mode's own boundary (v0.3 tuning, "detection offset"). */}
                 <GradientSlider label="Detection Contrast" value={params.gumiBlobGamma} min={0.2} max={5} defaultValue={1} onChange={(v) => set('gumiBlobGamma', v)} />
+                <GradientSlider label="Maximum Blob Size" value={params.blobMaxDt} min={1} max={20} defaultValue={2} onChange={(v) => set('blobMaxDt', v)} />
                 {/* Optical post-process (v0.3 tuning), not algorithm changes — see pipeline.ts's
                     runGumiLinePostProcess. Overdrive genuinely thickens already-thin strokes
                     (Maximum Blob Size alone doesn't, since it only governs how large a *blob*
                     can still count as near-boundary ink). Hardness reuses Botan/Chie's shared
                     field with its own meaning here: 1 (default) untouched, lower = softer/more
                     blurred edge. */}
-                <GradientSlider label="Overdrive (px)" value={params.gumiOverdrive} min={0} max={5} step={1} defaultValue={0} onChange={(v) => set('gumiOverdrive', v)} />
+                <GradientSlider label="Overdrive (px)" value={params.gumiOverdrive} min={0} max={5} step={0.01} defaultValue={0} onChange={(v) => set('gumiOverdrive', v)} />
                 <GradientSlider label="Hardness" value={params.hardness} min={0} max={1} defaultValue={1} onChange={(v) => set('hardness', v)} />
-                {/* Same Image/Solid/Gradient/Invert mechanism as Fill mode below, applied to
-                    the finished Line-mode mask instead — see lineFillColor.frag.ts. Defaults
-                    to Solid + black so the default look matches what Line mode always
-                    rendered before this existed. */}
+                {/* Dual Line (v0.3 tuning saga, session 14) — overrides the single fill-type
+                    block below with two independent simplified-band detection+fill chains
+                    (Black Line / White Line). Placed right before fill settings since turning
+                    it on is what makes that single block moot. */}
                 <div
                   className="lineart-toggle-row"
                   role="button"
                   tabIndex={0}
-                  onClick={() => set('gumiLineInvert', !params.gumiLineInvert)}
+                  onClick={() => set('gumiDualLine', !params.gumiDualLine)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
-                      set('gumiLineInvert', !params.gumiLineInvert)
+                      set('gumiDualLine', !params.gumiDualLine)
                     }
                   }}
                 >
-                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
-                  <ToggleSwitch on={params.gumiLineInvert} label="Invert Fill" />
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Dual Line</span>
+                  <ToggleSwitch on={params.gumiDualLine} label="Dual Line" />
                 </div>
-                <FillTypeRow value={params.gumiLineFillType} onChange={(v) => set('gumiLineFillType', v)} />
-                {params.gumiLineFillType === 'solid' && (
-                  <TintColorRow label="Line Color" tintColor={params.gumiLineSolidColor} onChange={(rgb) => set('gumiLineSolidColor', rgb)} />
-                )}
-                {params.gumiLineFillType === 'gradient' && (
+                {!params.gumiDualLine ? (
                   <>
-                    <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
-                    <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
-                    <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
+                    {/* Same Image/Solid/Gradient/Invert mechanism as Fill mode below, applied to
+                        the finished Line-mode mask instead — see lineFillColor.frag.ts. Defaults
+                        to Solid + black so the default look matches what Line mode always
+                        rendered before this existed. */}
+                    <div
+                      className="lineart-toggle-row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => set('gumiLineInvert', !params.gumiLineInvert)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          set('gumiLineInvert', !params.gumiLineInvert)
+                        }
+                      }}
+                    >
+                      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+                      <ToggleSwitch on={params.gumiLineInvert} label="Invert Fill" />
+                    </div>
+                    <FillTypeRow value={params.gumiLineFillType} onChange={(v) => set('gumiLineFillType', v)} />
+                    {params.gumiLineFillType === 'image' && (
+                      <GradientSlider label="Color Contrast" value={params.gumiLineColorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('gumiLineColorContrast', v)} />
+                    )}
+                    {params.gumiLineFillType === 'solid' && (
+                      <TintColorRow label="Line Color" tintColor={params.gumiLineSolidColor} onChange={(rgb) => set('gumiLineSolidColor', rgb)} />
+                    )}
+                    {params.gumiLineFillType === 'gradient' && (
+                      <>
+                        <GradientSlider label="Gradient Pivot" value={params.gumiLineGradientPivot} min={-1} max={1} defaultValue={0} onChange={(v) => set('gumiLineGradientPivot', v)} />
+                        <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
+                        <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
+                        <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="lineart-divider" />
+                    <div
+                      className="lineart-toggle-row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => set('gumiDualWhiteOnTop', !params.gumiDualWhiteOnTop)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          set('gumiDualWhiteOnTop', !params.gumiDualWhiteOnTop)
+                        }
+                      }}
+                    >
+                      <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>White On Top</span>
+                      <ToggleSwitch on={params.gumiDualWhiteOnTop} label="White On Top" />
+                    </div>
+                    <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16 }}>
+                      <button type="button" className={`pill-toggle-btn font-button-label${dualBandTab === 'black' ? ' active' : ''}`} onClick={() => setDualBandTab('black')}>Black Line</button>
+                      <button type="button" className={`pill-toggle-btn font-button-label${dualBandTab === 'white' ? ' active' : ''}`} onClick={() => setDualBandTab('white')}>White Line</button>
+                    </div>
+                    {dualBandTab === 'black' ? (
+                      <>
+                        <GradientSlider
+                          label="Detection Range" value={params.gumiDualBlack.position} min={0} max={1} defaultValue={0.2}
+                          trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                          markers={[pinchToPlateau(params.gumiDualBlack).innerLow, pinchToPlateau(params.gumiDualBlack).innerHigh]}
+                          onChange={(v) => set('gumiDualBlack', { ...params.gumiDualBlack, position: v })}
+                        />
+                        <GradientSlider
+                          label="Detection Size" value={params.gumiDualBlack.expand} min={0} max={1} defaultValue={0.3}
+                          onChange={(v) => set('gumiDualBlack', { ...params.gumiDualBlack, expand: v })}
+                        />
+                        <GradientSlider
+                          label="Feathering" value={params.gumiDualBlack.feathering} min={0} max={1} defaultValue={0.15}
+                          step={0.001} curve={FEATHER_CURVE}
+                          onChange={(v) => set('gumiDualBlack', { ...params.gumiDualBlack, feathering: v })}
+                        />
+                        <EdgePolarityFillRow
+                          label="Fill" fillType={params.gumiDualBlackFillType} solidColor={params.gumiDualBlackSolidColor}
+                          onFillTypeChange={(v) => set('gumiDualBlackFillType', v)}
+                          onSolidColorChange={(rgb) => set('gumiDualBlackSolidColor', rgb)}
+                        />
+                        {params.gumiDualBlackFillType === 'image' && (
+                          <GradientSlider label="Color Contrast" value={params.gumiDualBlackColorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('gumiDualBlackColorContrast', v)} />
+                        )}
+                        <div
+                          className="lineart-toggle-row"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => set('gumiDualBlackInvert', !params.gumiDualBlackInvert)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              set('gumiDualBlackInvert', !params.gumiDualBlackInvert)
+                            }
+                          }}
+                        >
+                          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+                          <ToggleSwitch on={params.gumiDualBlackInvert} label="Invert Fill" />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <GradientSlider
+                          label="Detection Range" value={params.gumiDualWhite.position} min={0} max={1} defaultValue={0.8}
+                          trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                          markers={[pinchToPlateau(params.gumiDualWhite).innerLow, pinchToPlateau(params.gumiDualWhite).innerHigh]}
+                          onChange={(v) => set('gumiDualWhite', { ...params.gumiDualWhite, position: v })}
+                        />
+                        <GradientSlider
+                          label="Detection Size" value={params.gumiDualWhite.expand} min={0} max={1} defaultValue={0.3}
+                          onChange={(v) => set('gumiDualWhite', { ...params.gumiDualWhite, expand: v })}
+                        />
+                        <GradientSlider
+                          label="Feathering" value={params.gumiDualWhite.feathering} min={0} max={1} defaultValue={0.15}
+                          step={0.001} curve={FEATHER_CURVE}
+                          onChange={(v) => set('gumiDualWhite', { ...params.gumiDualWhite, feathering: v })}
+                        />
+                        <EdgePolarityFillRow
+                          label="Fill" fillType={params.gumiDualWhiteFillType} solidColor={params.gumiDualWhiteSolidColor}
+                          onFillTypeChange={(v) => set('gumiDualWhiteFillType', v)}
+                          onSolidColorChange={(rgb) => set('gumiDualWhiteSolidColor', rgb)}
+                        />
+                        {params.gumiDualWhiteFillType === 'image' && (
+                          <GradientSlider label="Color Contrast" value={params.gumiDualWhiteColorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('gumiDualWhiteColorContrast', v)} />
+                        )}
+                        <div
+                          className="lineart-toggle-row"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => set('gumiDualWhiteInvert', !params.gumiDualWhiteInvert)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              set('gumiDualWhiteInvert', !params.gumiDualWhiteInvert)
+                            }
+                          }}
+                        >
+                          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Fill</span>
+                          <ToggleSwitch on={params.gumiDualWhiteInvert} label="Invert Fill" />
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -824,11 +891,15 @@ export default function LineArtPanel({
                   <ToggleSwitch on={params.gumiFillInvert} label="Invert Fill" />
                 </div>
                 <FillTypeRow value={params.gumiFillType} onChange={(v) => set('gumiFillType', v)} />
+                {params.gumiFillType === 'image' && (
+                  <GradientSlider label="Color Contrast" value={params.gumiFillColorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('gumiFillColorContrast', v)} />
+                )}
                 {params.gumiFillType === 'solid' && (
                   <TintColorRow label="Fill Color" tintColor={params.gumiFillSolidColor} onChange={(rgb) => set('gumiFillSolidColor', rgb)} />
                 )}
                 {params.gumiFillType === 'gradient' && (
                   <>
+                    <GradientSlider label="Gradient Pivot" value={params.gumiFillGradientPivot} min={-1} max={1} defaultValue={0} onChange={(v) => set('gumiFillGradientPivot', v)} />
                     <TintColorRow label="Shadow" tintColor={params.gumiGradientShadow} onChange={(rgb) => set('gumiGradientShadow', rgb)} />
                     <TintColorRow label="Mid" tintColor={params.gumiGradientMid} onChange={(rgb) => set('gumiGradientMid', rgb)} />
                     <TintColorRow label="Highlight" tintColor={params.gumiGradientHighlight} onChange={(rgb) => set('gumiGradientHighlight', rgb)} />

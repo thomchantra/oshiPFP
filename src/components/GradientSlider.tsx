@@ -31,6 +31,12 @@ interface GradientSliderProps {
   rightAccessory?: ReactNode
   /** Greys the row out and ignores pointer/keyboard input — for params that are currently a structural no-op (e.g. Gumi's Floor/Ceiling when Feather is 0, see LineArtPanel.tsx) rather than just "not yet touched." */
   disabled?: boolean
+  /** Optional reference marker(s) drawn as thin red lines on the track, in the same value-space
+   * as `value`/`min`/`max` (converted through the same curve, if any) — e.g. Gumi Dual Line's
+   * Detection Range slider shows its actual computed innerLow/innerHigh band edges (see
+   * RampMeter.tsx for the same visual language). Omit for no markers; zero effect on every
+   * other existing consumer. */
+  markers?: number[]
   onChange: (value: number) => void
 }
 
@@ -73,6 +79,7 @@ export default function GradientSlider({
   formatValue,
   rightAccessory,
   disabled,
+  markers,
   onChange,
 }: GradientSliderProps) {
   const handleDoubleTap = useDoubleTapReset(defaultValue, onChange)
@@ -160,6 +167,25 @@ export default function GradientSlider({
             <div className="gradient-slider-fill" style={{ width: `${fillPct}%` }} />
           )}
         </div>
+        {/* Reference markers (e.g. Gumi Dual Line's ramp band edges) — siblings to the track,
+           not nested inside it: .gradient-slider-track is overflow:hidden (base.css), which
+           would clip a marker's slight vertical overhang, while .gradient-slider-wrap is
+           position:relative and unclipped, same positioning context the thumb above uses. */}
+        {markers?.map((m, i) => (
+          <span
+            key={i}
+            style={{
+              position: 'absolute',
+              left: `${valueToPos(m, min, max, curve) * 100}%`,
+              top: -2,
+              bottom: -2,
+              width: 2,
+              transform: 'translateX(-1px)',
+              background: '#FF0000',
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
         {/* Custom thumb, positioned directly from the same fillPct the fill bar already uses
            — the native input below is kept only for keyboard accessibility (pointer-events:
            none, see its own comment); its *visual* thumb was found to occasionally lag a

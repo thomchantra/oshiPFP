@@ -282,18 +282,46 @@ export interface LineArtParams {
   gumiGradientMid: [number, number, number]
   gumiGradientHighlight: [number, number, number]
   /**
-   * Gumi's own always-on 4-point plateau/feather luminance-band ramp (see
-   * plateauRamp.frag.ts) — deliberately separate from ToneShapingParams'
-   * pinch-mode fields (Workstream B, added independently): this ramp
-   * operates on Gumi's own detection input as its "gradient map" stage 1,
-   * not on the shared Tone Lift preprocessing every mode's detection
-   * source passes through first.
+   * Dual Line (v0.3+, see pipeline.ts's pathG branch) — runs two independent,
+   * simplified luminance-band detectors (Black Line / White Line) instead of
+   * Gumi's old single always-on ramp, each using the same Pinch Mode shape
+   * ToneShapingParams' pinchMode already uses (position/expand/feathering,
+   * converted via pinchToPlateau()). Each band gets its own full
+   * threshold->grow->JFA->blob->fill-color chain, sharing every other Gumi
+   * Line-mode slider value (radius/blobMaxDt/gumiOverdrive/hardness/etc),
+   * then the two results are merged via Porter-Duff "over" compositing.
    */
-  gumiRampFloor: number
-  gumiRampInnerLow: number
-  gumiRampInnerHigh: number
-  gumiRampCeiling: number
-  gumiRampFeather: number
+  gumiDualLine: boolean
+  gumiDualBlack: PinchModeParams
+  gumiDualWhite: PinchModeParams
+  /** Per-band fill — Image/Solid only (no Gradient), same restricted-union
+   * convention as edgeInkOverDarkFillType/edgeInkOverLightFillType below. */
+  gumiDualBlackFillType: 'image' | 'solid'
+  gumiDualBlackSolidColor: [number, number, number]
+  gumiDualBlackInvert: boolean
+  gumiDualWhiteFillType: 'image' | 'solid'
+  gumiDualWhiteSolidColor: [number, number, number]
+  gumiDualWhiteInvert: boolean
+  /** Which band renders on top where the two overlap — exposed as a toggle
+   * rather than a fixed choice since the "right" answer isn't obvious until
+   * tested live on real art. */
+  gumiDualWhiteOnTop: boolean
+
+  /**
+   * Color Contrast (Image fill) / Gradient Pivot (Gradient fill) — v0.3 tuning saga, session 14
+   * polish pass. Botan/Chie/Daiya/Fumiko already expose these per CLAUDE.md's Service Update
+   * Saga; Gumi never got them despite having up to 4 simultaneous fill contexts (Line mode, Fill
+   * mode, and Dual Line's two bands). Independent per context rather than reusing the shared
+   * top-level colorContrast/gradientPivot fields — those 4 contexts can be live at once (Dual
+   * Line's two bands definitely are), so one shared value would have them fighting over it.
+   * Dual Line's two bands are Image/Solid only (no Gradient), so no gumiDual*GradientPivot.
+   */
+  gumiLineColorContrast: number
+  gumiLineGradientPivot: number
+  gumiFillColorContrast: number
+  gumiFillGradientPivot: number
+  gumiDualBlackColorContrast: number
+  gumiDualWhiteColorContrast: number
 
   // Path H (Hinata) / Path I (Inori) shared fields — see labPipeline.ts's
   // pathH/pathI branches. `threshold` above doubles as their optional
