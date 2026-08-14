@@ -11,6 +11,8 @@ import eyedropper from '../assets/icons/eyedropper.svg'
 import lineart from '../assets/icons/lineart.svg'
 import moon from '../assets/icons/moon.svg'
 import palette from '../assets/icons/palette.svg'
+import question from '../assets/icons/question.svg'
+import refresh from '../assets/icons/refresh.svg'
 import rose from '../assets/icons/rose.svg'
 import smiley from '../assets/icons/smiley.svg'
 import spark from '../assets/icons/spark.svg'
@@ -34,6 +36,8 @@ const ICONS = {
   lineart,
   moon,
   palette,
+  question,
+  refresh,
   rose,
   smiley,
   spark,

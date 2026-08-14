@@ -9,7 +9,7 @@
     "displayMode": "composite",
     "toneShaping": {
       "exposure": 0,
-      "contrast": 0,
+      "contrast": 1.6500000000000001,
       "mode": "clip",
       "clipMode": {
         "blackClip": 0,
@@ -38,7 +38,7 @@
     "opacity": 1,
     "blendMode": "multiply",
     "threshold": 0.53,
-    "radius": 2.92,
+    "radius": 7.87,
     "hardness": 1,
     "blobContrast": 1,
     "colorExpansion": false,
@@ -121,17 +121,17 @@
     "gumiRampInnerHigh": 0.7,
     "gumiRampCeiling": 1,
     "gumiRampFeather": 0,
-    "thresholdEnabled": true,
+    "thresholdEnabled": false,
     "hiToneTarget": "off",
     "hiToneGain": 1,
     "hiToneContrast": 1,
-    "hiRawDarkenLighten": 0,
+    "hiRawDarkenLighten": -0.9,
     "hiThresholdContrast": 1,
-    "hiRawContrast": 1,
+    "hiRawContrast": 1.12,
     "hiToneSaturation": 1,
     "hiToneHueInvert": false,
     "hiThresholdInvert": false,
-    "highPassStrength": 3.25,
+    "highPassStrength": 4.5,
     "highPassResponsiveColor": false,
     "responsiveCrossover": 0.5,
     "responsiveGrow": 2.2800000000000002,
@@ -272,11 +272,11 @@
     },
     "curveVisible": true,
     "gradeGradientMap": {
-      "enabled": false,
+      "enabled": true,
       "shadow": [
         0,
-        0,
-        0
+        0.03137254901960784,
+        1
       ],
       "mid": [
         0.5,
@@ -285,17 +285,17 @@
       ],
       "highlight": [
         1,
-        1,
-        1
+        0.9686274509803922,
+        0
       ],
       "pivot": 0,
-      "duoTone": false,
+      "duoTone": true,
       "intensity": 1,
       "blendMode": "overwrite"
     }
   },
   "enhance": {
-    "smooth": 0,
-    "sharpen": 1.12
+    "smooth": 0.19,
+    "sharpen": 2.49
   }
 }

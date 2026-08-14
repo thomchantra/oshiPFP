@@ -737,11 +737,15 @@ button, input {
 }
 
 /* Line Art panel */
-.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+/* Subtle fill tint (v0.3 polish pass) — reuses --white-50, the same theme-aware overlay tint
+   already used everywhere else in this app (pills, tracks), and --radius, the standard card
+   rounding — to set the algo selector and Pre-detection Tuning group apart from the plain
+   parameter bar below them, which stays untinted. */
+.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--white-50); border-radius: var(--radius); padding: 12px; }
 .lineart-algoselector-header { display: flex; align-items: center; justify-content: space-between; }
 .lineart-algoselector-header-label { display: flex; align-items: center; gap: 8px; }
 .lineart-algoselector-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; background: var(--white-50); border-radius: var(--radius); padding: 12px; }
 .lineart-preprocessing-header { display: flex; align-items: center; justify-content: space-between; }
 .text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; white-space: nowrap; flex-shrink: 0; }
 .lineart-preprocessing-toggles { display: flex; gap: 5px; }
@@ -793,6 +797,16 @@ button, input {
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+/* Desktop-only (v0.3 polish pass): mouse input is precise, so the full-row click zone that mobile
+   needs (tuned over a whole saga, see CLAUDE.md) becomes a misclick hazard on desktop — clicking
+   the label text alone shouldn't flip the switch. `pointer-events: none` on the row removes it as
+   a click target; the `.toggle-switch` child re-enables itself via its own `pointer-events: auto`
+   (a descendant can always override an ancestor's `none`), and the click still bubbles up to the
+   row's onClick handler from there — so only clicks that actually land on the switch fire it. */
+@media (min-width: 900px) {
+  .lineart-toggle-row { pointer-events: none; }
+  .lineart-toggle-row .toggle-switch { pointer-events: auto; }
 }
 .lineart-divider { border-top: 1px dashed var(--accent-light); margin: 4px 0; }
 .tint-color-input {
@@ -996,6 +1010,40 @@ button, input {
   padding: 16px;
   overflow-y: auto;
 }
+/* Reset oshiPFP (v0.3 polish pass) — toolbar icon button. Default state matches its neighbor
+   .theme-btn icon buttons (transparent bg, icon-colored); the solid red fill is reserved for
+   hover/focus, a deliberate exception since this is the app's one genuinely destructive action
+   and red-on-hover reads as a warning cue. Icon.tsx isn't passed an explicit `color` here, so
+   its mask defaults to currentColor and follows this button's own `color` on hover for free. */
+.reset-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #E31212;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+.reset-btn:hover, .reset-btn:focus-visible {
+  background: #E31212;
+  color: #fff;
+}
+.confirm-modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.confirm-modal-actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: inherit;
+}
+.confirm-reset-btn { background: #E31212; color: #fff; border: none; }
+.confirm-cancel-btn { background: var(--white-50); color: var(--accent-title); border: none; }
 .algo-info-entry { margin-bottom: 20px; }
 .algo-info-entry:last-child { margin-bottom: 0; }
 /* Info modal's per-algorithm tab row (LineArtPanel.tsx) — reuses .lineart-algoselector-row's

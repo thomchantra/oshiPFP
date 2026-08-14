@@ -522,6 +522,36 @@ export default function App() {
     setLineArtDisplayMode('composite')
   }
 
+  // "Reset oshiPFP" (v0.3 pre-Netlify polish pass) — clears the loaded image and every tuned
+  // param back to defaults without a page reload. Deliberately does NOT touch `theme` — a
+  // display preference, not app data. Every other hook holding its own state gets its own
+  // reset() (added alongside this feature) rather than this function reaching into their
+  // internals, same separation resetColorTab/handleLineArtReset already keep.
+  const resetApp = () => {
+    pipeline.clearSource()
+    setTab('crop')
+    setPfpMode('square')
+    setCropMode('square')
+    setLineArtMode('pathB')
+    setColorSubTab('light')
+    setLineArtDisplayMode('composite')
+    setColorDisplayMode('graded')
+    setToneLiftExpanded(false)
+    setColorLiftExpanded(false)
+    setPreviewMode('result')
+    setParamsByMode(buildInitialParamsByMode())
+    setDualPaneEnabled(false)
+    setDualPaneMode('original-composite')
+    setViewportDragOver(false)
+    setExportPreviewUrl(null)
+    setExportPreviewDims(null)
+    colorCurve.reset()
+    colorAdjustments.reset()
+    exportSettings.reset()
+    cropEnhance.reset()
+    cropResize.reset()
+  }
+
   // Gumi's Luminance Ramp calibration picker (v0.3 tuning) — shelved out of the UI
   // for now (real clickzone issues surfaced in testing, needs its own dedicated
   // session). Pipeline.sampleEnhancePixel/usePipeline's wrapper/this hook are left
@@ -546,6 +576,7 @@ export default function App() {
         dualPaneActive={dualPaneActive || gradeDualPaneActive}
         dualPanePriorityIndex={gradeDualPaneActive ? 1 : DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
         onDumpState={handleDumpState}
+        onReset={resetApp}
       />
 
       <div className="body-layout">
@@ -740,6 +771,7 @@ export default function App() {
             curveVisible={colorCurve.visible}
             setCurveVisible={colorCurve.setVisible}
             onResetGrade={resetColorTab}
+            onResetCurve={colorCurve.reset}
           />
         )}
         {hasImage && tab === 'maximizer' && (

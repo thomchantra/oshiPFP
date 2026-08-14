@@ -664,6 +664,61 @@ export class Pipeline {
     this.scheduleRender()
   }
 
+  /**
+   * "Reset oshiPFP" (v0.3, pre-Netlify polish pass) — unloads the current source image and
+   * disposes every downstream render target, so the app returns to its pristine "no image
+   * loaded" state without a page reload. Unlike handleContextLost() (which only nulls fields,
+   * since the GL context itself is already dead in that scenario), the context here is very
+   * much alive, so every target must be properly disposed via disposeTargetTexture() first or
+   * this would leak GPU memory on every reset. Mirrors destroy()'s own target list exactly,
+   * minus the programs/quad buffer/LUT texture — those stay alive so the pipeline is still
+   * usable for the next loadFile() call.
+   */
+  clearSource(): void {
+    if (this.sourceTexture) this.gl.deleteTexture(this.sourceTexture)
+    this.sourceTexture = null
+    if (this.sourceBitmap) this.sourceBitmap.close()
+    this.sourceBitmap = null
+    // Alias-only fields (never independently owned/disposed) — same rule as handleContextLost().
+    this.botanSeedTarget = null
+    this.daiyaSeedTarget = null
+    for (const key of [
+      'cropTarget', 'resizeTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
+      'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget',
+      'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
+      'daiyaSeedTargetA', 'daiyaSeedTargetB', 'daiyaDistanceMaskTarget',
+      'botanFillColorTarget', 'chieFillColorTarget', 'softHardnessHTarget', 'softHardnessVTarget', 'softHardnessMixTarget',
+      'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
+      'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
+      'gradeGradientMapTarget', 'gradeGradientMapCompositeTarget',
+      'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
+      'gradeGradientMapTargetB', 'gradeGradientMapCompositeTargetB',
+      'lineArtRawTarget', 'exportLineArtBlendTarget', 'exportLineArtOverlayTarget', 'exportLightColorTarget', 'exportColorTarget',
+      'exportGradeGradientMapTarget', 'exportGradeGradientMapCompositeTarget', 'exportGradeIntensityTarget',
+      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget',
+      'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
+      'gumiDualBlackColorTarget', 'gumiDualWhiteColorTarget', 'gumiDualMergeTarget',
+      'gumiSeedTargetA', 'gumiSeedTargetB', 'gumiBlobTarget', 'gumiBleedTarget', 'gradientMapTarget', 'highPassTarget',
+      'laplacianTarget', 'laplacianSharpenTarget', 'hiThreshTarget', 'hiRawTreatedTarget', 'edgeFillColorTarget', 'hiThreshFillColorTarget', 'toneRemapTarget', 'responsiveColorTarget',
+      'responsiveWhiteExtractTarget', 'responsiveBlackExtractTarget', 'responsiveGrowWhiteTarget',
+      'responsiveGrowBlackTarget',
+    ] as const) {
+      const target = this[key]
+      if (target) disposeTargetTexture(this.gl, target)
+      this[key] = null
+    }
+
+    this.cropDirty = true
+    this.resizeDirty = true
+    this.enhanceDirty = true
+    this.lineArtDirty = true
+    this.colorDirty = true
+    this.exportPreviewDirty = true
+    this.botanSeedDirty = true
+    this.daiyaSeedDirty = true
+    this.scheduleRender()
+  }
+
   setCropRect(rect: CropRect): void {
     this.cropRect = rect
     this.cropDirty = true
@@ -2647,7 +2702,7 @@ export class Pipeline {
             duoTone: p.gradientDuoTone,
             vividBoost: 1,
             vividDeadzone: 1,
-            colorContrast: 1,
+            colorContrast: p.colorContrast,
           })
         })
         outputTarget = this.hiThreshFillColorTarget
@@ -2806,6 +2861,72 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
     })
 
+    // Gradient Map (v0.3 post-Hinata close-out; reordered ahead of Curve/HSL/Invert in the v0.3
+    // polish pass) — general color remap, now applied directly to Light's output rather than
+    // after Curve/HSL. Running it post-HSL made HSL edits invisible once Gradient Map was on:
+    // gradientMapProgram replaces color purely by luminance, discarding whatever hue/saturation
+    // HSL had just applied. Running it here means Curve/HSL now apply ON TOP of the gradient-
+    // mapped result instead, so they can genuinely tweak it — a real, deliberate output change
+    // for any existing preset combining both (see docs/oshiPFP-v0.3-tuningspecs.md), not a silent
+    // regression. Bypass applied at the point of consumption (skip both extra passes, feed
+    // colorProgram straight from `lightColor`) rather than by aliasing a field, per CLAUDE.md's
+    // Recurring Gotchas entry on ensureTarget field-ownership bugs.
+    let gradeInput: TargetTexture = lightColor
+    if (this.gradeGradientMap.enabled) {
+      const gm = this.gradeGradientMap
+
+      if (slot === 'secondary') {
+        this.gradeGradientMapTargetB = this.ensureTarget(this.gradeGradientMapTargetB, width, height)
+      } else if (slot === 'export') {
+        this.exportGradeGradientMapTarget = this.ensureTarget(this.exportGradeGradientMapTarget, width, height)
+      } else {
+        this.gradeGradientMapTarget = this.ensureTarget(this.gradeGradientMapTarget, width, height)
+      }
+      const gradientMapped = slot === 'secondary' ? this.gradeGradientMapTargetB!
+        : slot === 'export' ? this.exportGradeGradientMapTarget!
+        : this.gradeGradientMapTarget!
+      // Every uniform gradientMapProgram declares is set explicitly here, every call — this
+      // program's sibling uniforms (fillTypeColor.frag.ts's pivot/duoTone) have leaked stale state
+      // across call sites before (CLAUDE.md's Recurring Gotchas), so nothing is left to "default".
+      this.runPass(this.gradientMapProgram, gradientMapped, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+        gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uSource'), 0)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), gm.shadow)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), gm.mid)
+        gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), gm.highlight)
+        gl.uniform1f(gl.getUniformLocation(this.gradientMapProgram, 'uGradientPivot'), gm.pivot)
+        gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uGradientDuoTone'), gm.duoTone ? 1 : 0)
+      })
+
+      if (slot === 'secondary') {
+        this.gradeGradientMapCompositeTargetB = this.ensureTarget(this.gradeGradientMapCompositeTargetB, width, height)
+      } else if (slot === 'export') {
+        this.exportGradeGradientMapCompositeTarget = this.ensureTarget(this.exportGradeGradientMapCompositeTarget, width, height)
+      } else {
+        this.gradeGradientMapCompositeTarget = this.ensureTarget(this.gradeGradientMapCompositeTarget, width, height)
+      }
+      const composited = slot === 'secondary' ? this.gradeGradientMapCompositeTargetB!
+        : slot === 'export' ? this.exportGradeGradientMapCompositeTarget!
+        : this.gradeGradientMapCompositeTarget!
+      // compositeProgram reused as a plain 2-input blend (uLayerCount=1) — "Blending Mode" reuses
+      // blendLayer()'s existing multiply/screen/overlay math instead of a new shader, "Intensity"
+      // is just uOpacities[0]. uMask's alpha is implicitly 1 everywhere (gradientMapProgram always
+      // outputs vec4(mapped, 1.0)), so blend strength is purely intensity-driven.
+      this.runPass(this.compositeProgram, composited, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+        gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBase'), 0)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, gradientMapped.texture)
+        gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uMask'), 1)
+        gl.uniform1fv(gl.getUniformLocation(this.compositeProgram, 'uOpacities'), new Float32Array([gm.intensity, 0, 0, 0]))
+        gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBlendMode'), BLEND_MODE_INT[gm.blendMode])
+        gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uLayerCount'), 1)
+      })
+      gradeInput = composited
+    }
+
     if (slot === 'secondary') {
       this.colorTargetB = this.ensureTarget(this.colorTargetB, width, height)
     } else if (slot === 'export') {
@@ -2823,7 +2944,7 @@ export class Pipeline {
     bindFullscreenQuadAttribs(gl, this.colorProgram, this.quadBuffer)
 
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+    gl.bindTexture(gl.TEXTURE_2D, gradeInput.texture)
     gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uSource'), 0)
 
     gl.activeTexture(gl.TEXTURE1)
@@ -2849,76 +2970,6 @@ export class Pipeline {
       this.invert.rgb || this.invert.b ? 1 : 0,
     ])
     drawFullscreenQuad(gl)
-
-    // Gradient Map (v0.3 post-Hinata close-out) — general post-grade color remap, applied after
-    // Curve/HSL/Invert above. Bypass applied here at the point of consumption (skip both extra
-    // passes, return colorOut untouched) rather than by aliasing a field, per CLAUDE.md's
-    // Recurring Gotchas entry on ensureTarget field-ownership bugs.
-    if (!this.gradeGradientMap.enabled) return colorOut
-    const gm = this.gradeGradientMap
-
-    if (slot === 'secondary') {
-      this.gradeGradientMapTargetB = this.ensureTarget(this.gradeGradientMapTargetB, width, height)
-    } else if (slot === 'export') {
-      this.exportGradeGradientMapTarget = this.ensureTarget(this.exportGradeGradientMapTarget, width, height)
-    } else {
-      this.gradeGradientMapTarget = this.ensureTarget(this.gradeGradientMapTarget, width, height)
-    }
-    const gradientMapped = slot === 'secondary' ? this.gradeGradientMapTargetB!
-      : slot === 'export' ? this.exportGradeGradientMapTarget!
-      : this.gradeGradientMapTarget!
-    // Every uniform gradientMapProgram declares is set explicitly here, every call — this
-    // program's sibling uniforms (fillTypeColor.frag.ts's pivot/duoTone) have leaked stale state
-    // across call sites before (CLAUDE.md's Recurring Gotchas), so nothing is left to "default".
-    this.runPass(this.gradientMapProgram, gradientMapped, width, height, () => {
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, colorOut.texture)
-      gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uSource'), 0)
-      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), gm.shadow)
-      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), gm.mid)
-      gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), gm.highlight)
-      gl.uniform1f(gl.getUniformLocation(this.gradientMapProgram, 'uGradientPivot'), gm.pivot)
-      gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uGradientDuoTone'), gm.duoTone ? 1 : 0)
-    })
-
-    if (slot === 'secondary') {
-      this.gradeGradientMapCompositeTargetB = this.ensureTarget(this.gradeGradientMapCompositeTargetB, width, height)
-    } else if (slot === 'export') {
-      this.exportGradeGradientMapCompositeTarget = this.ensureTarget(this.exportGradeGradientMapCompositeTarget, width, height)
-    } else {
-      this.gradeGradientMapCompositeTarget = this.ensureTarget(this.gradeGradientMapCompositeTarget, width, height)
-    }
-    const composited = slot === 'secondary' ? this.gradeGradientMapCompositeTargetB!
-      : slot === 'export' ? this.exportGradeGradientMapCompositeTarget!
-      : this.gradeGradientMapCompositeTarget!
-    // compositeProgram reused as a plain 2-input blend (uLayerCount=1) — "Blending Mode" reuses
-    // blendLayer()'s existing multiply/screen/overlay math instead of a new shader, "Intensity"
-    // is just uOpacities[0]. uMask's alpha is implicitly 1 everywhere (gradientMapProgram always
-    // outputs vec4(mapped, 1.0)), so blend strength is purely intensity-driven.
-    this.runPass(this.compositeProgram, composited, width, height, () => {
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, colorOut.texture)
-      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBase'), 0)
-      gl.activeTexture(gl.TEXTURE1)
-      gl.bindTexture(gl.TEXTURE_2D, gradientMapped.texture)
-      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uMask'), 1)
-      gl.uniform1fv(gl.getUniformLocation(this.compositeProgram, 'uOpacities'), new Float32Array([gm.intensity, 0, 0, 0]))
-      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBlendMode'), BLEND_MODE_INT[gm.blendMode])
-      gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uLayerCount'), 1)
-    })
-
-    // Copy back into colorOut itself (colorTarget/colorTargetB/exportColorTarget) rather than
-    // just returning `composited` — every downstream consumer (the main blit, blitSplitPane,
-    // readFinalPixels) reads this.colorTarget/colorTargetB directly, not runColorChain's return
-    // value (only the 'export' slot's callers use the return value). A plain blitProgram copy
-    // (composited -> colorOut, distinct textures) avoids the same-texture read/write feedback
-    // loop a direct render-into-colorOut would cause, since colorOut is also gradientMapProgram's
-    // and compositeProgram's own uBase source above.
-    this.runPass(this.blitProgram, colorOut, width, height, () => {
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, composited.texture)
-      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
-    })
 
     return colorOut
   }

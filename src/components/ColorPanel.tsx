@@ -33,6 +33,8 @@ interface ColorPanelProps {
   setCurveVisible: (visible: boolean) => void
   /** Resets everything in the Color tab (curve + HSL + Invert + Light + Color basic adjustments) — not just the curve. */
   onResetGrade: () => void
+  /** Resets only the curve (all 4 channels back to identity) — narrower than onResetGrade, see the 2-row Curve header layout below. */
+  onResetCurve: () => void
 }
 
 /** Per docs/oshiPFP-v0.2.1-UIspecs.md's Slider Background Gradient list. */
@@ -120,7 +122,7 @@ export default function ColorPanel({
   light, setLight,
   colorAdjust, setColorAdjust,
   gradeGradientMap, setGradeGradientMap,
-  curveChannel, setCurveChannel, curveVisible, setCurveVisible, onResetGrade,
+  curveChannel, setCurveChannel, curveVisible, setCurveVisible, onResetGrade, onResetCurve,
 }: ColorPanelProps) {
   const setLightField = <K extends keyof LightParams>(key: K, value: LightParams[K]) =>
     setLight({ ...light, [key]: value })
@@ -142,6 +144,12 @@ export default function ColorPanel({
 
       {subTab === 'light' && (
         <div className="lineart-slidergroup-stack">
+          <div className="crop-topcontent" style={{ gap: 10 }}>
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Curve</span>
+            <button type="button" className="text-reset-btn font-value" onClick={onResetGrade}>
+              Reset Grade
+            </button>
+          </div>
           <div className="crop-topcontent" style={{ gap: 10 }}>
             <div className="curve-overlay-channels">
               <button
@@ -166,8 +174,8 @@ export default function ColorPanel({
                 </button>
               ))}
             </div>
-            <button type="button" className="text-reset-btn font-value" onClick={onResetGrade}>
-              Reset Grade
+            <button type="button" className="text-reset-btn font-value" onClick={onResetCurve}>
+              Reset Curve
             </button>
           </div>
           <GradientSlider

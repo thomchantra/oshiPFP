@@ -77,6 +77,17 @@ export function useColorAdjustments(pipeline: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gradeGradientMap])
 
+  // "Reset oshiPFP" (v0.3 polish pass) — back to the same identity defaults this hook itself
+  // initializes from, mirroring useColorCurve's own reset().
+  const reset = () => {
+    setHslByBand(IDENTITY_HSL_BY_BAND)
+    setActiveBand('master')
+    setInvert(IDENTITY_INVERT)
+    setLight(IDENTITY_LIGHT)
+    setColorAdjust(IDENTITY_COLOR_ADJUST)
+    setGradeGradientMap(IDENTITY_GRADE_GRADIENT_MAP)
+  }
+
   return {
     hslByBand, setHslByBand,
     activeBand, setActiveBand,
@@ -84,5 +95,6 @@ export function useColorAdjustments(pipeline: {
     light, setLight,
     colorAdjust, setColorAdjust,
     gradeGradientMap, setGradeGradientMap,
+    reset,
   }
 }

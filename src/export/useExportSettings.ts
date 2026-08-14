@@ -28,6 +28,18 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   const [resampleMode, setResampleMode] = useState<ResampleMode>('lanczos3')
   const [format, setFormat] = useState<ExportFormat>('png')
 
+  // "Reset oshiPFP" (v0.3 polish pass) — back to this hook's own initial-useState defaults.
+  const reset = () => {
+    setExportDisplayMode('composite')
+    setExportColorGrade(true)
+    setExportColorGradeIntensity(1)
+    setResolutionMode('original')
+    setCustomSize({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
+    setExportCustomRatio(1)
+    setResampleMode('lanczos3')
+    setFormat('png')
+  }
+
   return {
     exportDisplayMode, setExportDisplayMode,
     exportColorGrade, setExportColorGrade,
@@ -37,5 +49,6 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
     exportCustomRatio, setExportCustomRatio,
     resampleMode, setResampleMode,
     format, setFormat,
+    reset,
   }
 }

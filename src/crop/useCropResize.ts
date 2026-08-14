@@ -50,5 +50,12 @@ export function useCropResize(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, customSize])
 
-  return { mode, setMode, customSize, setCustomSize, customRatio }
+  // "Reset oshiPFP" (v0.3 polish pass) — back to this hook's own IDENTITY_RESIZE shape.
+  const reset = () => {
+    setModeRaw(IDENTITY_RESIZE.mode)
+    setCustomSize(IDENTITY_RESIZE.customSize)
+    setCustomRatio(1)
+  }
+
+  return { mode, setMode, customSize, setCustomSize, customRatio, reset }
 }

@@ -2,8 +2,10 @@ import { useRef, useState, type ChangeEvent, type RefObject } from 'react'
 import IconButton from './IconButton'
 import IconToggle2 from './IconToggle2'
 import AvatarCornerPreview from './AvatarCornerPreview'
-import AboutModal from './AboutModal'
+import AboutModal, { type AboutTab } from './AboutModal'
+import Modal from './Modal'
 import Icon from './Icon'
+import { OSHIPFP_VERSION } from '../version'
 
 export type PfpMode = 'square' | 'circle'
 
@@ -36,6 +38,10 @@ interface HeaderBarProps {
    * build (including `npm run build` for Netlify), so this needs no manual pre-push toggle
    * unlike lab.html's entry point (CLAUDE.md's Checklist). */
   onDumpState: () => void
+  /** "Reset oshiPFP" (v0.3 polish pass) — clears the loaded image and every tuned param back to
+   * defaults, without a page reload. The confirm modal (open state owned here, same pattern as
+   * `aboutOpen` below) calls this only once the user actually confirms. */
+  onReset: () => void
 }
 
 export default function HeaderBar({
@@ -52,9 +58,17 @@ export default function HeaderBar({
   dualPaneActive,
   dualPanePriorityIndex,
   onDumpState,
+  onReset,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [aboutInitialTab, setAboutInitialTab] = useState<AboutTab>('about')
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+
+  const openAbout = (tab: AboutTab) => {
+    setAboutInitialTab(tab)
+    setAboutOpen(true)
+  }
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -62,20 +76,39 @@ export default function HeaderBar({
     e.target.value = ''
   }
 
+  const confirmReset = () => {
+    setResetConfirmOpen(false)
+    onReset()
+  }
+
   return (
     <div className="header-bar">
-      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} initialTab={aboutInitialTab} />
+      <Modal open={resetConfirmOpen} onClose={() => setResetConfirmOpen(false)} title="Confirm Reset oshiPFP?">
+        <div className="confirm-modal-actions">
+          <button type="button" className="confirm-reset-btn" onClick={confirmReset}>Reset</button>
+          <button type="button" className="confirm-cancel-btn" onClick={() => setResetConfirmOpen(false)}>Cancel</button>
+        </div>
+      </Modal>
       <div className="header-bar-left">
         <div className="header-bar-title-row">
-          <button
-            type="button"
-            className="font-title"
-            style={{ color: 'var(--accent-title)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-            onClick={() => setAboutOpen(true)}
-          >
+          <button type="button" className="text-reset-btn font-title" style={{ color: 'var(--accent-title)' }} onClick={() => openAbout('about')}>
             oshiPFP
           </button>
-          <span className="font-param-label" style={{ color: 'var(--accent-dark)', fontSize: 16 }}>v0.2.2</span>
+          <button
+            type="button"
+            className="text-reset-btn font-param-label"
+            style={{ color: 'var(--accent-dark)', fontSize: 16 }}
+            onClick={() => openAbout('changelog')}
+          >
+            {OSHIPFP_VERSION}
+          </button>
+          <button type="button" className="reset-btn" aria-label="Reset oshiPFP" onClick={() => setResetConfirmOpen(true)}>
+            <Icon name="refresh" size={14} />
+          </button>
+          <button type="button" className="theme-btn" aria-label="Help" onClick={() => openAbout('about')}>
+            <Icon name="question" size={18} color="var(--accent-title)" />
+          </button>
           <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" onClick={onToggleTheme}>
             <Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} color="var(--accent-title)" />
           </button>

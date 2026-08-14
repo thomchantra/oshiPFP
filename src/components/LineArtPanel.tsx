@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import IconButton from './IconButton'
 import GradientSlider, { type SliderCurve } from './GradientSlider'
@@ -417,7 +417,6 @@ export default function LineArtPanel({
         )}
       </div>
       )}
-      <div className="lineart-divider" />
 
       {/* Blend Mode + Overlay Opacity grouped under one header/Reset (v0.3 tuning UI pass) —
           previously two separate blocks split by a divider; grouped since they're both
@@ -953,6 +952,12 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
     { id: 'erode', label: 'Erode' },
     { id: 'tone', label: 'Tone' },
   ]
+  const DEFAULT_BLEND: Record<Treatment, BlendMode> = {
+    edge: 'overwrite',
+    emboss: 'overlay',
+    erode: 'multiply',
+    tone: 'multiply',
+  }
   const active: Treatment = params.highPassResponsiveColor
     ? 'edge'
     : params.thresholdEnabled
@@ -960,6 +965,28 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
       : params.hiToneTarget !== 'off'
         ? 'tone'
         : 'emboss'
+  // Passive default snap (v0.3 polish pass) — a treatment's blend-mode default is only ever
+  // applied the FIRST time this component instance ever switches to it, tracked in this ref
+  // (not persisted params, so it resets naturally on algo switch/reset via remount). Previously
+  // every single pill click force-reset blendMode, which fought the user's own back-and-forth
+  // A/B workflow: tune Erode's blend mode, hop to Emboss to compare, hop back — and Erode's tuned
+  // choice would silently get stomped back to the default. Re-clicking an already-visited
+  // treatment now only switches its fields, leaving blendMode exactly as the user left it.
+  const visitedRef = useRef<Set<Treatment>>(new Set([active]))
+  const switchTreatment = (t: Treatment) => {
+    const alreadyVisited = visitedRef.current.has(t)
+    if (!alreadyVisited) visitedRef.current.add(t)
+    const blendMode = alreadyVisited ? params.blendMode : DEFAULT_BLEND[t]
+    if (t === 'edge') {
+      onChange({ ...params, highPassResponsiveColor: true, thresholdEnabled: false, hiToneTarget: 'off', blendMode })
+    } else if (t === 'emboss') {
+      onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'off', blendMode })
+    } else if (t === 'erode') {
+      onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: true, hiToneTarget: 'off', blendMode })
+    } else {
+      onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'multiply', blendMode })
+    }
+  }
   return (
     <>
       <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Output Treatment</p>
@@ -969,17 +996,7 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
             key={t.id}
             type="button"
             className={`pill-toggle-btn font-button-label${active === t.id ? ' active' : ''}`}
-            onClick={() => {
-              if (t.id === 'edge') {
-                onChange({ ...params, highPassResponsiveColor: true, thresholdEnabled: false, hiToneTarget: 'off', blendMode: 'overwrite' })
-              } else if (t.id === 'emboss') {
-                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'off', blendMode: 'overlay' })
-              } else if (t.id === 'erode') {
-                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: true, hiToneTarget: 'off', blendMode: 'multiply' })
-              } else {
-                onChange({ ...params, highPassResponsiveColor: false, thresholdEnabled: false, hiToneTarget: 'multiply', blendMode: 'multiply' })
-              }
-            }}
+            onClick={() => switchTreatment(t.id)}
           >
             {t.label}
           </button>
@@ -1040,6 +1057,9 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
           <div className="lineart-divider" />
           <InvertFillRow on={params.fillInvert} onChange={(v) => onChange({ ...params, fillInvert: v })} />
           <FillTypeRow value={params.fillType} onChange={(v) => onChange({ ...params, fillType: v })} />
+          {params.fillType === 'image' && (
+            <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => onChange({ ...params, colorContrast: v })} />
+          )}
           {params.fillType === 'solid' && (
             <TintColorRow tintColor={params.tintColor} onChange={(rgb) => onChange({ ...params, tintColor: rgb })} />
           )}
