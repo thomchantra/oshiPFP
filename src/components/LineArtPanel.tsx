@@ -375,9 +375,98 @@ export default function LineArtPanel({
 
         {params.mode === 'pathD' && (
           <>
+            {/* Session 17 consolidation ("Daiya pt 2"): Threshold/Soft Threshold/Invert Seed sit
+                above the op-mode selector since they apply identically to JFA and Octagon (same
+                shared thresholdProgram/softThresholdProgram calls either way) — only Radius/
+                Hardness/Facets/Rotation/One-Sided differ per mode, so those live inside their own
+                tab instead of being duplicated or fought over. See pipeline.ts's pathD branch. */}
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('threshold', v)} />
-            <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={2} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
-            <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
+            <GradientSlider
+              label="Soft Threshold" value={params.daiyaSoftThresholdWidth} min={0} max={1} step={0.01} defaultValue={0}
+              onChange={(v) => set('daiyaSoftThresholdWidth', v)}
+            />
+            {params.daiyaSoftThresholdWidth > 0 && (
+              <GradientSlider
+                label="Soft Threshold Overdrive" value={params.daiyaSoftThresholdOverdrive} min={1} max={10} step={0.1} defaultValue={1}
+                onChange={(v) => set('daiyaSoftThresholdOverdrive', v)}
+              />
+            )}
+            <div
+              className="lineart-toggle-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => set('daiyaInvertSeed', !params.daiyaInvertSeed)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  set('daiyaInvertSeed', !params.daiyaInvertSeed)
+                }
+              }}
+            >
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Seed</span>
+              <ToggleSwitch on={params.daiyaInvertSeed} label="Invert Seed" />
+            </div>
+            <div className="lineart-divider" />
+            <p className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Operation Mode</p>
+            <div className="crop-bottomcontent" style={{ padding: 0 }}>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${!params.daiyaOctagonMode ? ' active' : ''}`}
+                onClick={() => set('daiyaOctagonMode', false)}
+              >
+                JFA
+              </button>
+              <button
+                type="button"
+                className={`pill-toggle-btn font-button-label${params.daiyaOctagonMode ? ' active' : ''}`}
+                onClick={() => set('daiyaOctagonMode', true)}
+              >
+                Octagon
+              </button>
+            </div>
+            {params.daiyaOctagonMode ? (
+              <>
+                <GradientSlider
+                  label="Radius (texels)" value={params.daiyaOctagonRadius} min={0} max={20} step={1} defaultValue={2}
+                  onChange={(v) => set('daiyaOctagonRadius', v)}
+                />
+                <GradientSlider
+                  label="Hardness" value={params.daiyaOctagonHardness} min={-1} max={1} defaultValue={0}
+                  onChange={(v) => set('daiyaOctagonHardness', v)}
+                />
+                <div
+                  className="lineart-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => set('daiyaOctagonOneSided', !params.daiyaOctagonOneSided)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      set('daiyaOctagonOneSided', !params.daiyaOctagonOneSided)
+                    }
+                  }}
+                >
+                  <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>One-Sided (spike)</span>
+                  <ToggleSwitch on={params.daiyaOctagonOneSided} label="One-Sided" />
+                </div>
+                <GradientSlider
+                  label="Facets (directions)" value={params.daiyaOctagonDirections}
+                  min={params.daiyaOctagonOneSided ? 1 : 3} max={12} step={1} defaultValue={1}
+                  formatValue={(v) => `${params.daiyaOctagonOneSided ? v : v * 2}`}
+                  onChange={(v) => set('daiyaOctagonDirections', v)}
+                />
+                <GradientSlider
+                  label="Facet Rotation" value={params.daiyaOctagonRotation} min={0} max={360} step={1} defaultValue={0}
+                  formatValue={(v) => `${v}°`}
+                  onChange={(v) => set('daiyaOctagonRotation', v)}
+                />
+              </>
+            ) : (
+              <>
+                <GradientSlider label="Radius (texels)" value={params.radius} min={0} max={20} defaultValue={2} step={0.01} curve={RADIUS_CURVE} onChange={(v) => set('radius', v)} />
+                <GradientSlider label="Hardness" value={params.hardness} min={-1} max={1} defaultValue={0} onChange={(v) => set('hardness', v)} />
+              </>
+            )}
             <div className="lineart-divider" />
             <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
             <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />

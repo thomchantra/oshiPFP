@@ -12,6 +12,13 @@
  * WebGL's implicit 0 for an unset int uniform, so v1/Path D's erosion-grow
  * calls don't need to pass it explicitly) vs max (1, dilation/"closing" —
  * added for the Gumi lab candidate's morphological gap-closing stage).
+ *
+ * uOneSided (Daiya Octagon lab, session 17) — normally each direction samples both `+offset` and
+ * `-offset` (symmetric growth: N directions -> a 2N-sided facet shape, since every pass
+ * contributes two opposite facets for free). Setting this to 1 samples only `+offset`, so N
+ * directions instead produce a genuine N-sided polygon — at low N that's an actual spike/wedge
+ * instead of a symmetric diamond/hexagon. Every call site must set this explicitly (CLAUDE.md's
+ * Recurring Gotchas on this exact shared program) — 0 everywhere except Octagon's own call.
  */
 export const minFilter1DFrag = `#version 300 es
 precision highp float;
@@ -21,6 +28,7 @@ uniform vec2 uDirection;
 uniform vec2 uTexelSize;
 uniform int uRadius;
 uniform int uMode;
+uniform int uOneSided;
 out vec4 outColor;
 
 const int MAX_RADIUS = 40;
@@ -31,7 +39,7 @@ void main() {
     if (i > uRadius) break;
     vec2 offset = uDirection * uTexelSize * float(i);
     float a = texture(uSource, vUV + offset).r;
-    float b = texture(uSource, vUV - offset).r;
+    float b = uOneSided == 1 ? a : texture(uSource, vUV - offset).r;
     if (uMode == 1) {
       m = max(m, max(a, b));
     } else {

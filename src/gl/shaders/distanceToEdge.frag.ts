@@ -43,6 +43,14 @@
  * both dropped after real-art review; see
  * changelog/oshipfp-v0.2-lineart-saga.md for why.
  *
+ * uFeather-vs-uRadius clamp (v0.3, session 17 bug fix): the lower smoothstep edge is
+ * `max(uRadius - uFeather, 0.0)`, not the raw `uRadius - uFeather`. `dist` (from `distance()`)
+ * is never negative, so once uFeather exceeds uRadius the raw lower edge goes negative and
+ * `dist == 0` (the true core/seed pixel) stops landing before that edge — smoothstep no longer
+ * guarantees `t == 0` there, so even the solid interior of a shape loses opacity at strongly
+ * negative Hardness. Confirmed on Daiya (HARDNESS_BASE_MAX_FEATHER lets feather run well past
+ * typical radius values there), but this shader is shared with Botan too, same latent bug.
+ *
  * uInvert (v0.3 Service Update) — only meaningful for Botan's `fillType === 'image'` case, where
  * shape and color stay fused in this one pass (see pipeline.ts's pathB branch) instead of running
  * through the shared maskFillColor.frag.ts final pass every other fillType/algorithm uses; this
@@ -68,7 +76,9 @@ void main() {
   vec4 seed = texture(uSeed, vUV);
   bool hasSeed = seed.x > -1.0e5;
   float dist = hasSeed ? distance(gl_FragCoord.xy, seed.xy) : 1.0e10;
-  float t = pow(clamp(smoothstep(uRadius - uFeather, uRadius + uFeather, dist), 0.0, 1.0), uGamma);
+  float edge0 = max(uRadius - uFeather, 0.0);
+  float edge1 = uRadius + uFeather;
+  float t = pow(clamp(smoothstep(edge0, edge1, dist), 0.0, 1.0), uGamma);
 
   vec3 seedColor;
   if (uColorExpansion == 1) {

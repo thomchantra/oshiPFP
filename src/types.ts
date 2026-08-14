@@ -199,6 +199,72 @@ export interface LineArtParams {
   /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi (v0.3 tuning) reuses this same field with its own, unrelated meaning — see pipeline.ts's runGumiLinePostProcess: 1 (default) = untouched, 0 = final Line-mode mask box-blurred and mixed in at full strength (a soft/antialiased edge instead of a hard one). Each mode interprets its own shared fields independently, same convention `radius` etc. already follow. */
   hardness: number
   blobContrast: number
+  /** Daiya's 2-mode op selector (v0.3, session 17 — "Daiya pt 2" consolidation, closing out the
+   * "sit with Daiya" tuning discussion). `false` = JFA (the session-14 port, shared distance-
+   * transform math with Botan; float-precision Radius, the one thing Octagon can never match).
+   * `true` = Octagon (the pre-session-14 4-direction separable min-filter dilate, resurrected from
+   * git history — genuinely distinct now that it has its own Radius/Hardness/Facets/Rotation/
+   * One-Sided). Threshold, Soft Threshold, and Invert Seed apply to both modes identically (same
+   * shared `thresholdProgram`/`softThresholdProgram` calls either way) and sit above this selector
+   * in the UI rather than being duplicated per-mode. See pipeline.ts's pathD branch doc comment. */
+  daiyaOctagonMode: boolean
+  /** Octagon's own independent Radius/Hardness (session 17 consolidation) — deliberately separate
+   * fields from the shared `radius`/`hardness` above (which JFA keeps using unchanged) rather than
+   * reusing them, so switching between the two op-mode tabs doesn't make them fight over one
+   * value. `daiyaOctagonRadius` is a plain integer texel count (a literal step=1 UI slider, not
+   * run through any float-to-int correction) — JFA's Radius stays the only float-precision one,
+   * the one permanent, unfixable advantage it has over Octagon. `daiyaOctagonHardness` maps to
+   * `runSoftHardness` (box-blur post-process), not JFA Hardness's `uFeather` smoothstep falloff —
+   * same slider shape/range, genuinely different math, hence a genuinely separate value. */
+  daiyaOctagonRadius: number
+  daiyaOctagonHardness: number
+  /** Octagon's own facet-count/rotation controls (session 17 follow-up) — only read while
+   * `daiyaOctagonMode` is on. `daiyaOctagonDirections` generalizes the old hardcoded 4-direction
+   * pass count (each direction is bidirectional in minFilter1D.frag.ts by default, so N directions
+   * produce a 2N-sided facet shape — the original 4 gave the 8-sided "octagon"); 3 is the minimum
+   * that still produces a real polygon under the default bidirectional shape, 1 once
+   * `daiyaOctagonOneSided` is on (the default this session was promoted to, per direction — the
+   * one-sided single spike is what actually made this mode work). `daiyaOctagonRotation` (degrees,
+   * 0-360) offsets where the first facet points — a real, visible control once One-Sided breaks
+   * point-symmetry (see below); barely perceptible under the default bidirectional shape, which
+   * stays point-symmetric no matter the rotation. The full 360° range (not just 180°) matters once
+   * One-Sided is on with more than 1 direction: unlike the bidirectional case, a one-sided N-gon's
+   * directions are generated across a full turn, not a half-turn, so every unique orientation
+   * needs the full range to reach it (see pipeline.ts's pathD branch). */
+  daiyaOctagonDirections: number
+  daiyaOctagonRotation: number
+  /** One-sided growth (session 17, 2nd follow-up) — minFilter1D.frag.ts normally samples both
+   * `+offset` and `-offset` per direction (symmetric growth, the reason more directions only ever
+   * approaches a rounder circle, never a spike). This flips each direction pass to sample only
+   * `+offset`, so N directions now produce a genuine N-sided polygon instead of a 2N-sided one —
+   * at low N (1-3) that's an actual spike/wedge/triangle instead of a symmetric diamond/hexagon,
+   * and `daiyaOctagonRotation` above becomes meaningful for the first time. Small, explicitly-set
+   * addition to the existing shared `minFilterProgram` (new `uOneSided` uniform, every other call
+   * site sets it to 0) rather than a new shader — see pipeline.ts's pathD branch. */
+  daiyaOctagonOneSided: boolean
+  /** Flips Daiya's hard-threshold seed mask's own polarity (thresholdProgram's uInvert, hardcoded
+   * off before this) — shared by *both* growth modes (session 17 consolidation; originally
+   * Octagon-only, widened once it was confirmed to be the same shared threshold pass either way,
+   * nothing octagon-specific about it), independent of `fillInvert`'s own unrelated "which side
+   * gets the fill color" job at the very final compositing step. Tests whether growing from the
+   * opposite tonal side reads as shading rather than line-tracing. */
+  daiyaInvertSeed: boolean
+  /** Multiplies a second, independently-computed soft/antialiased threshold weight (same
+   * smoothstep-based technique as Hinata Erode's own softThresholdProgram) into the grown mask's
+   * alpha, regardless of which of the two growth modes produced it — JFA needs a strictly binary
+   * seed mask so this can't soften the seeding itself, only the final result. Promoted from a
+   * boolean lab toggle to a real slider (session 17 consolidation) — 0 = off/hard threshold
+   * (identity, matches every existing preset), >0 = softness half-width, same units `uThreshold`
+   * itself uses (0-1 luminance space). */
+  daiyaSoftThresholdWidth: number
+  /** Boosts the soft threshold's own weight before it's multiplied in (session 17 follow-up,
+   * `alphaModulate.frag.ts`'s `uMaskGain`) — a plain `clamp(mask * gain, 0, 1)`. The raw smoothstep
+   * output reads as faint/washed-out at any real softness width (most of the transition band sits
+   * well under full alpha), so this pushes it back toward solid while keeping the softened edge
+   * itself. No-op at 1 (identity, matches every existing preset) and only ever read while
+   * `daiyaSoftThresholdWidth > 0` — irrelevant otherwise, since a hard threshold has no "weak"
+   * midband to boost. */
+  daiyaSoftThresholdOverdrive: number
   /** Gumi's Color Bleed feature only now (v0.3 Service Update) — reuses distanceToEdge.frag.ts's
    * own image-vs-flat-tint branch independently of the shared `fillType` selector below. Botan no
    * longer reads this field; its own `fillType === 'image'` drives the same `uColorExpansion`

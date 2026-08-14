@@ -18,6 +18,7 @@ import { distanceToEdgeFrag } from './shaders/distanceToEdge.frag'
 import { findEdgesFrag } from './shaders/findEdges.frag'
 import { boxBlurFrag } from './shaders/boxBlur.frag'
 import { mixBlendFrag } from './shaders/mixBlend.frag'
+import { alphaModulateFrag } from './shaders/alphaModulate.frag'
 import { layerMergeFrag } from './shaders/layerMerge.frag'
 import { unsharpMaskFrag } from './shaders/unsharpMask.frag'
 import { saturationAdjustFrag } from './shaders/saturationAdjust.frag'
@@ -101,6 +102,15 @@ const IDENTITY_LINE_ART: LineArtParams = {
   radius: 1,
   hardness: 1,
   blobContrast: 1,
+  daiyaOctagonMode: false,
+  daiyaOctagonRadius: 2,
+  daiyaOctagonHardness: 0,
+  daiyaOctagonDirections: 1,
+  daiyaOctagonRotation: 0,
+  daiyaOctagonOneSided: false,
+  daiyaInvertSeed: false,
+  daiyaSoftThresholdWidth: 0,
+  daiyaSoftThresholdOverdrive: 1,
   colorExpansion: false,
   colorContrast: 1,
   gateThreshold: 0,
@@ -250,6 +260,10 @@ export class Pipeline {
   private edgeFillColorProgram: WebGLProgram
   private colorLiftProgram: WebGLProgram
   private alphaOverWhiteProgram: WebGLProgram
+  /** Multiplies a base texture's ink-weight channel (uBaseChannel: 0=.r, 1=.a — same convention
+   * maskFillColorProgram's uMaskChannel already uses) by a second grayscale mask's .r — Daiya's
+   * soft-threshold lab toggle (session 17) is the only consumer today. */
+  private alphaModulateProgram: WebGLProgram
   private compositeProgram: WebGLProgram
   private lightColorProgram: WebGLProgram
   private colorProgram: WebGLProgram
@@ -297,6 +311,20 @@ export class Pipeline {
   private daiyaSeedTargetA: TargetTexture | null = null
   private daiyaSeedTargetB: TargetTexture | null = null
   private daiyaDistanceMaskTarget: TargetTexture | null = null
+  /** Resurrected pre-JFA-port growth path (session 17 lab comparison, `daiyaOctagonMode`) — the
+   * original 4-direction separable min-filter dilate (see git history pre-session-14, "octagon
+   * approximation"), scratch targets for its 2-buffer ping-pong. Deliberately separate fields from
+   * seedTargetA/B above (JFA's own ping-pong) rather than reused, since only one growth mode runs
+   * per frame but both could be mid-cache from a previous frame — sharing risks the same
+   * field-ownership hazard CLAUDE.md's ensureTarget gotcha warns about. */
+  private daiyaOctagonHTarget: TargetTexture | null = null
+  private daiyaOctagonVTarget: TargetTexture | null = null
+  /** Soft-threshold alpha-modulate lab toggle (session 17, `daiyaSoftThreshold`) — see
+   * pipeline.ts's pathD branch doc comment for the full rationale. `daiyaSoftThresholdTarget`
+   * holds softThresholdProgram's raw grayscale output; `daiyaSoftThresholdModTarget` holds the
+   * result of multiplying it into whichever growth mode's mask (JFA's `.a` or octagon's `.r`). */
+  private daiyaSoftThresholdTarget: TargetTexture | null = null
+  private daiyaSoftThresholdModTarget: TargetTexture | null = null
   /** v0.3 Service Update — Botan's solid/gradient fillType final-color pass output (see pipeline.ts's
    * pathB branch); unused (outputTarget stays distanceMaskTarget directly) when fillType is 'image'. */
   private botanFillColorTarget: TargetTexture | null = null
@@ -520,6 +548,7 @@ export class Pipeline {
     this.edgeFillColorProgram = createProgram(this.gl, passthroughVert, edgeFillColorFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
+    this.alphaModulateProgram = createProgram(this.gl, passthroughVert, alphaModulateFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
@@ -577,6 +606,7 @@ export class Pipeline {
       'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget',
       'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
       'daiyaSeedTargetA', 'daiyaSeedTargetB', 'daiyaDistanceMaskTarget',
+      'daiyaOctagonHTarget', 'daiyaOctagonVTarget', 'daiyaSoftThresholdTarget', 'daiyaSoftThresholdModTarget',
       'botanFillColorTarget', 'chieFillColorTarget', 'softHardnessHTarget', 'softHardnessVTarget', 'softHardnessMixTarget',
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
@@ -618,6 +648,7 @@ export class Pipeline {
     this.edgeFillColorProgram = createProgram(this.gl, passthroughVert, edgeFillColorFrag)
     this.colorLiftProgram = createProgram(this.gl, passthroughVert, colorLiftFrag)
     this.alphaOverWhiteProgram = createProgram(this.gl, passthroughVert, alphaOverWhiteFrag)
+    this.alphaModulateProgram = createProgram(this.gl, passthroughVert, alphaModulateFrag)
     this.compositeProgram = createProgram(this.gl, passthroughVert, compositeFrag)
     this.lightColorProgram = createProgram(this.gl, passthroughVert, lightColorCorrectFrag)
     this.colorProgram = createProgram(this.gl, passthroughVert, curvesHslFrag)
@@ -687,6 +718,7 @@ export class Pipeline {
       'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget',
       'erodeHTarget', 'erodeVTarget', 'gateTarget', 'seedTargetA', 'seedTargetB', 'distanceMaskTarget',
       'daiyaSeedTargetA', 'daiyaSeedTargetB', 'daiyaDistanceMaskTarget',
+      'daiyaOctagonHTarget', 'daiyaOctagonVTarget', 'daiyaSoftThresholdTarget', 'daiyaSoftThresholdModTarget',
       'botanFillColorTarget', 'chieFillColorTarget', 'softHardnessHTarget', 'softHardnessVTarget', 'softHardnessMixTarget',
       'edgeMapTarget', 'blurHTarget', 'blurVTarget', 'tintTarget', 'saturationTarget', 'lineArtBlendTarget',
       'lineArtOverlayPreviewTarget', 'lineArtOutputTarget', 'lightColorTarget', 'colorTarget',
@@ -790,6 +822,11 @@ export class Pipeline {
     if (
       params.mode !== prev.mode ||
       params.threshold !== prev.threshold ||
+      // Session 17 fix: daiyaInvertSeed flips thresholdProgram's polarity feeding into Daiya's
+      // JFA seed (distanceSeedProgram) — without invalidating the cached seed here, toggling it
+      // silently did nothing once a seed was already computed, exactly the dirty-flag/cache-gating
+      // staleness class CLAUDE.md's Recurring Gotchas already warns about.
+      params.daiyaInvertSeed !== prev.daiyaInvertSeed ||
       params.toneShaping.exposure !== prev.toneShaping.exposure ||
       params.toneShaping.contrast !== prev.toneShaping.contrast ||
       params.toneShaping.mode !== prev.toneShaping.mode ||
@@ -1911,116 +1948,240 @@ export class Pipeline {
       // replacing the old integer-texel min-filter dilate whose useful radius range lived
       // entirely below 1 texel (stepping 0->1 skipped straight past it, rendering as dots/blobs).
       // See docs/oshiPFP-v0.3-tuningspecs.md's Daiya arch discussion for the full rationale.
-      this.daiyaDistanceMaskTarget = this.ensureTarget(this.daiyaDistanceMaskTarget, width, height)
+      //
+      // Session 17 ("sit with Daiya" tuning discussion, consolidated into a real 2-mode op
+      // selector): `daiyaOctagonMode` picks between JFA (the session-14 port) and Octagon (the
+      // pre-port growth math, resurrected from git history) as two structurally distinct modes —
+      // each with its own independent Radius/Hardness (JFA keeps float precision, Octagon's own
+      // fields are intentionally separate so switching tabs doesn't make them fight over one
+      // value), while Threshold/Soft Threshold/Invert Seed apply identically to both (same shared
+      // thresholdProgram/softThresholdProgram calls either way, see below).
+      // `daiyaMask`/`daiyaMaskChannel` are the two growth branches' common hand-off point: every
+      // reader downstream (soft-threshold modulate, maskFillColorProgram) works off whichever
+      // mode actually ran, unaware of which one that was.
+      let daiyaMask: TargetTexture
+      let daiyaMaskChannel: 0 | 1
 
-      const daiyaSeedStale =
-        this.daiyaSeedDirty || !this.daiyaSeedTarget ||
-        this.daiyaSeedTarget.width !== width || this.daiyaSeedTarget.height !== height
-      trace('render:pathD-entry', {
-        fillInvert: p.fillInvert,
-        fillType: p.fillType,
-        seedStale: daiyaSeedStale,
-        daiyaSeedDirty: this.daiyaSeedDirty,
-      })
-
-      if (daiyaSeedStale) {
+      if (p.daiyaOctagonMode) {
+        // Resurrected from git history (pre-session-14), generalized (session 17 follow-up): the
+        // original was 4 hardcoded sequential separable min-filter dilate passes (horizontal,
+        // vertical, both diagonals — each pass grows whatever the previous direction already
+        // grew, not run in parallel and combined), which is what actually produces the "octagon"
+        // facets. minFilter1D.frag.ts samples *both* +offset and -offset per direction, so N
+        // direction passes produce a 2N-sided facet shape — the original 4 directions gave the
+        // 8-sided "octagon" this mode is named for. Now generated from `p.daiyaOctagonDirections`/
+        // `p.daiyaOctagonRotation` instead of hardcoded, so N and facet orientation are both real
+        // sliders — 4 directions + 0° rotation reproduces the original exactly.
+        // The (sqrt2-1) correction on intRadius compensates for diagonal-ish passes reaching
+        // further per step than axis-aligned ones would alone (an approximation that only gets
+        // less exact as direction count grows past 4, not recalibrated per-N — acceptable for a
+        // lab toggle). Ink-weight convention: grayscale in `.r`, matching minFilterProgram's own
+        // output — NOT distanceToEdgeProgram's `.a` convention below.
         this.maskTarget = this.ensureTarget(this.maskTarget, width, height)
-        this.daiyaSeedTargetA = this.ensureFloatTarget(this.daiyaSeedTargetA, width, height)
-        this.daiyaSeedTargetB = this.ensureFloatTarget(this.daiyaSeedTargetB, width, height)
-
         this.runPass(this.thresholdProgram, this.maskTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
           gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
           gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
-          // Shared-uniform-leak fix: thresholdProgram is also used by Botan/Gumi, and Gumi
-          // explicitly sets uInvert=1 on its own call site — without setting it here too, Daiya
-          // silently inherited whatever the last renderer left behind. See threshold.frag.ts's own
-          // doc comment, which predicted exactly this fragility.
-          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
-          this.traceUniformSet('gl:thresholdProgram(Daiya)', this.thresholdProgram, 'uInvert', 0, {
-            mode: p.mode,
-            threshold: p.threshold,
-          })
-        })
-        this.traceSamplePixel('gl:maskTarget-after-threshold(Daiya)', this.maskTarget!, { mode: p.mode })
-
-        this.runPass(this.distanceSeedProgram, this.daiyaSeedTargetA, width, height, () => {
-          gl.activeTexture(gl.TEXTURE0)
-          gl.bindTexture(gl.TEXTURE_2D, this.maskTarget!.texture)
-          gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
-          // Shared-uniform-leak fix (same class as the Invert Fill Flip-Flop Bug found on Botan,
-          // session 11): distanceSeedProgram is also used by Gumi's default Line mode, which
-          // leaves uInvert=1 sitting on this program object. Daiya must set it explicitly every
-          // call, same as Botan does, or a Gumi->Daiya round-trip silently seeds from the wrong
-          // side of the mask.
-          gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
-          this.traceUniformSet('gl:distanceSeedProgram(Daiya)', this.distanceSeedProgram, 'uInvert', 0, { mode: p.mode })
+          // Session 17: was hardcoded 0 — now a real toggle (daiyaInvertSeed, shared with JFA's
+          // own threshold call below), to test whether growing from the opposite tonal side
+          // (light instead of dark, or vice versa) makes Octagon read as shading rather than
+          // line-tracing. Independent of fillInvert's own unrelated job further downstream.
+          gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.daiyaInvertSeed ? 1 : 0)
         })
 
-        const numPasses = Math.max(1, Math.ceil(Math.log2(Math.max(width, height))))
-        let seedSrc = this.daiyaSeedTargetA
-        let seedDst = this.daiyaSeedTargetB
-        for (let i = 0; i < numPasses; i++) {
-          const step = Math.pow(2, numPasses - 1 - i)
-          this.runPass(this.jfaStepProgram, seedDst, width, height, () => {
+        this.daiyaOctagonHTarget = this.ensureTarget(this.daiyaOctagonHTarget, width, height)
+        this.daiyaOctagonVTarget = this.ensureTarget(this.daiyaOctagonVTarget, width, height)
+        // Session 17 consolidation: daiyaOctagonRadius is its own plain integer field (a literal
+        // step=1 UI slider) — no longer derived from the shared float `radius` via a (sqrt2-1)
+        // correction, now that Octagon has an independent Radius control instead of sharing JFA's.
+        const intRadius = Math.max(0, Math.round(p.daiyaOctagonRadius))
+        // Minimum 3 for the default bidirectional shape (fewer doesn't form a real polygon), but
+        // 1 becomes meaningful once uOneSided is on (a single one-sided spike/ray).
+        const dirCount = Math.max(p.daiyaOctagonOneSided ? 1 : 3, Math.round(p.daiyaOctagonDirections))
+        const rotationRad = (p.daiyaOctagonRotation * Math.PI) / 180
+        // Bidirectional passes (minFilter1D samples +offset AND -offset) only need angles spread
+        // across a half-turn [0, PI) — a direction and its opposite are already both covered by
+        // one pass, so going further would just repeat facets. One-sided passes (uOneSided) sample
+        // only +offset, so they're NOT automatically mirrored — a proper N-gon under one-sided growth
+        // needs its N directions spread across the FULL turn [0, 2*PI) instead, or it comes out
+        // lopsided (all facets crammed into one half of the shape). This is exactly why
+        // daiyaOctagonRotation's own range was widened to 360° this session.
+        const turnFraction = p.daiyaOctagonOneSided ? Math.PI * 2 : Math.PI
+        const directions: [number, number][] = Array.from({ length: dirCount }, (_, i) => {
+          const angle = rotationRad + (turnFraction * i) / dirCount
+          return [Math.cos(angle), Math.sin(angle)]
+        })
+        const scratch = [this.daiyaOctagonHTarget, this.daiyaOctagonVTarget]
+        let src: TargetTexture = this.maskTarget
+        directions.forEach((direction, i) => {
+          const dst = scratch[i % 2]!
+          this.runPass(this.minFilterProgram, dst, width, height, () => {
             gl.activeTexture(gl.TEXTURE0)
-            gl.bindTexture(gl.TEXTURE_2D, seedSrc.texture)
-            gl.uniform1i(gl.getUniformLocation(this.jfaStepProgram, 'uSeed'), 0)
-            gl.uniform2fv(gl.getUniformLocation(this.jfaStepProgram, 'uTexelSize'), texelSize)
-            gl.uniform1f(gl.getUniformLocation(this.jfaStepProgram, 'uStep'), step)
+            gl.bindTexture(gl.TEXTURE_2D, src.texture)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uSource'), 0)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), intRadius)
+            gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), direction)
+            // minFilterProgram is shared (Gap Closing, Fumiko/Tsukiko growRadius) — uMode must be
+            // set explicitly every call per CLAUDE.md's Recurring Gotchas (this exact program has
+            // leaked uMode across call sites twice before).
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), p.daiyaOctagonOneSided ? 1 : 0)
           })
-          ;[seedSrc, seedDst] = [seedDst, seedSrc]
-        }
-        this.daiyaSeedTargetA = seedSrc
-        this.daiyaSeedTargetB = seedDst
-        this.daiyaSeedTarget = seedSrc
-        this.daiyaSeedDirty = false
-      }
+          src = dst
+        })
+        daiyaMask = this.runSoftHardness(src, p.daiyaOctagonHardness, width, height)
+        daiyaMaskChannel = 0
+      } else {
+        this.daiyaDistanceMaskTarget = this.ensureTarget(this.daiyaDistanceMaskTarget, width, height)
 
-      const daiyaFeather = hardnessToFeather(p.hardness, HARDNESS_BASE_MAX_FEATHER.pathD!)
-      this.runPass(this.distanceToEdgeProgram, this.daiyaDistanceMaskTarget, width, height, () => {
-        gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, this.daiyaSeedTarget!.texture)
-        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uSeed'), 0)
-        gl.activeTexture(gl.TEXTURE1)
-        gl.bindTexture(gl.TEXTURE_2D, base.texture)
-        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uOriginal'), 1)
-        gl.uniform2fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uTexSize'), [width, height])
-        // Direct 1:1 mapping, no diagonal-correction factor — JFA's Euclidean distance() replaces
-        // the old min-filter's octagon-approximation hack entirely.
-        gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.radius)
-        gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), daiyaFeather)
-        gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
-        // Neutral here — real colorContrast is applied downstream in maskFillColorProgram, same as
-        // Botan's non-fused (solid/gradient) branch. Daiya has no fused-image fast path (see scope
-        // note in the JFA port plan) so this pass never emits final color itself.
-        gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), 1)
-        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), 0)
-        gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
-        gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), 0)
-        this.traceUniformSet('gl:distanceToEdgeProgram(Daiya)', this.distanceToEdgeProgram, 'uInvert', 0, {
+        const daiyaSeedStale =
+          this.daiyaSeedDirty || !this.daiyaSeedTarget ||
+          this.daiyaSeedTarget.width !== width || this.daiyaSeedTarget.height !== height
+        trace('render:pathD-entry', {
+          fillInvert: p.fillInvert,
+          fillType: p.fillType,
+          seedStale: daiyaSeedStale,
+          daiyaSeedDirty: this.daiyaSeedDirty,
+        })
+
+        if (daiyaSeedStale) {
+          this.maskTarget = this.ensureTarget(this.maskTarget, width, height)
+          this.daiyaSeedTargetA = this.ensureFloatTarget(this.daiyaSeedTargetA, width, height)
+          this.daiyaSeedTargetB = this.ensureFloatTarget(this.daiyaSeedTargetB, width, height)
+
+          this.runPass(this.thresholdProgram, this.maskTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+            gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
+            gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+            // Shared-uniform-leak fix: thresholdProgram is also used by Botan/Gumi, and Gumi
+            // explicitly sets uInvert=1 on its own call site — without setting it here too, Daiya
+            // silently inherited whatever the last renderer left behind. See threshold.frag.ts's own
+            // doc comment, which predicted exactly this fragility.
+            // Session 17 consolidation: was hardcoded 0 — now shares daiyaInvertSeed with Octagon's
+            // own threshold call above, since it's the same shared thresholdProgram call either way.
+            gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.daiyaInvertSeed ? 1 : 0)
+            this.traceUniformSet('gl:thresholdProgram(Daiya)', this.thresholdProgram, 'uInvert', p.daiyaInvertSeed ? 1 : 0, {
+              mode: p.mode,
+              threshold: p.threshold,
+            })
+          })
+          this.traceSamplePixel('gl:maskTarget-after-threshold(Daiya)', this.maskTarget!, { mode: p.mode })
+
+          this.runPass(this.distanceSeedProgram, this.daiyaSeedTargetA, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.maskTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
+            // Shared-uniform-leak fix (same class as the Invert Fill Flip-Flop Bug found on Botan,
+            // session 11): distanceSeedProgram is also used by Gumi's default Line mode, which
+            // leaves uInvert=1 sitting on this program object. Daiya must set it explicitly every
+            // call, same as Botan does, or a Gumi->Daiya round-trip silently seeds from the wrong
+            // side of the mask.
+            gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
+            this.traceUniformSet('gl:distanceSeedProgram(Daiya)', this.distanceSeedProgram, 'uInvert', 0, { mode: p.mode })
+          })
+
+          const numPasses = Math.max(1, Math.ceil(Math.log2(Math.max(width, height))))
+          let seedSrc = this.daiyaSeedTargetA
+          let seedDst = this.daiyaSeedTargetB
+          for (let i = 0; i < numPasses; i++) {
+            const step = Math.pow(2, numPasses - 1 - i)
+            this.runPass(this.jfaStepProgram, seedDst, width, height, () => {
+              gl.activeTexture(gl.TEXTURE0)
+              gl.bindTexture(gl.TEXTURE_2D, seedSrc.texture)
+              gl.uniform1i(gl.getUniformLocation(this.jfaStepProgram, 'uSeed'), 0)
+              gl.uniform2fv(gl.getUniformLocation(this.jfaStepProgram, 'uTexelSize'), texelSize)
+              gl.uniform1f(gl.getUniformLocation(this.jfaStepProgram, 'uStep'), step)
+            })
+            ;[seedSrc, seedDst] = [seedDst, seedSrc]
+          }
+          this.daiyaSeedTargetA = seedSrc
+          this.daiyaSeedTargetB = seedDst
+          this.daiyaSeedTarget = seedSrc
+          this.daiyaSeedDirty = false
+        }
+
+        const daiyaFeather = hardnessToFeather(p.hardness, HARDNESS_BASE_MAX_FEATHER.pathD!)
+        this.runPass(this.distanceToEdgeProgram, this.daiyaDistanceMaskTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.daiyaSeedTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uSeed'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, base.texture)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uOriginal'), 1)
+          gl.uniform2fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uTexSize'), [width, height])
+          // Direct 1:1 mapping, no diagonal-correction factor — JFA's Euclidean distance() replaces
+          // the old min-filter's octagon-approximation hack entirely.
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.radius)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), daiyaFeather)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
+          // Neutral here — real colorContrast is applied downstream in maskFillColorProgram, same as
+          // Botan's non-fused (solid/gradient) branch. Daiya has no fused-image fast path (see scope
+          // note in the JFA port plan) so this pass never emits final color itself.
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), 1)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), 0)
+          gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
+          gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), 0)
+          this.traceUniformSet('gl:distanceToEdgeProgram(Daiya)', this.distanceToEdgeProgram, 'uInvert', 0, {
+            mode: p.mode,
+            fillType: p.fillType,
+            fillInvert: p.fillInvert,
+          })
+        })
+        this.traceSamplePixel('gl:daiyaDistanceMaskTarget-after-distanceToEdge', this.daiyaDistanceMaskTarget!, {
           mode: p.mode,
           fillType: p.fillType,
           fillInvert: p.fillInvert,
         })
-      })
-      this.traceSamplePixel('gl:daiyaDistanceMaskTarget-after-distanceToEdge', this.daiyaDistanceMaskTarget!, {
-        mode: p.mode,
-        fillType: p.fillType,
-        fillInvert: p.fillInvert,
-      })
+        daiyaMask = this.daiyaDistanceMaskTarget
+        daiyaMaskChannel = 1
+      }
+
+      // Soft-threshold alpha-modulate (session 17, promoted from a boolean lab toggle to a real
+      // slider) — a second, independently-computed soft/antialiased threshold weight (same math
+      // as Hinata Erode's softThresholdProgram) multiplied into whichever growth mode's mask just
+      // ran. Deliberately doesn't touch the binary threshold/JFA seed above — JFA needs a strictly
+      // binary seed mask, so this only smooths the *already-grown* result's boundary transition,
+      // applied after the fact. uInvert matches daiyaInvertSeed so the soft edge's own polarity
+      // stays consistent with whichever side the hard seed above grew from.
+      if (p.daiyaSoftThresholdWidth > 0) {
+        this.daiyaSoftThresholdTarget = this.ensureTarget(this.daiyaSoftThresholdTarget, width, height)
+        this.runPass(this.softThresholdProgram, this.daiyaSoftThresholdTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uSource'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uThreshold'), p.threshold)
+          gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uSoftness'), p.daiyaSoftThresholdWidth)
+          gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uInvert'), p.daiyaInvertSeed ? 1 : 0)
+        })
+
+        this.daiyaSoftThresholdModTarget = this.ensureTarget(this.daiyaSoftThresholdModTarget, width, height)
+        this.runPass(this.alphaModulateProgram, this.daiyaSoftThresholdModTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, daiyaMask.texture)
+          gl.uniform1i(gl.getUniformLocation(this.alphaModulateProgram, 'uBase'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, this.daiyaSoftThresholdTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.alphaModulateProgram, 'uMask'), 1)
+          gl.uniform1i(gl.getUniformLocation(this.alphaModulateProgram, 'uBaseChannel'), daiyaMaskChannel)
+          gl.uniform1f(gl.getUniformLocation(this.alphaModulateProgram, 'uMaskGain'), p.daiyaSoftThresholdOverdrive)
+        })
+        daiyaMask = this.daiyaSoftThresholdModTarget
+      }
 
       // v0.3 Service Update: 'image' fillType absorbs the old colorMode==='vivid' HSV-saturation
       // boost as an always-applied (neutral at vividBoost=1) modulation instead of a separate mode.
       this.tintTarget = this.ensureTarget(this.tintTarget, width, height)
       this.runPass(this.maskFillColorProgram, this.tintTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, this.daiyaDistanceMaskTarget!.texture)
+        gl.bindTexture(gl.TEXTURE_2D, daiyaMask.texture)
         gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
-        // .a (alpha) — distanceToEdgeProgram's ink-weight convention, not the old min-filter's .r
-        // grayscale convention.
-        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 1)
+        // .a (alpha, distanceToEdgeProgram's convention) or .r (grayscale, the octagon path's
+        // minFilterProgram convention) — whichever daiyaMaskChannel says the mask above ended up
+        // in, possibly after the soft-threshold modulate step re-wrote that same channel in place.
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), daiyaMaskChannel)
         gl.activeTexture(gl.TEXTURE1)
         gl.bindTexture(gl.TEXTURE_2D, base.texture)
         gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
@@ -2276,6 +2437,7 @@ export class Pipeline {
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
           gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
         })
         this.runPass(this.minFilterProgram, this.gumiCloseVTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
@@ -2285,6 +2447,7 @@ export class Pipeline {
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
           gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
         })
         this.runPass(this.minFilterProgram, this.gumiCloseHTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
@@ -2294,6 +2457,7 @@ export class Pipeline {
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
           gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
         })
         this.runPass(this.minFilterProgram, this.gumiCloseVTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
@@ -2303,6 +2467,7 @@ export class Pipeline {
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), GUMI_GAP_CLOSING_RADIUS)
           gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
           gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
         })
         closedMaskTarget = this.gumiCloseVTarget
       }
@@ -2494,6 +2659,7 @@ export class Pipeline {
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
           })
           this.runPass(this.minFilterProgram, result, width, height, () => {
             gl.activeTexture(gl.TEXTURE0)
@@ -2503,6 +2669,7 @@ export class Pipeline {
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 1)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
           })
           return result
         }
@@ -2640,6 +2807,11 @@ export class Pipeline {
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [1, 0])
+            // Was relying on WebGL's implicit 0 for both uMode/uOneSided (the exact latent-leak
+            // risk CLAUDE.md's Recurring Gotchas already flagged for this call site) — set
+            // explicitly now that uOneSided exists too, closing out that flagged gap.
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
           })
           this.runPass(this.minFilterProgram, this.blurVTarget, width, height, () => {
             gl.activeTexture(gl.TEXTURE0)
@@ -2648,6 +2820,8 @@ export class Pipeline {
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uTexelSize'), texelSize)
             gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uRadius'), growRadius)
             gl.uniform2fv(gl.getUniformLocation(this.minFilterProgram, 'uDirection'), [0, 1])
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uMode'), 0)
+            gl.uniform1i(gl.getUniformLocation(this.minFilterProgram, 'uOneSided'), 0)
           })
           hiRaw = this.blurVTarget
         }
@@ -3434,6 +3608,7 @@ export class Pipeline {
       this.enhanceTarget, this.correctedTarget, this.toneExposureTarget, this.denoisedTarget, this.maskTarget,
       this.erodeHTarget, this.erodeVTarget, this.gateTarget, this.seedTargetA,
       this.seedTargetB, this.distanceMaskTarget, this.daiyaSeedTargetA, this.daiyaSeedTargetB, this.daiyaDistanceMaskTarget,
+      this.daiyaOctagonHTarget, this.daiyaOctagonVTarget, this.daiyaSoftThresholdTarget, this.daiyaSoftThresholdModTarget,
       this.botanFillColorTarget, this.chieFillColorTarget,
       this.softHardnessHTarget, this.softHardnessVTarget, this.softHardnessMixTarget,
       this.edgeMapTarget, this.blurHTarget, this.blurVTarget,
@@ -3463,7 +3638,7 @@ export class Pipeline {
       this.minFilterProgram, this.minFilterContinuousProgram, this.erosionProgram, this.erosionGateProgram, this.distanceSeedProgram,
       this.jfaStepProgram, this.distanceToEdgeProgram, this.findEdgesProgram, this.boxBlurProgram,
       this.mixBlendProgram, this.layerMergeProgram,
-      this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.compositeProgram,
+      this.unsharpMaskProgram, this.alphaOverWhiteProgram, this.alphaModulateProgram, this.compositeProgram,
       this.colorProgram, this.blitProgram, this.resizeProgram, this.plateauRampProgram, this.softThresholdProgram,
       this.fillMaskProgram, this.blobMaskProgram, this.maskFillColorProgram, this.gradientMapProgram, this.highPassDiffProgram,
       this.laplacianProgram, this.toneRemapProgram, this.responsiveEdgeColorProgram, this.inkColorMaskProgram,
