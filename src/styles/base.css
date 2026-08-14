@@ -85,6 +85,16 @@ button, input {
      button far from the "v0.2.2" label it's meant to sit next to. */
 }
 
+.theme-btn:hover {
+  background: var(--accent-lighter);
+}
+
+.changelogbullet {
+  margin-left: 15px;
+  list-style-position: outside;
+  list-style-type: square;
+}
+
 /* Header bar */
 .header-bar {
   display: flex;
@@ -127,6 +137,24 @@ button, input {
   background: var(--white-50);
   box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
+/* Secret dev-mode entrance toast (v0.3 polish pass) — plain white bubble + bold black text,
+   positioned to the left of the pfp corner preview, vertically centered against it. Deliberately
+   plain (no speech-bubble tail) per the spec's own wording ("text bubble"), not a tooltip. */
+.avatar-corner-devmode-toast {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 10px);
+  transform: translateY(-50%);
+  background: #FFFFFF;
+  color: #000000;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  pointer-events: none;
+  z-index: 10;
+}
 
 /* Blank state */
 .blank-state-area {
@@ -140,15 +168,24 @@ button, input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 16px;
   background: var(--white-50);
   border: 2px dashed var(--accent-light);
   border-radius: 20px;
-  cursor: pointer;
   text-align: center;
   padding: 0 20px;
 }
 .blank-state-uploadbox.drag-over { background: var(--accent-lighter); }
+/* Scoped to just the icon/text/file-input (v0.3 polish pass) — previously this same flex-column
+   layout + cursor lived on .blank-state-uploadbox itself (the <label>), before "Browse Gallery"
+   needed to be a sibling button outside the label's click-to-browse-files area. */
+.blank-state-upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
 
 /* Desktop drag-and-drop replace-in-place, once an image is already loaded
    (BlankState above covers the no-image-yet case) — visual affordance only,
@@ -207,8 +244,10 @@ button, input {
   .body-layout { flex-direction: row; gap: 10px; }
   .viewport-area { flex: 1 1 auto; }
   .panel-col {
-    flex: 0 0 390px;
-    width: 390px;
+    /* Bumped 390px -> 440px (v0.3 polish pass) — the 7-algo Line Expansion Algorithm pill row
+       was wrapping to 3 lines at the old width, more than it needs to. */
+    flex: 0 0 410px;
+    width: 410px;
     gap: 10px;
   }
   /* Desktop: tab row sits above the drawer content instead (matches the
@@ -545,6 +584,16 @@ button, input {
   cursor: pointer;
   touch-action: pan-y;
 }
+/* Desktop-only (v0.3 polish pass, same rationale/mechanism as .lineart-toggle-row above): mouse
+   input is precise, so dragging from anywhere in the label-covering hit zone (built for touch)
+   becomes a misclick hazard on desktop — clicking the label text alone shouldn't start a drag.
+   `pointer-events: none` on the hitzone removes it as a click/drag target; `.gradient-slider-wrap`
+   (the actual track/thumb) re-enables itself, and pointer events still bubble up to the hitzone's
+   onPointerDown/Move/Up handlers from there — so only drags that start on the track/thumb fire. */
+@media (min-width: 900px) {
+  .gradient-slider-hitzone { pointer-events: none; }
+  .gradient-slider-hitzone .gradient-slider-wrap { pointer-events: auto; }
+}
 .gradient-slider-disabled {
   opacity: 0.4;
   cursor: default;
@@ -562,8 +611,8 @@ button, input {
   left: 0;
   right: 0;
   top: 50%;
-  height: 8px;
-  margin-top: -4px;
+  height: 10px;
+  margin-top: -6px;
   border-radius: 9999px;
   overflow: hidden;
 }
@@ -688,6 +737,7 @@ button, input {
 .icon-button-primary.active { background: var(--accent-title); color: var(--bg-light); }
 .icon-button-secondary { background: var(--white-50); color: var(--accent-title); }
 .icon-button-secondary.active { background: var(--accent-title); color: var(--bg-light); }
+.icon-button:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 
 /* Bottom sheet (BottomSheet.tsx) */
 .bottom-sheet {
@@ -741,11 +791,11 @@ button, input {
    already used everywhere else in this app (pills, tracks), and --radius, the standard card
    rounding — to set the algo selector and Pre-detection Tuning group apart from the plain
    parameter bar below them, which stays untinted. */
-.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--white-50); border-radius: var(--radius); padding: 12px; }
+.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px; }
 .lineart-algoselector-header { display: flex; align-items: center; justify-content: space-between; }
 .lineart-algoselector-header-label { display: flex; align-items: center; gap: 8px; }
 .lineart-algoselector-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; background: var(--white-50); border-radius: var(--radius); padding: 12px; }
+.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px; }
 .lineart-preprocessing-header { display: flex; align-items: center; justify-content: space-between; }
 .text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; white-space: nowrap; flex-shrink: 0; }
 .lineart-preprocessing-toggles { display: flex; gap: 5px; }
@@ -797,6 +847,7 @@ button, input {
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  padding: 10px 0px;
 }
 /* Desktop-only (v0.3 polish pass): mouse input is precise, so the full-row click zone that mobile
    needs (tuned over a whole saga, see CLAUDE.md) becomes a misclick hazard on desktop — clicking
@@ -967,7 +1018,11 @@ button, input {
   inset: 0;
   background: rgba(0,0,0,0.5);
   display: flex;
-  align-items: center;
+  /* Pinned to the top (v0.3 polish pass), not vertically centered — a modal whose height varies
+     as its content changes (tab switch, gallery appearing/disappearing) used to visibly jump up
+     and down since centering repositions the whole box on every height change. Anchoring the top
+     edge means it only ever grows/shrinks downward, in place. */
+  align-items: flex-start;
   justify-content: center;
   padding: 20px;
   z-index: 100;
@@ -977,11 +1032,21 @@ button, input {
   border-radius: 20px;
   width: 100%;
   max-width: 400px;
-  max-height: 80vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+/* Large modal variant (v0.3 polish pass) — only widens starting at the desktop breakpoint;
+   below that it's identical to the default card, since mobile has no spare width to give it
+   anyway. max-height leaves a real 10-20px gap top/bottom against .modal-backdrop's own 20px
+   padding (which already centers it), rather than the default's more conservative 80vh cap. */
+@media (min-width: 900px) {
+  .modal-card-large {
+    max-width: 720px;
+    max-height: calc(100vh - 40px);
+  }
 }
 .modal-header {
   display: flex;
@@ -1011,17 +1076,18 @@ button, input {
   overflow-y: auto;
 }
 /* Reset oshiPFP (v0.3 polish pass) — toolbar icon button. Default state matches its neighbor
-   .theme-btn icon buttons (transparent bg, icon-colored); the solid red fill is reserved for
-   hover/focus, a deliberate exception since this is the app's one genuinely destructive action
-   and red-on-hover reads as a warning cue. Icon.tsx isn't passed an explicit `color` here, so
-   its mask defaults to currentColor and follows this button's own `color` on hover for free. */
+   .theme-btn icon buttons (transparent bg, accent-colored icon, same as every other toolbar
+   icon); the solid red fill + white icon is reserved for hover/focus, a deliberate exception
+   since this is the app's one genuinely destructive action and red-on-hover reads as a warning
+   cue. Icon.tsx isn't passed an explicit `color` here, so its mask defaults to currentColor and
+   follows this button's own `color` on hover for free. */
 .reset-btn {
   width: 24px;
   height: 24px;
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: #E31212;
+  color: var(--accent-title);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1046,6 +1112,11 @@ button, input {
 .confirm-cancel-btn { background: var(--white-50); color: var(--accent-title); border: none; }
 .algo-info-entry { margin-bottom: 20px; }
 .algo-info-entry:last-child { margin-bottom: 0; }
+.algo-info-entry-title {
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--accent-title);
+}
 /* Info modal's per-algorithm tab row (LineArtPanel.tsx) — reuses .lineart-algoselector-row's
    existing flex-wrap for the pill row itself; this class only adds the modal-specific spacing
    below it, before the gallery/info content. */
@@ -1083,6 +1154,18 @@ button, input {
   font-size: 14px;
   line-height: 1.5;
 }
+/* AboutModal's Changelog tab (v0.3 polish pass) uses a <ul> for "What's New" instead of <br>-
+   separated lines — square bullets (not the browser default disc) to match this app's blocky
+   pill/square visual language elsewhere, indented in from the body text via the list's own
+   padding rather than relying on the browser default (which varies enough across UA stylesheets
+   to look inconsistent). */
+.algo-info-entry-body ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: square;
+}
+.algo-info-entry-body li { margin-bottom: 4px; }
+.algo-info-entry-body li:last-child { margin-bottom: 0; }
 
 .info-btn {
   width: 22px;

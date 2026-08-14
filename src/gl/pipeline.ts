@@ -2835,43 +2835,20 @@ export class Pipeline {
   private runColorChain(source: TargetTexture, width: number, height: number, slot: 'primary' | 'secondary' | 'export'): TargetTexture {
     const gl = this.gl
 
-    if (slot === 'secondary') {
-      this.lightColorTargetB = this.ensureTarget(this.lightColorTargetB, width, height)
-    } else if (slot === 'export') {
-      this.exportLightColorTarget = this.ensureTarget(this.exportLightColorTarget, width, height)
-    } else {
-      this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
-    }
-    const lightColor = slot === 'secondary' ? this.lightColorTargetB!
-      : slot === 'export' ? this.exportLightColorTarget!
-      : this.lightColorTarget!
-    this.runPass(this.lightColorProgram, lightColor, width, height, () => {
-      gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, source.texture)
-      gl.uniform1i(gl.getUniformLocation(this.lightColorProgram, 'uSource'), 0)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTemperature'), this.colorAdjust.temperature)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTint'), this.colorAdjust.tint)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uExposure'), this.light.exposure)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uContrast'), this.light.contrast)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uHighlights'), this.light.highlights)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uShadows'), this.light.shadows)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uWhites'), this.light.whites)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBlacks'), this.light.blacks)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBrilliance'), this.light.brilliance)
-      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
-    })
-
-    // Gradient Map (v0.3 post-Hinata close-out; reordered ahead of Curve/HSL/Invert in the v0.3
-    // polish pass) — general color remap, now applied directly to Light's output rather than
-    // after Curve/HSL. Running it post-HSL made HSL edits invisible once Gradient Map was on:
-    // gradientMapProgram replaces color purely by luminance, discarding whatever hue/saturation
-    // HSL had just applied. Running it here means Curve/HSL now apply ON TOP of the gradient-
-    // mapped result instead, so they can genuinely tweak it — a real, deliberate output change
-    // for any existing preset combining both (see docs/oshiPFP-v0.3-tuningspecs.md), not a silent
-    // regression. Bypass applied at the point of consumption (skip both extra passes, feed
-    // colorProgram straight from `lightColor`) rather than by aliasing a field, per CLAUDE.md's
-    // Recurring Gotchas entry on ensureTarget field-ownership bugs.
-    let gradeInput: TargetTexture = lightColor
+    // Gradient Map (v0.3 post-Hinata close-out; reordered to run FIRST in the v0.3 polish pass,
+    // ahead of Light/Temperature/Tint too, not just Curve/HSL) — general color remap. It was
+    // originally last in the chain, then moved ahead of just Curve/HSL when HSL edits turned out
+    // invisible once Gradient Map was on; a mobile testing pass then found Temperature/Tint had
+    // the exact same "buried" problem, since they still ran upstream of it via lightColorProgram.
+    // gradientMapProgram replaces color purely by luminance, discarding whatever color any
+    // earlier stage produced — so it now runs on the raw `source` first, and EVERY other Grade
+    // control (Light, Temperature/Tint, Curve, HSL, Invert) applies on top of its output instead.
+    // A real, deliberate output change for any existing preset using Gradient Map together with
+    // any of these (see docs/oshiPFP-v0.3-tuningspecs.md), not a silent regression. Bypass applied
+    // at the point of consumption (skip both extra passes, feed lightColorProgram straight from
+    // `source`) rather than by aliasing a field, per CLAUDE.md's Recurring Gotchas entry on
+    // ensureTarget field-ownership bugs.
+    let gradeInput: TargetTexture = source
     if (this.gradeGradientMap.enabled) {
       const gm = this.gradeGradientMap
 
@@ -2890,7 +2867,7 @@ export class Pipeline {
       // across call sites before (CLAUDE.md's Recurring Gotchas), so nothing is left to "default".
       this.runPass(this.gradientMapProgram, gradientMapped, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+        gl.bindTexture(gl.TEXTURE_2D, source.texture)
         gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uSource'), 0)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), gm.shadow)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), gm.mid)
@@ -2915,7 +2892,7 @@ export class Pipeline {
       // outputs vec4(mapped, 1.0)), so blend strength is purely intensity-driven.
       this.runPass(this.compositeProgram, composited, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
+        gl.bindTexture(gl.TEXTURE_2D, source.texture)
         gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uBase'), 0)
         gl.activeTexture(gl.TEXTURE1)
         gl.bindTexture(gl.TEXTURE_2D, gradientMapped.texture)
@@ -2926,6 +2903,32 @@ export class Pipeline {
       })
       gradeInput = composited
     }
+
+    if (slot === 'secondary') {
+      this.lightColorTargetB = this.ensureTarget(this.lightColorTargetB, width, height)
+    } else if (slot === 'export') {
+      this.exportLightColorTarget = this.ensureTarget(this.exportLightColorTarget, width, height)
+    } else {
+      this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
+    }
+    const lightColor = slot === 'secondary' ? this.lightColorTargetB!
+      : slot === 'export' ? this.exportLightColorTarget!
+      : this.lightColorTarget!
+    this.runPass(this.lightColorProgram, lightColor, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, gradeInput.texture)
+      gl.uniform1i(gl.getUniformLocation(this.lightColorProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTemperature'), this.colorAdjust.temperature)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uTint'), this.colorAdjust.tint)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uExposure'), this.light.exposure)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uContrast'), this.light.contrast)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uHighlights'), this.light.highlights)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uShadows'), this.light.shadows)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uWhites'), this.light.whites)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBlacks'), this.light.blacks)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uBrilliance'), this.light.brilliance)
+      gl.uniform1f(gl.getUniformLocation(this.lightColorProgram, 'uVibrance'), this.colorAdjust.vibrance)
+    })
 
     if (slot === 'secondary') {
       this.colorTargetB = this.ensureTarget(this.colorTargetB, width, height)
@@ -2944,7 +2947,7 @@ export class Pipeline {
     bindFullscreenQuadAttribs(gl, this.colorProgram, this.quadBuffer)
 
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, gradeInput.texture)
+    gl.bindTexture(gl.TEXTURE_2D, lightColor.texture)
     gl.uniform1i(gl.getUniformLocation(this.colorProgram, 'uSource'), 0)
 
     gl.activeTexture(gl.TEXTURE1)

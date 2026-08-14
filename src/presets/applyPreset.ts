@@ -34,12 +34,23 @@ export interface ApplyPresetSetters {
  * is already the pre-cropped square export a preset was built from, so there's no crop transform to
  * re-derive against a different source. The user can swap in their own photo afterward via the
  * normal Upload PFP flow and these applied settings persist (pipeline.loadFile only replaces pixels,
- * never touches tuning state) — letting them try a demo's look on their own material. */
-export async function applyPreset(preset: PresetManifestEntry, setters: ApplyPresetSetters): Promise<void> {
-  const response = await fetch(preset.beforeImage)
-  const blob = await response.blob()
-  const file = new File([blob], `${preset.id}-demo.webp`, { type: blob.type || 'image/webp' })
-  await setters.loadFile(file)
+ * never touches tuning state) — letting them try a demo's look on their own material.
+ *
+ * `options.skipImage` (v0.3 polish pass — the modal's separate "Load Preset" button) applies every
+ * tuning field exactly the same way but leaves whatever photo is already loaded untouched, for
+ * recalling a preset's *look* onto the user's own in-progress photo instead of swapping in the
+ * demo photo it was built from. */
+export async function applyPreset(
+  preset: PresetManifestEntry,
+  setters: ApplyPresetSetters,
+  options?: { skipImage?: boolean },
+): Promise<void> {
+  if (!options?.skipImage) {
+    const response = await fetch(preset.beforeImage)
+    const blob = await response.blob()
+    const file = new File([blob], `${preset.id}-demo.webp`, { type: blob.type || 'image/webp' })
+    await setters.loadFile(file)
+  }
 
   setters.setParamsByMode((prev) => ({ ...prev, [preset.algo]: preset.lineArtParams }))
   setters.setLineArtMode(preset.algo)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import TabNav from './components/TabNav'
 import HeaderBar from './components/HeaderBar'
+import AlgoGalleryModal from './components/AlgoGalleryModal'
 import BlankState from './components/BlankState'
 import PreviewViewport from './components/PreviewViewport'
 import { CropTopContent } from './components/CropChrome'
@@ -201,9 +202,19 @@ function buildInitialParamsByMode(): Record<LineArtMode, LineArtParams> {
   return byMode
 }
 
+/** Manual override for the secret dev-mode entrance (v0.3 polish pass, see AvatarCornerPreview's
+ * 7-tap gesture) — flip to `true` to force dev mode on regardless of build mode or tapping,
+ * handy for testing a production-style build (`npm run build && npm run preview`) locally without
+ * needing to tap. `import.meta.env.DEV` already covers the common case automatically: dev mode
+ * starts unlocked for free during `npm run dev`, no flag or tapping needed there. */
+const FORCE_DEV_MODE = false
+
 export default function App() {
   const [tab, setTab] = useState<string | null>('crop')
   const [theme, setTheme] = useState(initTheme)
+  // Session-only (v0.3 polish pass, per direction) — resets to the automatic default on every
+  // reload; the 7-tap gesture is a one-way unlock, never toggles back off once set true.
+  const [devMode, setDevMode] = useState(FORCE_DEV_MODE || import.meta.env.DEV)
   const [pfpMode, setPfpMode] = useState<PfpMode>('square')
   const [cropMode, setCropMode] = useState<CropMode>('square')
   const [lineArtMode, setLineArtMode] = useState<LineArtMode>('pathB')
@@ -216,6 +227,10 @@ export default function App() {
   // both unconditionally whenever the Maximizer tab is open.
   const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
   const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
+  // AlgoGalleryModal's open state (v0.3 polish pass) — lifted here (rather than owned by
+  // LineArtPanel, as it originally was) so BlankState's "Browse Gallery" button can open the same
+  // modal before any image (and therefore LineArtPanel itself) exists.
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
   // Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — off by default, only meaningful at
@@ -354,7 +369,7 @@ export default function App() {
   // Dev-only "Load Demo" trigger (see HeaderBar's PRESET_MANIFEST-driven buttons, gated the same
   // as handleDumpState) — exercises applyPreset.ts's real code path for the JSON preset saga's
   // round-trip validation. Not the eventual gallery UI (deferred), just *a* way to invoke it.
-  const handleLoadPreset = (presetId: string) => {
+  const handleLoadPreset = (presetId: string, options?: { skipImage?: boolean }) => {
     const preset = PRESET_MANIFEST.find((p) => p.id === presetId)
     if (!preset) return
     void applyPreset(preset, {
@@ -371,7 +386,7 @@ export default function App() {
       setCurveVisible: colorCurve.setVisible,
       setGradeGradientMap: colorAdjustments.setGradeGradientMap,
       setEnhance: cropEnhance.setEnhance,
-    })
+    }, options)
   }
 
   // Measured from the wrapper (a pure CSS-layout box) rather than the canvas
@@ -577,6 +592,18 @@ export default function App() {
         dualPanePriorityIndex={gradeDualPaneActive ? 1 : DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
         onDumpState={handleDumpState}
         onReset={resetApp}
+        devMode={devMode}
+        onUnlockDevMode={() => setDevMode(true)}
+      />
+
+      {/* Rendered unconditionally (v0.3 polish pass) — needs to work whether or not hasImage,
+          since BlankState's "Browse Gallery" opens it before any photo exists. */}
+      <AlgoGalleryModal
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        initialAlgo={lineArtMode}
+        onLoadPreset={handleLoadPreset}
+        hasImage={hasImage}
       />
 
       <div className="body-layout">
@@ -641,7 +668,7 @@ export default function App() {
             circle={pfpMode === 'circle'}
             interactive={tab === 'crop' && cropMode === 'square'}
             overlay={
-              !hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} /> :
+              !hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} onBrowseGallery={() => setGalleryOpen(true)} /> :
               tab === 'export' && exportPreviewUrl && exportPreviewDims ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-light)' }}>
                   {/* Shows the actual resampled output at its true target pixel dimensions —
@@ -783,7 +810,7 @@ export default function App() {
             setToneLiftExpanded={setToneLiftExpanded}
             colorLiftExpanded={colorLiftExpanded}
             setColorLiftExpanded={setColorLiftExpanded}
-            onLoadPreset={handleLoadPreset}
+            onOpenGallery={() => setGalleryOpen(true)}
           />
         )}
         {hasImage && tab === 'export' && (

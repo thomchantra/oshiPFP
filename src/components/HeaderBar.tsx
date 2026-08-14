@@ -33,11 +33,15 @@ interface HeaderBarProps {
    * AvatarCornerPreview's doc comment for the composite > overlay > original priority rule
    * (Line Art) — always 1 ("Graded") for Grade's own dual pane, no 3-way ambiguity there. */
   dualPanePriorityIndex: 0 | 1
-  /** Dev-only "Dump State" button (see src/debug/dumpState.ts) — the button itself is gated on
-   * `import.meta.env.DEV` below, a Vite build-time constant that's `false` in any production
-   * build (including `npm run build` for Netlify), so this needs no manual pre-push toggle
-   * unlike lab.html's entry point (CLAUDE.md's Checklist). */
+  /** "Dump State" button (see src/debug/dumpState.ts) — gated on `devMode` (v0.3 polish pass),
+   * not a build-time constant: reachable in production too via AvatarCornerPreview's secret
+   * 7-tap entrance (see its own doc comment), not just during local `npm run dev`, so it can
+   * double as a bug-report tool for real users. */
   onDumpState: () => void
+  /** Whether the secret dev-mode entrance has been unlocked (see AvatarCornerPreview) — gates
+   * this header's Dump State button and AvatarCornerPreview's own smiley->nerd icon swap. */
+  devMode: boolean
+  onUnlockDevMode: () => void
   /** "Reset oshiPFP" (v0.3 polish pass) — clears the loaded image and every tuned param back to
    * defaults, without a page reload. The confirm modal (open state owned here, same pattern as
    * `aboutOpen` below) calls this only once the user actually confirms. */
@@ -59,6 +63,8 @@ export default function HeaderBar({
   dualPanePriorityIndex,
   onDumpState,
   onReset,
+  devMode,
+  onUnlockDevMode,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -106,18 +112,18 @@ export default function HeaderBar({
           <button type="button" className="reset-btn" aria-label="Reset oshiPFP" onClick={() => setResetConfirmOpen(true)}>
             <Icon name="refresh" size={14} />
           </button>
-          <button type="button" className="theme-btn" aria-label="Help" onClick={() => openAbout('about')}>
+          <button type="button" className="theme-btn" aria-label="Help" onClick={() => openAbout('help')}>
             <Icon name="question" size={18} color="var(--accent-title)" />
           </button>
           <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" onClick={onToggleTheme}>
             <Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} color="var(--accent-title)" />
           </button>
-          {import.meta.env.DEV && (
+          {devMode && (
             <button
               type="button"
               className="theme-btn"
-              aria-label="Dump debug state to a text file (dev only)"
-              title="Dump debug state (dev only)"
+              aria-label="Dump debug state to a text file (dev mode)"
+              title="Dump debug state (dev mode)"
               onClick={onDumpState}
             >
               <Icon name="download" size={16} color="var(--accent-title)" />
@@ -150,6 +156,8 @@ export default function HeaderBar({
         circle={pfpMode === 'circle'}
         dualPaneActive={dualPaneActive}
         dualPanePriorityIndex={dualPanePriorityIndex}
+        devMode={devMode}
+        onUnlockDevMode={onUnlockDevMode}
       />
     </div>
   )

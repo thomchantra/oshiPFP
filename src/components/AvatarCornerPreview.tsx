@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import Icon from './Icon'
 
 interface AvatarCornerPreviewProps {
@@ -13,9 +13,19 @@ interface AvatarCornerPreviewProps {
    * a composite > overlay > original priority so the corner preview always shows the most
    * "finished" of the two active panes. */
   dualPanePriorityIndex: 0 | 1
+  /** Secret dev-mode entrance (v0.3 polish pass) — whether it's already unlocked (swaps the
+   * smiley icon for nerd.svg) and the callback that unlocks it, fired once 7 taps land here
+   * within a 2-second window while `!hasImage`. One-way: doesn't toggle back off via tapping,
+   * only a reload (or App.tsx's own manual override flag) resets it. */
+  devMode: boolean
+  onUnlockDevMode: () => void
 }
 
 const SIZE = 60
+const TAP_COUNT_REQUIRED = 7
+const TAP_WINDOW_MS = 2000
+const TOAST_DURATION_MS = 4000
+const TOAST_MESSAGES = ['NERD!', 'Lucky Number 7!']
 
 /**
  * Always-visible 60x60 PFP preview, top-right of the header. Mirrors the
@@ -39,8 +49,30 @@ export default function AvatarCornerPreview({
   circle,
   dualPaneActive,
   dualPanePriorityIndex,
+  devMode,
+  onUnlockDevMode,
 }: AvatarCornerPreviewProps) {
   const previewRef = useRef<HTMLCanvasElement | null>(null)
+  const tapTimestampsRef = useRef<number[]>([])
+  const [toastText, setToastText] = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleTap = () => {
+    if (hasImage || devMode) return
+    const now = Date.now()
+    const recent = tapTimestampsRef.current.filter((t) => now - t < TAP_WINDOW_MS)
+    recent.push(now)
+    tapTimestampsRef.current = recent
+    if (recent.length < TAP_COUNT_REQUIRED) return
+
+    tapTimestampsRef.current = []
+    onUnlockDevMode()
+    setToastText(TOAST_MESSAGES[Math.floor(Math.random() * TOAST_MESSAGES.length)])
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToastText(null), TOAST_DURATION_MS)
+  }
+
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }, [])
 
   useEffect(() => {
     if (!hasImage) return
@@ -87,12 +119,24 @@ export default function AvatarCornerPreview({
   }, [hasImage, sourceCanvasRef, dualPaneActive, dualPanePriorityIndex])
 
   return (
-    <div className="avatar-corner-preview" style={{ borderRadius: circle ? '50%' : 5 }}>
-      {hasImage ? (
-        <canvas ref={previewRef} style={{ width: SIZE, height: SIZE, display: 'block' }} />
-      ) : (
-        <Icon name="smiley" size={47} color="var(--accent-title)" />
+    <div style={{ position: 'relative' }}>
+      {/* Secret dev-mode toast (v0.3 polish pass) — white bubble, black bold text, left of the
+          preview box. No hover/pointer cursor on the box below is intentional: a visible "this is
+          clickable" affordance would defeat the point of a hidden entrance. */}
+      {toastText && (
+        <div className="avatar-corner-devmode-toast font-button-label">{toastText}</div>
       )}
+      <div
+        className="avatar-corner-preview"
+        style={{ borderRadius: circle ? '50%' : 5, cursor: 'default' }}
+        onClick={handleTap}
+      >
+        {hasImage ? (
+          <canvas ref={previewRef} style={{ width: SIZE, height: SIZE, display: 'block' }} />
+        ) : (
+          <Icon name={devMode ? 'nerd' : 'smiley'} size={47} color="var(--accent-title)" />
+        )}
+      </div>
     </div>
   )
 }

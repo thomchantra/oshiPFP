@@ -3,14 +3,12 @@ import BottomSheet from './BottomSheet'
 import IconButton from './IconButton'
 import GradientSlider, { type SliderCurve } from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
-import Modal from './Modal'
-import Icon from './Icon'
 import RampMeter from './RampMeter'
 import { GradientFillControls, BlendModeRow, TintColorRow } from './GradientFillControls'
+import { ALGO_OPTIONS } from './AlgoGalleryModal'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
-import { PRESET_MANIFEST } from '../presets/presetManifest'
 import { pinchToPlateau } from '../tone/pinchRamp'
-import type { BlendMode, FillType, LineArtMode, LineArtParams, ToneShapingParams } from '../types'
+import type { BlendMode, FillType, LineArtParams, ToneShapingParams } from '../types'
 
 interface LineArtPanelProps {
   params: LineArtParams
@@ -22,81 +20,10 @@ interface LineArtPanelProps {
   setToneLiftExpanded: (updater: (prev: boolean) => boolean) => void
   colorLiftExpanded: boolean
   setColorLiftExpanded: (updater: (prev: boolean) => boolean) => void
-  /** Applies a demo preset (src/presets/applyPreset.ts) — the info modal's per-algorithm gallery
-   * card "Load Demo" button calls this with a PRESET_MANIFEST entry's id. Lifted to App.tsx since
-   * it needs setters from several other lifted-state hooks (colorAdjustments, colorCurve,
-   * cropEnhance), not just this panel's own params. */
-  onLoadPreset: (presetId: string) => void
+  /** Opens AlgoGalleryModal (App.tsx owns its open state — lifted out so BlankState's own "Browse
+   * Gallery" button can open the same modal before any image, and therefore this panel, exists). */
+  onOpenGallery: () => void
 }
-
-const ALGO_OPTIONS: { mode: LineArtMode; label: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon' }[] = [
-  { mode: 'pathB', label: 'Botan', icon: 'rose' },
-  { mode: 'pathC', label: 'Chie', icon: 'spark' },
-  { mode: 'pathD', label: 'Daiya', icon: 'diamond' },
-  { mode: 'pathF', label: 'Fumiko', icon: 'spiral' },
-  { mode: 'pathG', label: 'Gumi', icon: 'bear' },
-  { mode: 'pathH', label: 'Hinata', icon: 'sun' },
-  { mode: 'pathI', label: 'Tsukiko', icon: 'moon' },
-]
-
-const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'rose' | 'spark' | 'diamond' | 'spiral' | 'bear' | 'sun' | 'moon'; blurb: string }[] = [
-  {
-    mode: 'pathB',
-    label: 'Botan',
-    technique: 'Distance Transform',
-    icon: 'rose',
-    blurb:
-      "Grows line art evenly outward in every direction, inflating it — the further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.",
-  },
-  {
-    mode: 'pathC',
-    label: 'Chie',
-    technique: 'Erosion + Soft Gate',
-    icon: 'spark',
-    blurb:
-      "Softly blends color inward from the edges of line art, reads more gently with a gradual transition instead of a crisp added border.",
-  },
-  {
-    mode: 'pathD',
-    label: 'Daiya',
-    technique: 'Octagon Approximation',
-    icon: 'diamond',
-    blurb:
-      "Grows lines in 4 directions at once (like stamping in a cross + diagonal pattern), which gives a faceted, slightly angular blob shape instead of a perfect circle. At a low radius this turns into a grainy, textured look.",
-  },
-  {
-    mode: 'pathF',
-    label: 'Fumiko',
-    technique: 'Find Edge + Dilate',
-    icon: 'spiral',
-    blurb:
-      "Detects edges directly instead of thickening existing lines. Produces crisp, naturally colorful edge-lines with real graduated transparency along each line.",
-  },
-  {
-    mode: 'pathG',
-    label: 'Gumi',
-    technique: 'Luminance Band + Closing',
-    icon: 'bear',
-    blurb:
-      "Isolates a luminance band, boosts its contrast, then closes and cleans up the result — rejects wide fill interiors so only thin strokes survive (or, in Color Bleed mode, a soft stylized ink falloff instead).",
-  },
-  {
-    mode: 'pathH',
-    label: 'Hinata',
-    technique: 'High Pass (Blur Diff)',
-    icon: 'sun',
-    blurb:
-      "Subtracts a blurred version of the image from itself to isolate high-frequency detail — reads as a soft, painterly edge response rather than a hard line.",
-  },
-  {
-    mode: 'pathI',
-    label: 'Tsukiko',
-    technique: 'Laplacian',
-    icon: 'moon',
-    blurb:
-      "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass, with optional pre-blur/post-sharpen to tune noise vs. definition.",
-  },
-]
 
 const IDENTITY_TONE_SHAPING: ToneShapingParams = {
   exposure: 0,
@@ -146,18 +73,8 @@ function ModifiedDot({ show }: { show: boolean }) {
 export default function LineArtPanel({
   params, onChange, onReset,
   toneLiftExpanded, setToneLiftExpanded, colorLiftExpanded, setColorLiftExpanded,
-  onLoadPreset,
+  onOpenGallery,
 }: LineArtPanelProps) {
-  const [infoOpen, setInfoOpen] = useState(false)
-  // Which algorithm's tab is showing inside the info modal — independent of params.mode (the
-  // live/active algorithm): switching tabs in here only changes what the modal displays, it
-  // doesn't touch the app's actual state. Initialized to the live algorithm each time the modal
-  // opens (see the info-btn's onClick below), not hardcoded to Botan.
-  const [modalAlgo, setModalAlgo] = useState<LineArtMode>(params.mode)
-  // Which preset (within modalAlgo's own PRESET_MANIFEST entries) the gallery card shows — reset
-  // to 0 whenever modalAlgo changes so a stale index from a previous tab can't point past the
-  // new tab's own (possibly shorter) preset list.
-  const [galleryIndex, setGalleryIndex] = useState(0)
   // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
   // always apply (their identity defaults are no-ops), so this no longer
   // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
@@ -172,84 +89,12 @@ export default function LineArtPanel({
   // App.tsx caches params per algorithm and swaps in the right (previously
   // edited, or default) object for whichever mode this resolves to — so this
   // just signals "switch to this mode," it doesn't need to carry field values.
-  const selectMode = (mode: LineArtMode) => onChange({ ...params, mode })
+  const selectMode = (mode: LineArtParams['mode']) => onChange({ ...params, mode })
 
   const opacityPct = Math.round(params.opacity * 100)
 
-  const modalAlgoInfo = ALGO_INFO.find((info) => info.mode === modalAlgo)!
-  const modalPresets = PRESET_MANIFEST.filter((p) => p.algo === modalAlgo)
-  const activePreset = modalPresets[galleryIndex] ?? modalPresets[0]
-
   return (
     <BottomSheet>
-      <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Line Expansion Algorithms">
-        {/* Modal-local tab row — switches which algorithm's info/gallery this modal shows, entirely
-            separate from selectMode/params.mode below (the live/active algorithm in the main
-            panel). Reuses .lineart-algoselector-row's existing flex-wrap so 7 pills wrap onto
-            multiple lines at the modal's fixed width instead of overflowing into a horizontal
-            scroll strip (a deliberate deviation from the Figma reference, which showed a scroll
-            strip — wrapping matches the rest of this app's pill rows). */}
-        <div className="lineart-algoselector-row algo-modal-tabs">
-          {ALGO_OPTIONS.map((opt) => (
-            <IconButton
-              key={opt.mode}
-              icon={opt.icon}
-              variant="secondary"
-              active={opt.mode === modalAlgo}
-              onClick={() => { setModalAlgo(opt.mode); setGalleryIndex(0) }}
-            >
-              {opt.label}
-            </IconButton>
-          ))}
-        </div>
-
-        {/* Only algorithms with at least one PRESET_MANIFEST entry get a gallery card — today
-            that's Chie/Fumiko/Hinata only; the other 4 just show the tab + info blurb below,
-            same as before this modal grew a gallery. */}
-        {activePreset && (
-          <div className="preset-gallery">
-            <div className="preset-gallery-images">
-              <img src={activePreset.beforeImage} alt={`${activePreset.algoLabel} demo, before`} className="preset-gallery-image" />
-              <img src={activePreset.afterImage} alt={`${activePreset.algoLabel} demo, after`} className="preset-gallery-image" />
-            </div>
-            <div className="preset-gallery-attribute">
-              {/* Attribution framework laid out ahead of need — credit is optional and unset on
-                  every preset today (the app author's own work), so this stays empty/hidden
-                  until real credits are supplied. */}
-              {activePreset.credit ? (
-                <span className="preset-gallery-credit font-button-label">{activePreset.credit}</span>
-              ) : <span />}
-              <IconButton icon="upload" onClick={() => { onLoadPreset(activePreset.id); setInfoOpen(false) }}>
-                Load Demo
-              </IconButton>
-            </div>
-            {modalPresets.length > 1 && (
-              <div className="preset-gallery-pager">
-                {modalPresets.map((p, i) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`pill-toggle-btn font-button-label${i === galleryIndex ? ' active' : ''}`}
-                    onClick={() => setGalleryIndex(i)}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="algo-info-entry">
-          <div className="algo-info-entry-title">
-            <Icon name={modalAlgoInfo.icon} size={20} color="var(--accent-title)" className="icon" />
-            <span className="font-button-label" style={{ color: 'var(--accent-title)' }}>{modalAlgoInfo.label}</span>
-            <span className="font-value algo-info-entry-technique" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>{modalAlgoInfo.technique}</span>
-          </div>
-          <p className="algo-info-entry-body">{modalAlgoInfo.blurb}</p>
-        </div>
-      </Modal>
-
       <div className="lineart-algoselector">
         <div className="lineart-algoselector-header">
           <div className="lineart-algoselector-header-label">
@@ -258,7 +103,7 @@ export default function LineArtPanel({
               type="button"
               className="info-btn"
               aria-label="About these algorithms"
-              onClick={() => { setModalAlgo(params.mode); setGalleryIndex(0); setInfoOpen(true) }}
+              onClick={onOpenGallery}
             >
               i
             </button>

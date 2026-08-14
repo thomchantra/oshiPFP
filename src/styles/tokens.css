@@ -39,6 +39,7 @@
   --radius:    10px;
   --radius-sm: 7px;
   --radius-xs: 5px;
+  --bgalgo:     #f8c19980;
 
   /* Active-tab is the one spot where light/dark aren't a simple value swap
      (dark mode's active pill uses accent-title as the background *and*
@@ -64,6 +65,7 @@ html.dark {
      dashed border in light mode, not exercised in this screen) — estimated
      by interpolating between accent-lighter and accent-title/dark. */
   --accent-light:   #5c6479;
+  --bgalgo:         #45495b80;
 
   --line:      rgba(171,190,237,0.12);
   --line2:     rgba(171,190,237,0.20);

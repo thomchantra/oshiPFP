@@ -175,7 +175,7 @@ export default function ColorPanel({
               ))}
             </div>
             <button type="button" className="text-reset-btn font-value" onClick={onResetCurve}>
-              Reset Curve
+              Reset
             </button>
           </div>
           <GradientSlider
