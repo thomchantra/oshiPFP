@@ -1114,6 +1114,8 @@ button, input {
    negative-margin trick .preset-gallery already uses, since .modal-card clips to its own
    border-radius. */
 .about-modal-hero { display: block; width: calc(100% + 32px); margin: 16px -16px 8px; }
+.about-modal-link { color: var(--accent-title); text-decoration: underline; }
+.about-modal-link:hover, .about-modal-link:focus-visible { color: var(--accent-dark); }
 .algo-info-entry { margin-bottom: 20px; }
 .algo-info-entry:last-child { margin-bottom: 0; }
 .algo-info-entry-title {

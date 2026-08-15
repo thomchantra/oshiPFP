@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Modal from './Modal'
 import SegmentedControl from './SegmentedControl'
-import { OSHIPFP_VERSION } from '../version'
+import { OSHIPFP_VERSION, GITHUB_REPO_URL } from '../version'
 
 export type AboutTab = 'help' | 'about' | 'changelog'
 
@@ -121,6 +121,15 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
           <p className="algo-info-entry-body" style={{ marginTop: 10, opacity: 0.7 }}>
             {OSHIPFP_VERSION}
             {' '}thomchantra
+          </p>
+          <p className="algo-info-entry-body" style={{ marginTop: 10 }}>
+            <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="about-modal-link">
+              View on GitHub
+            </a>
+            {' · '}
+            <a href={`${GITHUB_REPO_URL}/issues/new`} target="_blank" rel="noopener noreferrer" className="about-modal-link">
+              Report a Bug
+            </a>
           </p>
         </>
       )}
