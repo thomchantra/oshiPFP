@@ -40,65 +40,63 @@ Every algorithm starts from the same source image and the same fixed pipeline �
 how each one detects and regrows linework. Two presets per algorithm below; the full gallery (5
 each, plus every tunable parameter) is in the app itself via "Load Demo".
 
-<!--
-  Picks below default to presets 01 + 03 per algorithm — a placeholder selection, not a curated
-  one. Nobody has actually eyeballed all 5×7 before/afters against each other yet; swap in
-  whichever pair reads best. algo one-liners are inferred from pipeline.ts/labPipeline.ts code
-  comments (JFA distance grow, octagon dilation, high-pass, Laplacian, etc.), not from any
-  existing marketing copy — worth a sanity check against the actual rendered output too.
--->
-
 <table>
 <tr><th>Algorithm</th><th>Before</th><th>After</th></tr>
 
-<tr><td rowspan="2"><strong>Botan</strong><br>The default. Solid distance-field growth off a
-threshold mask, filled flat, gradient, or from the image's own color.</td>
-<td><img src="public/presets/pathB/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathB/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathB/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathB/03/after.webp" width="200"></td></tr>
+<tr><td rowspan="2"><strong>Botan</strong><br>
+Grows line art evenly outward in every direction, inflating it — the further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.
+</td>
+<td><img src="public/presets/pathB/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathB/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathB/03/before.webp" width="500"></td>
+<td><img src="public/presets/pathB/03/after.webp" width="500"></td></tr>
 
-<tr><td rowspan="2"><strong>Chie</strong><br>Botan's growth model with its own fill pass —
-different color behavior on the same underlying grow/threshold.</td>
-<td><img src="public/presets/pathC/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathC/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathC/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathC/03/after.webp" width="200"></td></tr>
+<tr><td rowspan="2"><strong>Chie</strong><br>
+Softly blends color inward from the edges of line art, reads more gently with a gradual transition instead of a crisp added border.
+</td>
+<td><img src="public/presets/pathC/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathC/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathC/02/before.webp" width="500"></td>
+<td><img src="public/presets/pathC/02/after.webp" width="500"></td></tr>
 
-<tr><td rowspan="2"><strong>Daiya</strong><br>Octagon-approximation growth — four directional
-dilation passes for rounder, more organic thickening, with a soft-threshold edge.</td>
-<td><img src="public/presets/pathD/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathD/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathD/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathD/03/after.webp" width="200"></td></tr>
+<tr><td rowspan="2"><strong>Daiya</strong><br>
+Grows lines using the same true distance-transform math as Botan, smooth and round by default. Switch to Octagon mode for a faceted, chisel marker look.
+</td>
+<td><img src="public/presets/pathD/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathD/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathD/05/before.webp" width="500"></td>
+<td><img src="public/presets/pathD/05/after.webp" width="500"></td></tr>
 
-<tr><td rowspan="2"><strong>Fumiko</strong><br>Thin, mostly-binary colored edges — built to take
-tint layering well where flatter fills wouldn't.</td>
-<td><img src="public/presets/pathF/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathF/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathF/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathF/03/after.webp" width="200"></td></tr>
+<tr><td rowspan="2"><strong>Fumiko</strong><br>
+Detects edges directly instead of thickening existing lines. Produces crisp, naturally colorful edge-lines with real graduated transparency along each line.
+</td>
+<td><img src="public/presets/pathF/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathF/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathF/05/before.webp" width="500"></td>
+<td><img src="public/presets/pathF/05/after.webp" width="500"></td></tr>
 
-<tr><td rowspan="2"><strong>Gumi</strong><br>Isolates a single luminance band via gradient-map,
-then regrows it — good at pulling line work out of painterly, non-flat source art.</td>
-<td><img src="public/presets/pathG/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathG/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathG/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathG/03/after.webp" width="200"></td></tr>
+<tr><td rowspan="2"><strong>Gumi</strong><br>
+Isolates a single luminance band via gradient-map,
+then regrows it — good at pulling line work out of painterly, non-flat source art.
+</td>
+<td><img src="public/presets/pathG/02/before.webp" width="500"></td>
+<td><img src="public/presets/pathG/02/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathG/05/before.webp" width="500"></td>
+<td><img src="public/presets/pathG/05/after.webp" width="500"></td></tr>
 
 <tr><td rowspan="2"><strong>Hinata</strong><br>High-pass detection — box-blur subtracted from
 source — for crisp linework pulled out of photographic detail.</td>
-<td><img src="public/presets/pathH/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathH/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathH/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathH/03/after.webp" width="200"></td></tr>
+<td><img src="public/presets/pathH/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathH/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathH/02/before.webp" width="500"></td>
+<td><img src="public/presets/pathH/02/after.webp" width="500"></td></tr>
 
 <tr><td rowspan="2"><strong>Tsukiko</strong><br>Laplacian edge detection with optional pre-blur —
 finer, more textured line work than the high-pass path.</td>
-<td><img src="public/presets/pathI/01/before.webp" width="200"></td>
-<td><img src="public/presets/pathI/01/after.webp" width="200"></td></tr>
-<tr><td><img src="public/presets/pathI/03/before.webp" width="200"></td>
-<td><img src="public/presets/pathI/03/after.webp" width="200"></td></tr>
+<td><img src="public/presets/pathI/01/before.webp" width="500"></td>
+<td><img src="public/presets/pathI/01/after.webp" width="500"></td></tr>
+<tr><td><img src="public/presets/pathI/04/before.webp" width="500"></td>
+<td><img src="public/presets/pathI/04/after.webp" width="500"></td></tr>
 
 </table>
 
@@ -120,12 +118,6 @@ npm run lint     # oxlint
 
 Requires Node.js and npm. No environment variables or backend service needed — it's a static
 client-side app.
-
-## Project history
-
-Development sagas, tuning sessions, and per-build changelogs live in [`docs/`](docs) and
-[`changelog/`](changelog) — the full trail of what was tried, what got ruled out, and why, across
-every algorithm and UI pass.
 
 ## License
 
