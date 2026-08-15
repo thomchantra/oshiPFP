@@ -868,6 +868,10 @@ button, input {
   background: transparent;
   cursor: pointer;
   padding: 0;
+  /* iOS Safari auto-zooms the viewport on focus for any form control whose computed font-size is
+     under 16px — this has no visible effect on a color swatch's own rendering, it just stops the
+     zoom trigger. */
+  font-size: 16px;
 }
 
 /* Slider row: label + value + native range input, styled to match tokens */
