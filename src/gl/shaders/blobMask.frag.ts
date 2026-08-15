@@ -12,18 +12,16 @@
  * distance transform" trick from the Gumi spec, done in one pass instead
  * of an actual iterative erosion.
  *
- * uGamma (v0.3 tuning, "Detection Contrast") reshapes the reject decision
- * from a hard single-pixel-precision cutoff at dist==uBlobMaxDt into an
- * antialiased falloff — same `pow(t, gamma)` idea as distanceToEdge.
- * frag.ts's own uGamma, just applied to this boundary instead of bleed's.
- * Confined to a thin band near the edge (aaWidth below, 15% of uBlobMaxDt
- * floored at 0.5px) rather than spanning the full [0, uBlobMaxDt] radius —
- * an earlier version ramped across the whole radius, which even at the
- * "neutral" uGamma=1 read as visible feathering instead of a crisp blob
- * edge (regression caught by real-image testing against the pre-Detection-
- * Contrast build). Below the band it's a hard keep, above it a hard
- * reject, matching the original cutoff everywhere except this sliver;
- * >1 sharpens further within the band, <1 softens it.
+ * uGamma ("Detection Contrast") reshapes the reject decision from a hard
+ * single-pixel-precision cutoff at dist==uBlobMaxDt into an antialiased
+ * falloff — same `pow(t, gamma)` idea as distanceToEdge.frag.ts's own
+ * uGamma, just applied to this boundary instead of bleed's. Confined to a
+ * thin band near the edge (aaWidth below, 15% of uBlobMaxDt floored at
+ * 0.5px) rather than spanning the full [0, uBlobMaxDt] radius — ramping
+ * across the whole radius reads as visible feathering instead of a crisp
+ * blob edge, even at the "neutral" uGamma=1. Below the band it's a hard
+ * keep, above it a hard reject, matching the original cutoff everywhere
+ * except this sliver; >1 sharpens further within the band, <1 softens it.
  *
  * Output stays in the same 0=ink/1=background polarity as the input mask
  * — a rejected blob-interior pixel resolves to 1 (falls back to

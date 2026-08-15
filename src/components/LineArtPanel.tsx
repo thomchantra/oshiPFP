@@ -37,9 +37,8 @@ const IDENTITY_COLOR_LIFT = { red: 0, orange: 0, yellow: 0, green: 0, teal: 0, b
 
 /** Radius sliders' hot spot is almost always 0-3px within a 0-20px range — see CLAUDE.md-adjacent feedback: taper so 0-3 gets 40% of the track instead of linear's ~15%. */
 const RADIUS_CURVE: SliderCurve = { breakpoint: 3, breakpointPosition: 0.4 }
-/** Gumi's Luminance Ramp Feather is aggressive across its full 0-1 range (v0.3 tuning: a linear
- * slider gives away most of the track to values that blow the detection band wide open) — taper
- * so 0-0.2 (the actually-usable range) gets 65% of the track instead of linear's 20%. */
+/** Gumi's Luminance Ramp Feather is aggressive across its full 0-1 range — taper so 0-0.2 (the
+ * actually-usable range) gets 65% of the track instead of linear's 20%. */
 const FEATHER_CURVE: SliderCurve = { breakpoint: 0.2, breakpointPosition: 0.65 }
 
 function isModified<T extends Record<string, number>>(current: T, identity: T): boolean {
@@ -69,18 +68,17 @@ function ModifiedDot({ show }: { show: boolean }) {
   return <span className="modified-dot" aria-hidden="true" />
 }
 
-/** Controlled by App.tsx (params live there, not locally) so slider values survive switching away from and back to the Line Art tab — this component used to own the state itself and reset to defaults on every remount. */
+/** Controlled by App.tsx (params live there, not locally) so slider values survive switching away from and back to the Line Art tab. */
 export default function LineArtPanel({
   params, onChange, onReset,
   toneLiftExpanded, setToneLiftExpanded, colorLiftExpanded, setColorLiftExpanded,
   onOpenGallery,
 }: LineArtPanelProps) {
   // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
-  // always apply (their identity defaults are no-ops), so this no longer
-  // gates the effect the way toneShapingEnabled/denoiseEnabled used to.
+  // always apply (their identity defaults are no-ops).
   const [denoiseExpanded, setDenoiseExpanded] = useState(false)
   // Which Dual Line band's controls are showing — UI-only, not a LineArtParams field, since
-  // this doesn't need to round-trip through JSON presets (v0.3 tuning saga, session 14 polish).
+  // this doesn't need to round-trip through JSON presets.
   const [dualBandTab, setDualBandTab] = useState<'black' | 'white'>('black')
 
   const set = <K extends keyof LineArtParams>(key: K, value: LineArtParams[K]) =>
@@ -263,9 +261,8 @@ export default function LineArtPanel({
       </div>
       )}
 
-      {/* Blend Mode + Overlay Opacity grouped under one header/Reset (v0.3 tuning UI pass) —
-          previously two separate blocks split by a divider; grouped since they're both
-          "how the resolved ink combines with the base," unlike everything below which is
+      {/* Blend Mode + Overlay Opacity grouped under one header/Reset — both concern "how the
+          resolved ink combines with the base," unlike everything below which is
           algorithm-specific detection tuning. Shared across all 7 algorithms. */}
       <div className="lineart-preprocessing-header">
         <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Blend Mode</span>
@@ -277,10 +274,10 @@ export default function LineArtPanel({
           Reset
         </button>
       </div>
-      {/* v0.3 JSON preset saga — bypasses Blend Mode/Opacity entirely, reusing the exact raw
-          alpha-flattened-on-matteColor computation the Overlay display mode already produces,
-          but for Composite (so it flows downstream through Color/Export). See pipeline.ts's
-          resolveLineArtDisplay and LineArtParams.overlayPassthrough's own doc comment. */}
+      {/* Bypasses Blend Mode/Opacity entirely, reusing the exact raw alpha-flattened-on-matteColor
+          computation the Overlay display mode already produces, but for Composite (so it flows
+          downstream through Color/Export). See pipeline.ts's resolveLineArtDisplay and
+          LineArtParams.overlayPassthrough's own doc comment. */}
       <div
         className="lineart-toggle-row"
         role="button"
@@ -375,11 +372,11 @@ export default function LineArtPanel({
 
         {params.mode === 'pathD' && (
           <>
-            {/* Session 17 consolidation ("Daiya pt 2"): Threshold/Soft Threshold/Invert Seed sit
-                above the op-mode selector since they apply identically to JFA and Octagon (same
-                shared thresholdProgram/softThresholdProgram calls either way) — only Radius/
-                Hardness/Facets/Rotation/One-Sided differ per mode, so those live inside their own
-                tab instead of being duplicated or fought over. See pipeline.ts's pathD branch. */}
+            {/* Threshold/Soft Threshold/Invert Seed sit above the op-mode selector since they
+                apply identically to JFA and Octagon (same shared thresholdProgram/
+                softThresholdProgram calls either way) — only Radius/Hardness/Facets/Rotation/
+                One-Sided differ per mode, so those live inside their own tab instead of being
+                duplicated or fought over. See pipeline.ts's pathD branch. */}
             <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.05} onChange={(v) => set('threshold', v)} />
             <GradientSlider
               label="Soft Threshold" value={params.daiyaSoftThresholdWidth} min={0} max={1} step={0.01} defaultValue={0}
@@ -573,9 +570,8 @@ export default function LineArtPanel({
                     gumiFillType: 'image',
                     gumiFillSolidColor: [0, 0, 0],
                     gumiFillPixelThreshold: false,
-                    // Dual Line's own reset scope was folded in here rather than getting a
-                    // dedicated button (v0.3 tuning saga, session 14) — Luminance Detection's
-                    // own Reset button, which used to be Dual Line's closest analog, is gone.
+                    // Dual Line's reset scope is folded into this button rather than getting a
+                    // dedicated Reset of its own.
                     gumiDualLine: false,
                     gumiDualBlack: { position: 0.2, expand: 0.3, feathering: 0.15 },
                     gumiDualWhite: { position: 0.8, expand: 0.3, feathering: 0.15 },
@@ -602,10 +598,10 @@ export default function LineArtPanel({
                 {/* Reshapes the distance-to-edge boundary from a hard single-pixel cutoff into
                     an antialiased, contrast-adjustable falloff, to help clean up residual
                     speckle at blob edges without touching the main ramp/threshold. Also shared
-                    with Fill mode's own boundary (v0.3 tuning, "detection offset"). */}
+                    with Fill mode's own boundary. */}
                 <GradientSlider label="Detection Contrast" value={params.gumiBlobGamma} min={0.2} max={5} defaultValue={1} onChange={(v) => set('gumiBlobGamma', v)} />
                 <GradientSlider label="Maximum Blob Size" value={params.blobMaxDt} min={1} max={20} defaultValue={2} onChange={(v) => set('blobMaxDt', v)} />
-                {/* Optical post-process (v0.3 tuning), not algorithm changes — see pipeline.ts's
+                {/* Optical post-process, not algorithm changes — see pipeline.ts's
                     runGumiLinePostProcess. Overdrive genuinely thickens already-thin strokes
                     (Maximum Blob Size alone doesn't, since it only governs how large a *blob*
                     can still count as near-boundary ink). Hardness reuses Botan/Chie's shared
@@ -613,10 +609,10 @@ export default function LineArtPanel({
                     blurred edge. */}
                 <GradientSlider label="Overdrive (px)" value={params.gumiOverdrive} min={0} max={5} step={0.01} defaultValue={0} onChange={(v) => set('gumiOverdrive', v)} />
                 <GradientSlider label="Hardness" value={params.hardness} min={0} max={1} defaultValue={1} onChange={(v) => set('hardness', v)} />
-                {/* Dual Line (v0.3 tuning saga, session 14) — overrides the single fill-type
-                    block below with two independent simplified-band detection+fill chains
-                    (Black Line / White Line). Placed right before fill settings since turning
-                    it on is what makes that single block moot. */}
+                {/* Dual Line overrides the single fill-type block below with two independent
+                    simplified-band detection+fill chains (Black Line / White Line). Placed
+                    right before fill settings since turning it on is what makes that single
+                    block moot. */}
                 <div
                   className="lineart-toggle-row"
                   role="button"
@@ -636,8 +632,7 @@ export default function LineArtPanel({
                   <>
                     {/* Same Image/Solid/Gradient/Invert mechanism as Fill mode below, applied to
                         the finished Line-mode mask instead — see lineFillColor.frag.ts. Defaults
-                        to Solid + black so the default look matches what Line mode always
-                        rendered before this existed. */}
+                        to Solid + black to match Line mode's original look. */}
                     <div
                       className="lineart-toggle-row"
                       role="button"
@@ -779,11 +774,9 @@ export default function LineArtPanel({
               </>
             ) : (
               <>
-                {/* Global for Fill mode (v0.3 tuning) — governs all 3 Fill Types below
-                    uniformly, so it sits above the type selector rather than nested under one
-                    of them. Bypasses the distance-transform/blobMaxDt margin entirely, a raw
-                    per-pixel candidate test — Fill Radius near 0 was already approximating
-                    this; this makes it an explicit, well-supported mode. */}
+                {/* Global for Fill mode — governs all 3 Fill Types below uniformly, so it sits
+                    above the type selector rather than nested under one of them. Bypasses the
+                    distance-transform/blobMaxDt margin entirely, a raw per-pixel candidate test. */}
                 <div
                   className="lineart-toggle-row"
                   role="button"
@@ -868,13 +861,9 @@ export default function LineArtPanel({
   )
 }
 
-/** Hinata/Tsukiko's shared "Output Treatment" pill row — Edge / Emboss / Erode / Tone (Hinata
- * Tuning Saga; widened to Tsukiko once Edge was confirmed applicable there too — Edge's own
+/** Hinata/Tsukiko's shared "Output Treatment" pill row — Edge / Emboss / Erode / Tone. Edge's
  * implementation is self-contained, computing its own blur+zero-crossing diff directly from
- * detectionSource, never touching Path H's highPassDiff or Path I's laplacian machinery, so
- * nothing else needed to change to share this component). Originally forked from a since-deleted
- * `HiTreatmentRow` (the old 4-pill Raw/Binarize/Tone→Multiply/Tone→Screen row) back when Inori
- * had no Edge branch at all — that's no longer true, so both algorithms use this one now. Each
+ * detectionSource, never touching Path H's highPassDiff or Path I's laplacian machinery. Each
  * pill click sets blend mode alongside the treatment fields (a one-time default snap the user can
  * freely override afterward via the shared Blend Mode row below — not a lock, unlike Fumiko's
  * forcedMultiply). */
@@ -899,13 +888,11 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
       : params.hiToneTarget !== 'off'
         ? 'tone'
         : 'emboss'
-  // Passive default snap (v0.3 polish pass) — a treatment's blend-mode default is only ever
-  // applied the FIRST time this component instance ever switches to it, tracked in this ref
-  // (not persisted params, so it resets naturally on algo switch/reset via remount). Previously
-  // every single pill click force-reset blendMode, which fought the user's own back-and-forth
-  // A/B workflow: tune Erode's blend mode, hop to Emboss to compare, hop back — and Erode's tuned
-  // choice would silently get stomped back to the default. Re-clicking an already-visited
-  // treatment now only switches its fields, leaving blendMode exactly as the user left it.
+  // A treatment's blend-mode default is applied only the FIRST time this component instance ever
+  // switches to it, tracked in this ref (not persisted params, so it resets naturally on algo
+  // switch/reset via remount). Re-clicking an already-visited treatment only switches its fields,
+  // leaving blendMode exactly as the user left it — avoids stomping a user's own tuned choice
+  // when hopping between treatments to compare (e.g. tune Erode, hop to Emboss, hop back).
   const visitedRef = useRef<Set<Treatment>>(new Set([active]))
   const switchTreatment = (t: Treatment) => {
     const alreadyVisited = visitedRef.current.has(t)
@@ -1049,9 +1036,9 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
   )
 }
 
-/** Edge's independent per-polarity fill-type control (Hinata Tuning Saga Phase 2) — Image/Solid
- * only, no Gradient (see edgeFillColor.frag.ts's doc comment for why), so this is a plain local
- * 2-pill row rather than the shared 3-option FillTypeRow. */
+/** Edge's independent per-polarity fill-type control — Image/Solid only, no Gradient (see
+ * edgeFillColor.frag.ts's doc comment for why), so this is a plain local 2-pill row rather than
+ * the shared 3-option FillTypeRow. */
 function EdgePolarityFillRow({
   label, fillType, solidColor, onFillTypeChange, onSolidColorChange,
 }: {
@@ -1089,7 +1076,7 @@ const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'over
 /** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply, which hard-overrides the blend mode regardless of selection. Overwrite is deliberately excluded here (unlike every other blend-mode row) so this row never shows a selectable option that would silently do nothing. */
 const FIND_EDGE_BLEND_OPTIONS: BlendMode[] = ['multiply']
 
-/** Gumi's Line/Fill split (v0.3 tuning UI pass) — reuses the existing gumiFillMode boolean directly (false=Line, true=Fill) rather than a new field. */
+/** Gumi's Line/Fill split reuses the existing gumiFillMode boolean directly (false=Line, true=Fill) rather than a new field. */
 function OperationModeRow({ fillMode, onChange }: { fillMode: boolean; onChange: (fillMode: boolean) => void }) {
   return (
     <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16 }}>
@@ -1136,8 +1123,8 @@ function FillTypeRow({ value, onChange }: { value: FillType; onChange: (v: FillT
   )
 }
 
-/** Shared toggle-row markup for the "Invert Fill" boolean — used by Gumi's Line/Fill modes and,
- * as of the v0.3 Service Update, Botan/Chie/Daiya/Fumiko's shared fillType selector too. */
+/** Shared toggle-row markup for the "Invert Fill" boolean — used by Gumi's Line/Fill modes and
+ * Botan/Chie/Daiya/Fumiko's shared fillType selector too. */
 function InvertFillRow({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <div

@@ -7,32 +7,29 @@
  * "fill/shading" regions the stroke layer explicitly excludes) and rejects
  * everything near a line.
  *
- * uInvert (v0.3 tuning) flips which side of the closed mask counts as the
- * fill candidate — off (default) targets the *ink* region's deep interior
- * (e.g. large flat shadow blobs, matching the original behavior); on
- * targets the *background* region's deep interior instead (e.g. skin/
- * highlight areas). This only flips the polarity of the isCandidate test
- * here — pipeline.ts is responsible for seeding uSeed's distance transform
- * from the matching side (depth has to be measured into whichever region
- * is now the candidate one, or `dist` means nothing).
+ * uInvert flips which side of the closed mask counts as the fill candidate —
+ * off (default) targets the *ink* region's deep interior (e.g. large flat
+ * shadow blobs); on targets the *background* region's deep interior instead
+ * (e.g. skin/highlight areas). This only flips the polarity of the
+ * isCandidate test here — pipeline.ts is responsible for seeding uSeed's
+ * distance transform from the matching side (depth has to be measured into
+ * whichever region is now the candidate one, or `dist` means nothing).
  *
- * uFillType (v0.3 tuning) picks what color a kept pixel resolves to:
- * 'image' (0) passes the original source color through unmodified — a kept
- * pixel is then indistinguishable from the untouched base once composited
- * with Replace blend, by design (see the lab's "Raw output" view for
- * inspecting this layer in isolation). 'solid' (1) uses a single flat
- * uSolidColor. 'gradient' (2) reuses curvesHsl-adjacent gradientMap.
- * frag.ts's own 3-stop luminance recolor math verbatim, gated to just this
- * fill selection instead of painted across the whole image.
+ * uFillType picks what color a kept pixel resolves to: 'image' (0) passes
+ * the original source color through unmodified — a kept pixel is then
+ * indistinguishable from the untouched base once composited with Replace
+ * blend, by design (see the lab's "Raw output" view for inspecting this
+ * layer in isolation). 'solid' (1) uses a single flat uSolidColor.
+ * 'gradient' (2) reuses gradientMap.frag.ts's own 3-stop luminance recolor
+ * math verbatim, gated to just this fill selection instead of painted
+ * across the whole image.
  *
- * uGamma/uPixelThreshold (v0.3 tuning, shared conventions with
- * blobMask.frag.ts) reshape the boundary decision the same way — see that
- * shader's doc comment, including why the falloff is confined to a thin
- * band near uBlobMaxDt (aaWidth) rather than spanning the whole radius.
- * uPixelThreshold=1 bypasses the distance falloff entirely (a raw
- * per-pixel isCandidate test, no uBlobMaxDt/uGamma involved) — Fill Radius
- * near 0 was already approximating this; this makes it an explicit,
- * well-supported mode instead of an edge case of the radius slider.
+ * uGamma/uPixelThreshold reshape the boundary decision the same way as
+ * blobMask.frag.ts — see that shader's doc comment, including why the
+ * falloff is confined to a thin band near uBlobMaxDt (aaWidth) rather than
+ * spanning the whole radius. uPixelThreshold=1 bypasses the distance
+ * falloff entirely (a raw per-pixel isCandidate test, no
+ * uBlobMaxDt/uGamma involved).
  *
  * Color resolution (uFillType/uSolidColor/uShadowColor/uMidColor/uHighlightColor) factored
  * out into fillTypeColor.frag.ts — shared with Line mode's own fill-type support, see

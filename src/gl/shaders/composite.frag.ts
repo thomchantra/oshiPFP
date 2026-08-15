@@ -10,34 +10,28 @@
  * uMask is read as full RGBA, not just RGB: .rgb is the algorithm's
  * straight (non-premultiplied) ink color, .a is how much ink is at this
  * pixel (0 = none, 1 = full — see distanceToEdge.frag.ts/erosionGate.frag.ts/
- * tintMask.frag.ts, which all now emit this convention). Blend mode only
+ * tintMask.frag.ts, which all emit this convention). Blend mode only
  * describes how ink *combines* with base at full strength; alpha is what
  * lets a pixel fall all the way back to the untouched base regardless of
  * which blend mode is picked — baking that fade into the ink color itself
- * (the old convention, before alpha carried it) breaks down for Multiply
- * specifically: a bright ink color faded toward black before multiplying
- * would darken the *whole* faded region rather than leaving it untouched.
+ * breaks down for Multiply specifically: a bright ink color faded toward
+ * black before multiplying would darken the *whole* faded region rather
+ * than leaving it untouched.
  *
- * uOpacities is an array (not a scalar) so the lab's "alpha overdrive"
- * macro (one 0-3 slider mapped to 3 descending per-layer opacities, see
- * labPipeline.ts's isMaskMode composite branch) can drive genuinely
- * different opacity per stacked layer. First tried on Path B and reverted
- * (see changelog/oshipfp-v0.2-lineart-saga.md) — Path B's mask used to be
- * a solid binary blob (0 or 1), so there was nothing for a fractional
- * inter-layer opacity to visibly express. Re-tried on Path F, whose
- * antialiased Sobel edge mask (findEdges.frag.ts) has genuine soft/
- * graduated alpha along every line, which is exactly what this macro
- * needs to read as anything beyond a single opacity slider. pipeline.ts
- * still fills every used slot with the same opacity-derived scalar for
- * every mode except Path F, so its output is otherwise unaffected — only
- * Path F exploits per-index variation.
+ * uOpacities is an array (not a scalar) so the lab's "alpha overdrive" macro (one 0-3 slider
+ * mapped to 3 descending per-layer opacities, see labPipeline.ts's isMaskMode composite branch)
+ * can drive genuinely different opacity per stacked layer — meaningful for Path F, whose
+ * antialiased Sobel edge mask (findEdges.frag.ts) has genuine soft/graduated alpha along every
+ * line. pipeline.ts fills every used slot with the same opacity-derived scalar for every mode
+ * except Path F, so its output is otherwise unaffected — only Path F exploits per-index
+ * variation.
  *
- * uBlendMode 4 ("Normal", v0.3 JSON preset saga) forces layerAlpha to 1.0 in main() below —
- * blendLayer()'s own return value for mode 4 is identical to mode 0 (Overwrite)'s, `layer`
- * unchanged; the actual difference is that Overwrite still respects the mask's own per-pixel
- * alpha (mix(result, layer, opacity*alpha)), letting the base show through wherever alpha is
- * partial/zero, while Normal ignores alpha entirely — a full, unblended pass of the algorithm's
- * own raw output at the given opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer).
+ * uBlendMode 4 ("Normal") forces layerAlpha to 1.0 in main() below — blendLayer()'s own return
+ * value for mode 4 is identical to mode 0 (Overwrite)'s, `layer` unchanged; the actual difference
+ * is that Overwrite still respects the mask's own per-pixel alpha (mix(result, layer,
+ * opacity*alpha)), letting the base show through wherever alpha is partial/zero, while Normal
+ * ignores alpha entirely — a full, unblended pass of the algorithm's own raw output at the given
+ * opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer).
  */
 export const compositeFrag = `#version 300 es
 precision highp float;

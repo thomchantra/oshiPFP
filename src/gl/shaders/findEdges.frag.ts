@@ -25,15 +25,8 @@
  * blurring can be pushed back toward white (gamma < 1) without touching
  * uSensitivity's edge-detection threshold itself.
  *
- * Saturation used to be applied right here (mixing this shader's per-channel
- * result toward its own luma), but that only ever touched Find Edge mode's
- * output — Tint/Vivid completely overwrite this shader's color via
- * tintMask.frag.ts, so the slider silently did nothing for 2 of the 3 color
- * modes, and even in Find Edge mode the effect was easy to miss since it
- * only reweights the thin edge pixels that already carry Sobel fringing.
- * Moved to saturationAdjust.frag.ts, applied once to the fully-resolved ink
- * layer right before compositing (see pipeline.ts's pathF branch) so it
- * reads as one "master saturation" knob across all 3 color modes.
+ * Saturation lives in saturationAdjust.frag.ts now, applied once to the fully-resolved ink
+ * layer right before compositing (see pipeline.ts's pathF branch) rather than here.
  */
 export const findEdgesFrag = `#version 300 es
 precision highp float;

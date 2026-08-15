@@ -24,10 +24,7 @@ const TABS: { value: AboutTab; label: string }[] = [
 ]
 
 /**
- * About/Help modal, opened by the header's Help icon (v0.3 polish pass — previously opened by
- * tapping the "oshiPFP" title itself). 3 tabs: Help/About/Changelog. Help and Changelog are
- * skeleton content for now, per the v0.3 tuning spec's own scoping — EDIT ME when real copy is
- * ready. About is today's original content, unchanged, just moved into its own tab body.
+ * About/Help modal, opened by the header's Help icon. 3 tabs: Help/About/Changelog.
  */
 export default function AboutModal({ open, onClose, initialTab = 'about', theme }: AboutModalProps) {
   const [tab, setTab] = useState<AboutTab>(initialTab)
@@ -43,10 +40,9 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
         <SegmentedControl options={TABS} value={tab} onChange={setTab} />
       </div>
 
-      {/* Plain conditional rendering (v0.3 polish pass, reverted from an earlier stack-all-3-tabs
-          height-pinning trick) — now that the modal itself top-pins (see .modal-backdrop in
-          base.css), a shorter tab is free to size to its own content instead of being padded out
-          to Changelog's height; only the position needed pinning, not the height. */}
+      {/* Plain conditional rendering — the modal itself top-pins (see .modal-backdrop in
+          base.css), so a shorter tab is free to size to its own content instead of being padded
+          out to Changelog's height; only the position needs pinning, not the height. */}
       {tab === 'help' && (
         <>
           <div className="algo-info-entry">
@@ -131,6 +127,17 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
 
       {tab === 'changelog' && (
         <>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">v0.3.1 - 15 Aug 2026</p>
+          </div>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">Bug Fixes</p>
+            <ul className="algo-info-entry-body">
+              <li className="changelogbullet">
+                Fixed the Crop tab's zoom pill — double-tapping it now actually resets zoom/pan back to the centered default, instead of doing nothing.
+              </li>
+            </ul>
+          </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">v0.3.0 - 14 Aug 2026</p>
           </div>

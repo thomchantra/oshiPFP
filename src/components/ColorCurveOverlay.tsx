@@ -18,15 +18,13 @@ interface ColorCurveOverlayProps {
  * size/aspect — see App.tsx's colorCurveSize) — this component owns none
  * of that sizing itself.
  *
- * Padding here (not on the parent box) is 40px, not just visual breathing
- * room: real-device testing found the two corner points (0,0)/(255,255)
- * sitting close to the physical screen edge get intercepted by iOS
- * Safari's edge-swipe gesture (tab switch / back navigation) before the
- * page ever sees a touch event — no amount of touch-action/preventDefault
- * can override that, since it's a system-level gesture recognizer. 40px
- * pushes the corner points comfortably outside that hot zone. Since the
- * box being padded is already square, uniform padding keeps the inner
- * plot area square too — no separate horizontal/vertical math needed.
+ * Padding here (not on the parent box) is 40px, not just visual breathing room: the two corner
+ * points (0,0)/(255,255) sitting close to the physical screen edge get intercepted by iOS
+ * Safari's edge-swipe gesture (tab switch / back navigation) before the page ever sees a touch
+ * event — no amount of touch-action/preventDefault can override that, since it's a system-level
+ * gesture recognizer. 40px pushes the corner points comfortably outside that hot zone. Since the
+ * box being padded is already square, uniform padding keeps the inner plot area square too — no
+ * separate horizontal/vertical math needed.
  */
 export default function ColorCurveOverlay({ channel, curves, onChangeActive }: ColorCurveOverlayProps) {
   const active = CURVE_CHANNEL_OPTIONS.find((c) => c.value === channel)!

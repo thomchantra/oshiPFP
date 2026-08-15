@@ -133,8 +133,8 @@ const IDENTITY_LINE_ART: LineArtParams = {
   gumiLineFillType: 'solid',
   gumiLineSolidColor: [0, 0, 0],
   gumiLineInvert: false,
-  // Retired from the UI (v0.3 tuning saga, session 14, polish pass) — frozen off rather than
-  // deleted, keeping the pipeline branch dormant/revivable instead of dead code removal.
+  // Retired from the UI — frozen off rather than deleted, keeping the pipeline branch
+  // dormant/revivable instead of dead code removal.
   gumiGapClosing: false,
   gumiBlobGamma: 1,
   gumiColorBleed: false,
@@ -193,10 +193,9 @@ const IDENTITY_LINE_ART: LineArtParams = {
   laplacianGrow: 0,
 }
 
-/** Piecewise-linear "hardness" macro shared by Botan/Chie/Daiya: -1 -> 200% of base max feather, 0 -> 50%, 1 -> hard clip (0). See changelog/oshipfp-v0.2-lineart-saga.md session 7.
+/** Piecewise-linear "hardness" macro shared by Botan/Chie/Daiya: -1 -> 200% of base max feather, 0 -> 50%, 1 -> hard clip (0).
  * pathD: 5 is a starting guess (matches pathB, the closer reference — both share a 0-20 texel
- * radius range, unlike pathC's differently-shaped erosion falloff) — needs visual tuning once
- * Daiya's JFA port (v0.3 tuning saga) is live. */
+ * radius range, unlike pathC's differently-shaped erosion falloff) — needs visual tuning. */
 const HARDNESS_BASE_MAX_FEATHER: Partial<Record<LineArtParams['mode'], number>> = { pathB: 5, pathC: 1, pathD: 5 }
 function hardnessToFeather(hardness: number, base: number): number {
   return hardness <= 0 ? base * (2 - 1.5 * (hardness + 1)) : base * 0.5 * (1 - hardness)
@@ -262,7 +261,7 @@ export class Pipeline {
   private alphaOverWhiteProgram: WebGLProgram
   /** Multiplies a base texture's ink-weight channel (uBaseChannel: 0=.r, 1=.a — same convention
    * maskFillColorProgram's uMaskChannel already uses) by a second grayscale mask's .r — Daiya's
-   * soft-threshold lab toggle (session 17) is the only consumer today. */
+   * soft-threshold toggle is the only consumer today. */
   private alphaModulateProgram: WebGLProgram
   private compositeProgram: WebGLProgram
   private lightColorProgram: WebGLProgram
@@ -304,34 +303,33 @@ export class Pipeline {
   private seedTargetA: TargetTexture | null = null
   private seedTargetB: TargetTexture | null = null
   private distanceMaskTarget: TargetTexture | null = null
-  /** v0.3 Daiya JFA port — Daiya's own JFA ping-pong buffers (float), kept separate from Botan's
+  /** Daiya's own JFA ping-pong buffers (float), kept separate from Botan's
    * seedTargetA/B above rather than shared: Daiya's dirty-tracking (daiyaSeedDirty) has different
    * invalidation triggers than Botan's, so sharing fields would either couple the two algorithms'
    * cache lifetimes or silently skip recompute when only one algorithm's params changed. */
   private daiyaSeedTargetA: TargetTexture | null = null
   private daiyaSeedTargetB: TargetTexture | null = null
   private daiyaDistanceMaskTarget: TargetTexture | null = null
-  /** Resurrected pre-JFA-port growth path (session 17 lab comparison, `daiyaOctagonMode`) — the
-   * original 4-direction separable min-filter dilate (see git history pre-session-14, "octagon
-   * approximation"), scratch targets for its 2-buffer ping-pong. Deliberately separate fields from
-   * seedTargetA/B above (JFA's own ping-pong) rather than reused, since only one growth mode runs
-   * per frame but both could be mid-cache from a previous frame — sharing risks the same
-   * field-ownership hazard CLAUDE.md's ensureTarget gotcha warns about. */
+  /** Pre-JFA-port growth path (`daiyaOctagonMode`) — the original 4-direction separable min-filter
+   * dilate ("octagon approximation"), scratch targets for its 2-buffer ping-pong. Deliberately
+   * separate fields from seedTargetA/B above (JFA's own ping-pong) rather than reused, since only
+   * one growth mode runs per frame but both could be mid-cache from a previous frame — sharing
+   * risks the same field-ownership hazard CLAUDE.md's ensureTarget gotcha warns about. */
   private daiyaOctagonHTarget: TargetTexture | null = null
   private daiyaOctagonVTarget: TargetTexture | null = null
-  /** Soft-threshold alpha-modulate lab toggle (session 17, `daiyaSoftThreshold`) — see
-   * pipeline.ts's pathD branch doc comment for the full rationale. `daiyaSoftThresholdTarget`
-   * holds softThresholdProgram's raw grayscale output; `daiyaSoftThresholdModTarget` holds the
-   * result of multiplying it into whichever growth mode's mask (JFA's `.a` or octagon's `.r`). */
+  /** Soft-threshold alpha-modulate toggle (`daiyaSoftThreshold`) — see pipeline.ts's pathD branch
+   * doc comment for the full rationale. `daiyaSoftThresholdTarget` holds softThresholdProgram's
+   * raw grayscale output; `daiyaSoftThresholdModTarget` holds the result of multiplying it into
+   * whichever growth mode's mask (JFA's `.a` or octagon's `.r`). */
   private daiyaSoftThresholdTarget: TargetTexture | null = null
   private daiyaSoftThresholdModTarget: TargetTexture | null = null
-  /** v0.3 Service Update — Botan's solid/gradient fillType final-color pass output (see pipeline.ts's
+  /** Botan's solid/gradient fillType final-color pass output (see pipeline.ts's
    * pathB branch); unused (outputTarget stays distanceMaskTarget directly) when fillType is 'image'. */
   private botanFillColorTarget: TargetTexture | null = null
-  /** v0.3 Service Update — Chie's fillType final-color pass output (Chie had no color mechanism
-   * before this phase, so this is always used, unlike Botan's equivalent above). */
+  /** Chie's fillType final-color pass output (Chie had no color mechanism
+   * before this, so this is always used, unlike Botan's equivalent above). */
   private chieFillColorTarget: TargetTexture | null = null
-  /** v0.3 Service Update follow-up — scratch targets for `runSoftHardness`'s box-blur+mix, shared
+  /** Scratch targets for `runSoftHardness`'s box-blur+mix, shared
    * across Daiya/Fumiko (never both active in the same render() pass, so one set suffices). */
   private softHardnessHTarget: TargetTexture | null = null
   private softHardnessVTarget: TargetTexture | null = null
@@ -346,15 +344,15 @@ export class Pipeline {
   private lineArtOutputTarget: TargetTexture | null = null
   private lightColorTarget: TargetTexture | null = null
   private colorTarget: TargetTexture | null = null
-  // Grade tab's Gradient Map processor (v0.3 post-Hinata close-out) — own dedicated targets,
+  // Grade tab's Gradient Map processor — own dedicated targets,
   // never aliasing colorTarget itself (see CLAUDE.md's Recurring Gotchas entry on exactly this
-  // class of bug, from an earlier session's colorTarget-aliasing incident). gradeGradientMapTarget
+  // class of bug). gradeGradientMapTarget
   // holds gradientMapProgram's raw remapped output; gradeGradientMapCompositeTarget holds that
   // blended back over the pre-gradient-map color via compositeProgram (intensity/blend mode).
   private gradeGradientMapTarget: TargetTexture | null = null
   private gradeGradientMapCompositeTarget: TargetTexture | null = null
 
-  // Dual Pane (desktop-only, Workstream C) — second independent copy of the
+  // Dual Pane (desktop-only) — second independent copy of the
   // display-mode-resolution and Color-chain targets above, only populated
   // while dualPaneEnabled is true. Pane A always reuses the primary fields
   // (lineArtOutputTarget/colorTarget etc.) unchanged, so single-pane
@@ -382,7 +380,7 @@ export class Pipeline {
   private exportColorTarget: TargetTexture | null = null
   private exportGradeGradientMapTarget: TargetTexture | null = null
   private exportGradeGradientMapCompositeTarget: TargetTexture | null = null
-  /** Export tab's "Grade Intensity" slider blend output (v0.3 post-Hinata close-out) — see
+  /** Export tab's "Grade Intensity" slider blend output — see
    * blendGradeIntensity. Export's own preview/readback never run concurrently with each other (both
    * force a synchronous render() first), so a single shared field is safe, unlike Dual Pane's
    * primary/secondary pairs elsewhere in this class. */
@@ -399,18 +397,18 @@ export class Pipeline {
   private gumiMaskTarget: TargetTexture | null = null
   private gumiMaxHTarget: TargetTexture | null = null
   private gumiMaxVTarget: TargetTexture | null = null
-  /** Gap Closing prototype (v0.3 tuning, gated by LineArtParams.gumiGapClosing) — a separate grow-then-shrink pair applied on top of gumiMaxVTarget, ping-ponging through these two rather than reusing gumiMaxHTarget/gumiMaxVTarget so this pass's own output never aliases the texture it reads as input. */
+  /** Gap Closing prototype (gated by LineArtParams.gumiGapClosing) — a separate grow-then-shrink pair applied on top of gumiMaxVTarget, ping-ponging through these two rather than reusing gumiMaxHTarget/gumiMaxVTarget so this pass's own output never aliases the texture it reads as input. */
   private gumiCloseHTarget: TargetTexture | null = null
   private gumiCloseVTarget: TargetTexture | null = null
-  /** Gumi Line mode's post-process (v0.3 tuning, see runGumiLinePostProcess) — Overdrive's min-filter dilate ping-pong pair, then Hardness's blur-mix (its own ping-pong pair plus one more target for the mix output). */
+  /** Gumi Line mode's post-process (see runGumiLinePostProcess) — Overdrive's min-filter dilate ping-pong pair, then Hardness's blur-mix (its own ping-pong pair plus one more target for the mix output). */
   private gumiOverdriveHTarget: TargetTexture | null = null
   private gumiOverdriveVTarget: TargetTexture | null = null
   private gumiHardnessHTarget: TargetTexture | null = null
   private gumiHardnessVTarget: TargetTexture | null = null
   private gumiHardnessMixTarget: TargetTexture | null = null
-  /** Line mode's fill-type color resolution output (v0.3 tuning, lineFillColor.frag.ts) — see runGumiLinePostProcess's doc comment for why this is its own final pass instead of folded into blobMaskFrag. */
+  /** Line mode's fill-type color resolution output (lineFillColor.frag.ts) — see runGumiLinePostProcess's doc comment for why this is its own final pass instead of folded into blobMaskFrag. */
   private gumiLineColorTarget: TargetTexture | null = null
-  /** Dual Line (v0.3 tuning saga, session 14) — each band's finished colored+alpha output,
+  /** Dual Line — each band's finished colored+alpha output,
    * consumed by layerMergeProgram to produce gumiDualMergeTarget. */
   private gumiDualBlackColorTarget: TargetTexture | null = null
   private gumiDualWhiteColorTarget: TargetTexture | null = null
@@ -424,11 +422,11 @@ export class Pipeline {
   private laplacianTarget: TargetTexture | null = null
   private laplacianSharpenTarget: TargetTexture | null = null
   private hiThreshTarget: TargetTexture | null = null
-  /** Hinata Tuning Saga Phase 1 — Darken/Lighten's output when Emboss/Raw is the active treatment. */
+  /** Darken/Lighten's output when Emboss/Raw is the active treatment. */
   private hiRawTreatedTarget: TargetTexture | null = null
-  /** Hinata Tuning Saga Phase 2 — Edge's per-polarity fill-color resolution output. */
+  /** Edge's per-polarity fill-color resolution output. */
   private edgeFillColorTarget: TargetTexture | null = null
-  /** Hinata Tuning Saga Phase 2 — Erode's shared-fill-type-mechanism color resolution output. */
+  /** Erode's shared-fill-type-mechanism color resolution output. */
   private hiThreshFillColorTarget: TargetTexture | null = null
   private toneRemapTarget: TargetTexture | null = null
   private responsiveColorTarget: TargetTexture | null = null
@@ -470,8 +468,8 @@ export class Pipeline {
    * renderExportPreview. Independent of this.lineArt.displayMode; that's the whole point. */
   private exportDisplayMode: ExportDisplayMode = 'composite'
   private exportColorGrade = true
-  /** Export tab's "Grade Intensity" slider (v0.3 post-Hinata close-out) — 1 = fully graded (today's
-   * default, zero extra cost), 0 = fully ungraded (also zero extra cost, same as colorGrade=false),
+  /** Export tab's "Grade Intensity" slider — 1 = fully graded (default, zero extra cost),
+   * 0 = fully ungraded (also zero extra cost, same as colorGrade=false),
    * strictly between blends the two via blendGradeIntensity's mixBlendProgram pass. */
   private exportColorGradeIntensity = 1
   /** True whenever anything upstream of the Export preview changed — set alongside every colorDirty=true site, since the preview depends on everything colorDirty does plus Export's own selection. */
@@ -696,7 +694,7 @@ export class Pipeline {
   }
 
   /**
-   * "Reset oshiPFP" (v0.3, pre-Netlify polish pass) — unloads the current source image and
+   * "Reset oshiPFP" — unloads the current source image and
    * disposes every downstream render target, so the app returns to its pristine "no image
    * loaded" state without a page reload. Unlike handleContextLost() (which only nulls fields,
    * since the GL context itself is already dead in that scenario), the context here is very
@@ -822,10 +820,8 @@ export class Pipeline {
     if (
       params.mode !== prev.mode ||
       params.threshold !== prev.threshold ||
-      // Session 17 fix: daiyaInvertSeed flips thresholdProgram's polarity feeding into Daiya's
-      // JFA seed (distanceSeedProgram) — without invalidating the cached seed here, toggling it
-      // silently did nothing once a seed was already computed, exactly the dirty-flag/cache-gating
-      // staleness class CLAUDE.md's Recurring Gotchas already warns about.
+      // daiyaInvertSeed flips thresholdProgram's polarity feeding into Daiya's JFA seed
+      // (distanceSeedProgram), so it must invalidate the cached seed here too.
       params.daiyaInvertSeed !== prev.daiyaInvertSeed ||
       params.toneShaping.exposure !== prev.toneShaping.exposure ||
       params.toneShaping.contrast !== prev.toneShaping.contrast ||
@@ -905,7 +901,7 @@ export class Pipeline {
   }
 
   /**
-   * Desktop-only Dual Pane toggle (Workstream C) — when enabled, `render()`
+   * Desktop-only Dual Pane toggle — when enabled, `render()`
    * resolves BOTH given displayModes through the full downstream Color
    * chain (instead of just the single active LineArtParams.displayMode)
    * and blits them side-by-side into a double-wide canvas. Pane A always
@@ -1064,15 +1060,14 @@ export class Pipeline {
    * site can forget one — see docs/oshiPFP-v0.3-tuningspecs.md's Gumi footnote on shared GL
    * programs silently leaking uniform state across call sites in the same render() pass. */
   /** Debug-only (see src/debug/renderTrace.ts) — sets an int uniform and immediately reads it back
-   * via gl.getUniform so a live repro of the Invert Fill Flip-Flop Bug can confirm what actually
-   * landed on the GPU, not just what the JS call site intended to set. Cheap enough per-draw
-   * (one extra sync GL call) to leave wired in dev builds; no-ops in prod via trace()'s own gate. */
+   * via gl.getUniform so a trace can confirm what actually landed on the GPU, not just what the
+   * JS call site intended to set. Cheap enough per-draw (one extra sync GL call) to leave wired
+   * in dev builds; no-ops in prod via trace()'s own gate. */
   /** Debug-only companion to traceUniformSet — reads back a single center pixel of a target
    * texture right after it's rendered, so a trace can catch a genuinely different mask/seed
    * *content* (e.g. a texture-unit mix-up, stale cache) even when every uInvert uniform checks
    * out clean. RGBA8 targets only (float targets like seedTargetA/B need a different read path
-   * and aren't sampled here — maskTarget, the binary threshold output, is the relevant one for
-   * the current investigation). */
+   * and aren't sampled here). */
   private traceSamplePixel(tag: string, target: TargetTexture, extra: Record<string, unknown> = {}): void {
     if (!import.meta.env.DEV) return
     const gl = this.gl
@@ -1207,15 +1202,13 @@ export class Pipeline {
    * Either step is skipped entirely at 0 (returns the input unchanged) so
    * the identity/default case costs nothing extra.
    *
-   * Smooth's slider range (0-3, was 0-1) needed more than a bigger number
-   * to actually do more: the range filter's spatial kernel already
+   * Smooth's slider range is 0-3: the range filter's spatial kernel already
    * saturates at 5 texels (MAX_KERNEL in denoise.frag.ts) by slider value
    * 1, so past that point only uThreshold (the range-filter's color-
    * distance gate) has any further room to push — widening it lets the
-   * filter blend across the small color jumps a JPEG block edge produces,
-   * which is exactly the "won't budge on real artifacts" case that
-   * prompted the higher ceiling (see changelog). Kernel size still caps
-   * at slider value 1; only the threshold keeps climbing above it.
+   * filter blend across the small color jumps a JPEG block edge produces.
+   * Kernel size still caps at slider value 1; only the threshold keeps
+   * climbing above it.
    */
   private runEnhance(source: TargetTexture, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -1275,12 +1268,11 @@ export class Pipeline {
 
   /**
    * 4-point plateau/feather luminance-band ramp (see plateauRamp.frag.ts) —
-   * Dual Line's per-band detection stage (v0.3 tuning saga, session 14).
+   * Dual Line's per-band detection stage.
    * Ported from labPipeline.ts's runPlateauRamp. Takes explicit ramp points
    * (PlateauRampPoints, matching pinchToPlateau()'s output) rather than
    * reading fixed p.gumiRamp* fields, since Dual Line calls this twice per
-   * frame with two different bands' points — the old always-on single-band
-   * call site (and its gumiRamp* fields) was removed in the same session.
+   * frame with two different bands' points.
    */
   private runPlateauRamp(source: TargetTexture, points: PlateauRampPoints, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -1336,7 +1328,7 @@ export class Pipeline {
   }
 
   /**
-   * Gumi Line mode's optical post-process (v0.3 tuning) — deliberately not touching the
+   * Gumi Line mode's optical post-process — deliberately not touching the
    * detection/blob-suppression algorithm itself, per product direction: two independent,
    * skippable-at-default refinements layered on the finished blob mask.
    *
@@ -1367,10 +1359,9 @@ export class Pipeline {
     if (p.gumiOverdrive > 0) {
       this.gumiOverdriveHTarget = this.ensureTarget(this.gumiOverdriveHTarget, width, height)
       this.gumiOverdriveVTarget = this.ensureTarget(this.gumiOverdriveVTarget, width, height)
-      // v0.3 tuning saga, session 14 — moved onto minFilterContinuousProgram (its own private
-      // program, not the shared minFilterProgram) for genuine sub-texel float precision.
-      // p.gumiOverdrive now flows through unrounded. uMode stays explicitly 0 (min = grow ink in
-      // this polarity) on both passes, preserving the original behavior/convention — see
+      // Uses minFilterContinuousProgram (its own private program, not the shared minFilterProgram)
+      // for genuine sub-texel float precision — p.gumiOverdrive flows through unrounded. uMode
+      // stays explicitly 0 (min = grow ink in this polarity) on both passes — see
       // minFilterContinuous.frag.ts's doc comment for why this is a separate program.
       this.runPass(this.minFilterContinuousProgram, this.gumiOverdriveHTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -1430,7 +1421,7 @@ export class Pipeline {
   }
 
   /**
-   * Dual Line's per-band chain (v0.3 tuning saga, session 14) — runs one full
+   * Dual Line's per-band chain — runs one full
    * ramp->contrastBoost->threshold->grow->JFA->blob->postprocess->fillColor pass for a single
    * simplified luminance band (Black or White), producing one colored+alpha layer. Called twice
    * per frame (once per band) from the pathG branch's Dual Line path, sequentially reusing
@@ -1562,21 +1553,18 @@ export class Pipeline {
   }
 
   /**
-   * Shared "Hardness" soft-only post-process (v0.3 Service Update follow-up) — Daiya/Fumiko's
-   * own answer to Botan/Chie's `hardnessToFeather` (which reshapes those algorithms' own
-   * antialiasing width during shape generation, not applicable here since Daiya's threshold+
-   * grow mask and Fumiko's post-erosion edge map don't have an equivalent feather parameter to
-   * tune). Reuses Gumi Line mode's exact box-blur+mixBlend recipe (`runGumiLinePostProcess`
-   * above), but remapped so the shared `hardness` field's existing default (0, matching Botan/
-   * Chie's own slider default) is the neutral no-op point instead of Gumi's own `1`: negative
-   * values blur (mixed in at `-hardness` strength, same `HARDNESS_MAX_BLUR` radius ceiling as
-   * Gumi); non-negative values are a no-op, since these algorithms' masks are already at their
-   * hardest/crispest by construction (a plain threshold or erosion cutoff) — there's no
-   * "sharpen beyond default" state to move into, the same reason Botan/Chie's own hardness=1
-   * (hardest) endpoint does nothing further. Deliberately blur-only, not the full bidirectional
-   * sharpen+blur originally asked for — true sharpening would need a different primitive
-   * (morphological erode, per the Gumi footnote) and was skipped this phase as not easily
-   * doable within the existing per-algorithm mask shapes.
+   * Shared "Hardness" soft-only post-process — Daiya/Fumiko's own answer to Botan/Chie's
+   * `hardnessToFeather` (which reshapes those algorithms' own antialiasing width during shape
+   * generation, not applicable here since Daiya's threshold+grow mask and Fumiko's post-erosion
+   * edge map don't have an equivalent feather parameter to tune). Reuses Gumi Line mode's exact
+   * box-blur+mixBlend recipe (`runGumiLinePostProcess` above), but remapped so the shared
+   * `hardness` field's default (0, matching Botan/Chie's own slider default) is the neutral
+   * no-op point instead of Gumi's own `1`: negative values blur (mixed in at `-hardness`
+   * strength, same `HARDNESS_MAX_BLUR` radius ceiling as Gumi); non-negative values are a no-op,
+   * since these algorithms' masks are already at their hardest/crispest by construction (a plain
+   * threshold or erosion cutoff). Deliberately blur-only, not bidirectional sharpen+blur — true
+   * sharpening would need a different primitive (morphological erode) not easily doable within
+   * the existing per-algorithm mask shapes.
    */
   private readonly HARDNESS_MAX_BLUR = 6
 
@@ -1618,11 +1606,11 @@ export class Pipeline {
 
   /**
    * Composite-readiness remap for Path H/I's raw output — see toneRemap.frag.ts. Followed by a
-   * saturation/hue-invert polish pass (Hinata Tuning Saga Phase 2) — both highPassDiff.frag.ts
+   * saturation/hue-invert polish pass — both highPassDiff.frag.ts
    * and toneRemap.frag.ts operate per-channel rather than on collapsed luminance, so real
    * (often undesired) chromatic fringing survives into this output; hiToneSaturation/
    * hiToneHueInvert give a way to tame or flip it. Neutral at defaults (saturation=1,
-   * hueInvert=false), so Inori (which shares this method, own UI not yet scoped) is unaffected.
+   * hueInvert=false), so Tsukiko (which shares this method) is unaffected until touched.
    */
   private runToneRemap(source: TargetTexture, target: 'multiply' | 'screen', p: LineArtParams, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -1647,13 +1635,13 @@ export class Pipeline {
   }
 
   /**
-   * Hinata Tuning Saga Phase 1/2 — "Darken / Lighten" + "Contrast" macros for the Emboss/Raw
+   * "Darken / Lighten" + "Contrast" macros for the Emboss/Raw
    * treatment. Reuses colorCorrectProgram (no new shader): `hiRawDarkenLighten` (-1..1) maps to
    * `uBlackClip`/`uWhiteClip` only — negative crushes everything below `-hiRawDarkenLighten` to
    * black, positive crushes everything above `1-hiRawDarkenLighten` to white. `hiRawContrast`
-   * (Phase 2, default 1) drives the same pivoted-at-0.5 curve every other "contrast" slider in
+   * (default 1) drives the same pivoted-at-0.5 curve every other "contrast" slider in
    * this codebase uses. At defaults (0, 1) this is `blackClip=0, whiteClip=1, contrast=1`, the
-   * exact identity, so Emboss's default output is byte-identical to before either feature existed.
+   * exact identity.
    */
   private runHiRawDarkenLighten(source: TargetTexture, p: LineArtParams, width: number, height: number): TargetTexture {
     if (p.hiRawDarkenLighten === 0 && p.hiRawContrast === 1) return source
@@ -1675,11 +1663,10 @@ export class Pipeline {
   }
 
   /**
-   * Hinata Tuning Saga Phase 2 — Edge's independent per-polarity fill-type resolution, a
+   * Edge's independent per-polarity fill-type resolution, a
    * separate final pass after responsiveEdgeColor.frag.ts's (and Grow's, if active) shape
    * decision — see edgeFillColor.frag.ts's doc comment for why no upstream shader changes were
-   * needed. Defaults (dark-side solid white, light-side solid black) exactly reproduce the old
-   * hardcoded behavior.
+   * needed. Defaults (dark-side solid white, light-side solid black).
    */
   private runEdgeFillColor(source: TargetTexture, p: LineArtParams, base: TargetTexture, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -1778,10 +1765,7 @@ export class Pipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
-        // Shared-uniform-leak fix: thresholdProgram is also used by Gumi, which explicitly sets
-        // uInvert=1 on its own call site — without setting it here too, Botan silently inherited
-        // whatever the last renderer (e.g. Gumi) left behind. See threshold.frag.ts's own doc
-        // comment, which predicted exactly this fragility.
+        // Explicit uInvert set — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
         this.traceUniformSet('gl:thresholdProgram(Botan)', this.thresholdProgram, 'uInvert', 0, {
           mode: p.mode,
@@ -1793,14 +1777,7 @@ export class Pipeline {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, this.maskTarget!.texture)
         gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
-        // Shared-uniform-leak fix (Invert Fill Flip-Flop Bug root cause, found session 11):
-        // distanceSeedProgram is also used by Gumi's default Line mode (runGumiDistanceTransform
-        // called with invert=true), which leaves uInvert=1 sitting on this program object. Botan
-        // never set it explicitly, so a Gumi->Botan round-trip silently seeded Botan's distance
-        // transform from the wrong side of the mask — the toggle and every downstream uInvert
-        // uniform stayed correct at 0, but the underlying shape was already computed backwards
-        // by this point. Same fragility class as thresholdProgram/minFilterProgram, just one
-        // layer further upstream than either of those fixes reached.
+        // Explicit uInvert set — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
         gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
         this.traceUniformSet('gl:distanceSeedProgram(Botan)', this.distanceSeedProgram, 'uInvert', 0, { mode: p.mode })
       })
@@ -1825,10 +1802,9 @@ export class Pipeline {
       this.botanSeedDirty = false
       }
 
-      // v0.3 Service Update: fillType === 'image' keeps shape+color fused in this one pass exactly
-      // as before (uColorExpansion driven by fillType instead of the old colorExpansion field,
-      // uInvert added directly here) — the continuous distance-transform falloff and Color
-      // Contrast's in-place recolor were never separable into a discrete post step without
+      // fillType === 'image' keeps shape+color fused in this one pass (uColorExpansion driven by
+      // fillType, uInvert added directly here) — the continuous distance-transform falloff and
+      // Color Contrast's in-place recolor aren't separable into a discrete post step without
       // changing Botan's default look. 'solid'/'gradient' only need the plain alpha (color
       // discarded, resolved by the shared maskFillColorProgram pass below instead).
       const feather = hardnessToFeather(p.hardness, HARDNESS_BASE_MAX_FEATHER.pathB!)
@@ -1913,8 +1889,7 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.erosionGateProgram, 'uFeather'), feather)
       })
 
-      // v0.3 Service Update: Chie had no color mechanism before this phase — erosionGateProgram's
-      // own output color (.rgb = eroded) is discarded here, only its .a (gate strength, already an
+      // erosionGateProgram's own output color (.rgb = eroded) is discarded here, only its .a (gate strength, already an
       // ink-weight-direct convention like distanceToEdge's — see maskFillColor.frag.ts's uMaskChannel) is used.
       this.chieFillColorTarget = this.ensureTarget(this.chieFillColorTarget, width, height)
       this.runPass(this.maskFillColorProgram, this.chieFillColorTarget, width, height, () => {
@@ -1944,57 +1919,52 @@ export class Pipeline {
       })
       outputTarget = this.chieFillColorTarget
     } else if (p.mode === 'pathD') {
-      // v0.3 tuning saga — ported from Botan's JFA distance-field primitive (pathB above),
-      // replacing the old integer-texel min-filter dilate whose useful radius range lived
-      // entirely below 1 texel (stepping 0->1 skipped straight past it, rendering as dots/blobs).
-      // See docs/oshiPFP-v0.3-tuningspecs.md's Daiya arch discussion for the full rationale.
+      // Uses Botan's JFA distance-field primitive (pathB above) rather than an integer-texel
+      // min-filter dilate, whose useful radius range lived entirely below 1 texel (stepping 0->1
+      // skipped straight past it, rendering as dots/blobs). See docs/oshiPFP-v0.3-tuningspecs.md's
+      // Daiya arch discussion for the full rationale.
       //
-      // Session 17 ("sit with Daiya" tuning discussion, consolidated into a real 2-mode op
-      // selector): `daiyaOctagonMode` picks between JFA (the session-14 port) and Octagon (the
-      // pre-port growth math, resurrected from git history) as two structurally distinct modes —
-      // each with its own independent Radius/Hardness (JFA keeps float precision, Octagon's own
-      // fields are intentionally separate so switching tabs doesn't make them fight over one
-      // value), while Threshold/Soft Threshold/Invert Seed apply identically to both (same shared
-      // thresholdProgram/softThresholdProgram calls either way, see below).
-      // `daiyaMask`/`daiyaMaskChannel` are the two growth branches' common hand-off point: every
-      // reader downstream (soft-threshold modulate, maskFillColorProgram) works off whichever
-      // mode actually ran, unaware of which one that was.
+      // `daiyaOctagonMode` picks between JFA and Octagon (the pre-JFA growth math) as two
+      // structurally distinct modes — each with its own independent Radius/Hardness (JFA keeps
+      // float precision, Octagon's own fields are intentionally separate so switching modes
+      // doesn't make them fight over one value), while Threshold/Soft Threshold/Invert Seed apply
+      // identically to both (same shared thresholdProgram/softThresholdProgram calls either way,
+      // see below). `daiyaMask`/`daiyaMaskChannel` are the two growth branches' common hand-off
+      // point: every reader downstream (soft-threshold modulate, maskFillColorProgram) works off
+      // whichever mode actually ran, unaware of which one that was.
       let daiyaMask: TargetTexture
       let daiyaMaskChannel: 0 | 1
 
       if (p.daiyaOctagonMode) {
-        // Resurrected from git history (pre-session-14), generalized (session 17 follow-up): the
-        // original was 4 hardcoded sequential separable min-filter dilate passes (horizontal,
-        // vertical, both diagonals — each pass grows whatever the previous direction already
-        // grew, not run in parallel and combined), which is what actually produces the "octagon"
-        // facets. minFilter1D.frag.ts samples *both* +offset and -offset per direction, so N
-        // direction passes produce a 2N-sided facet shape — the original 4 directions gave the
-        // 8-sided "octagon" this mode is named for. Now generated from `p.daiyaOctagonDirections`/
-        // `p.daiyaOctagonRotation` instead of hardcoded, so N and facet orientation are both real
-        // sliders — 4 directions + 0° rotation reproduces the original exactly.
+        // Sequential separable min-filter dilate passes, one per direction (each pass grows
+        // whatever the previous direction already grew, not run in parallel and combined), which
+        // is what produces the "octagon" facets. minFilter1D.frag.ts samples *both* +offset and
+        // -offset per direction, so N direction passes produce a 2N-sided facet shape — 4
+        // directions gives the 8-sided "octagon" this mode is named for. Generated from
+        // `p.daiyaOctagonDirections`/`p.daiyaOctagonRotation`, so N and facet orientation are both
+        // real sliders — 4 directions + 0° rotation reproduces the classic octagon.
         // The (sqrt2-1) correction on intRadius compensates for diagonal-ish passes reaching
         // further per step than axis-aligned ones would alone (an approximation that only gets
-        // less exact as direction count grows past 4, not recalibrated per-N — acceptable for a
-        // lab toggle). Ink-weight convention: grayscale in `.r`, matching minFilterProgram's own
-        // output — NOT distanceToEdgeProgram's `.a` convention below.
+        // less exact as direction count grows past 4, not recalibrated per-N). Ink-weight
+        // convention: grayscale in `.r`, matching minFilterProgram's own output — NOT
+        // distanceToEdgeProgram's `.a` convention below.
         this.maskTarget = this.ensureTarget(this.maskTarget, width, height)
         this.runPass(this.thresholdProgram, this.maskTarget, width, height, () => {
           gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
           gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
           gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
-          // Session 17: was hardcoded 0 — now a real toggle (daiyaInvertSeed, shared with JFA's
-          // own threshold call below), to test whether growing from the opposite tonal side
-          // (light instead of dark, or vice versa) makes Octagon read as shading rather than
-          // line-tracing. Independent of fillInvert's own unrelated job further downstream.
+          // daiyaInvertSeed (shared with JFA's own threshold call below) lets detection grow from
+          // the opposite tonal side (light instead of dark, or vice versa), so Octagon can read as
+          // shading rather than line-tracing. Independent of fillInvert's own unrelated job
+          // further downstream.
           gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.daiyaInvertSeed ? 1 : 0)
         })
 
         this.daiyaOctagonHTarget = this.ensureTarget(this.daiyaOctagonHTarget, width, height)
         this.daiyaOctagonVTarget = this.ensureTarget(this.daiyaOctagonVTarget, width, height)
-        // Session 17 consolidation: daiyaOctagonRadius is its own plain integer field (a literal
-        // step=1 UI slider) — no longer derived from the shared float `radius` via a (sqrt2-1)
-        // correction, now that Octagon has an independent Radius control instead of sharing JFA's.
+        // daiyaOctagonRadius is its own plain integer field (a literal step=1 UI slider),
+        // independent of JFA's shared float `radius`.
         const intRadius = Math.max(0, Math.round(p.daiyaOctagonRadius))
         // Minimum 3 for the default bidirectional shape (fewer doesn't form a real polygon), but
         // 1 becomes meaningful once uOneSided is on (a single one-sided spike/ray).
@@ -2005,8 +1975,8 @@ export class Pipeline {
         // one pass, so going further would just repeat facets. One-sided passes (uOneSided) sample
         // only +offset, so they're NOT automatically mirrored — a proper N-gon under one-sided growth
         // needs its N directions spread across the FULL turn [0, 2*PI) instead, or it comes out
-        // lopsided (all facets crammed into one half of the shape). This is exactly why
-        // daiyaOctagonRotation's own range was widened to 360° this session.
+        // lopsided (all facets crammed into one half of the shape) — hence daiyaOctagonRotation's
+        // 360° range.
         const turnFraction = p.daiyaOctagonOneSided ? Math.PI * 2 : Math.PI
         const directions: [number, number][] = Array.from({ length: dirCount }, (_, i) => {
           const angle = rotationRad + (turnFraction * i) / dirCount
@@ -2056,12 +2026,8 @@ export class Pipeline {
             gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
             gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
             gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
-            // Shared-uniform-leak fix: thresholdProgram is also used by Botan/Gumi, and Gumi
-            // explicitly sets uInvert=1 on its own call site — without setting it here too, Daiya
-            // silently inherited whatever the last renderer left behind. See threshold.frag.ts's own
-            // doc comment, which predicted exactly this fragility.
-            // Session 17 consolidation: was hardcoded 0 — now shares daiyaInvertSeed with Octagon's
-            // own threshold call above, since it's the same shared thresholdProgram call either way.
+            // Explicit uInvert set (shares daiyaInvertSeed with Octagon's own threshold call
+            // above) — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
             gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), p.daiyaInvertSeed ? 1 : 0)
             this.traceUniformSet('gl:thresholdProgram(Daiya)', this.thresholdProgram, 'uInvert', p.daiyaInvertSeed ? 1 : 0, {
               mode: p.mode,
@@ -2074,11 +2040,7 @@ export class Pipeline {
             gl.activeTexture(gl.TEXTURE0)
             gl.bindTexture(gl.TEXTURE_2D, this.maskTarget!.texture)
             gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
-            // Shared-uniform-leak fix (same class as the Invert Fill Flip-Flop Bug found on Botan,
-            // session 11): distanceSeedProgram is also used by Gumi's default Line mode, which
-            // leaves uInvert=1 sitting on this program object. Daiya must set it explicitly every
-            // call, same as Botan does, or a Gumi->Daiya round-trip silently seeds from the wrong
-            // side of the mask.
+            // Explicit uInvert set — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
             gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
             this.traceUniformSet('gl:distanceSeedProgram(Daiya)', this.distanceSeedProgram, 'uInvert', 0, { mode: p.mode })
           })
@@ -2139,8 +2101,7 @@ export class Pipeline {
         daiyaMaskChannel = 1
       }
 
-      // Soft-threshold alpha-modulate (session 17, promoted from a boolean lab toggle to a real
-      // slider) — a second, independently-computed soft/antialiased threshold weight (same math
+      // Soft-threshold alpha-modulate — a second, independently-computed soft/antialiased threshold weight (same math
       // as Hinata Erode's softThresholdProgram) multiplied into whichever growth mode's mask just
       // ran. Deliberately doesn't touch the binary threshold/JFA seed above — JFA needs a strictly
       // binary seed mask, so this only smooths the *already-grown* result's boundary transition,
@@ -2171,8 +2132,8 @@ export class Pipeline {
         daiyaMask = this.daiyaSoftThresholdModTarget
       }
 
-      // v0.3 Service Update: 'image' fillType absorbs the old colorMode==='vivid' HSV-saturation
-      // boost as an always-applied (neutral at vividBoost=1) modulation instead of a separate mode.
+      // 'image' fillType absorbs the vivid HSV-saturation boost as an always-applied
+      // (neutral at vividBoost=1) modulation instead of a separate mode.
       this.tintTarget = this.ensureTarget(this.tintTarget, width, height)
       this.runPass(this.maskFillColorProgram, this.tintTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -2273,8 +2234,7 @@ export class Pipeline {
 
       // Master saturation, applied once to the fully-resolved ink layer
       // (whichever of Find Edge/Tint/Vivid produced it) rather than inside
-      // findEdges.frag.ts — see saturationAdjust.frag.ts's header for why
-      // that used to only affect Find Edge mode.
+      // findEdges.frag.ts — see saturationAdjust.frag.ts's header.
       this.saturationTarget = this.ensureTarget(this.saturationTarget, width, height)
       this.runPass(this.saturationAdjustProgram, this.saturationTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -2288,9 +2248,7 @@ export class Pipeline {
       // Crude Gradient Map prototype — see gradientMap.frag.ts. No
       // threshold/closing/blob-or-bleed chain at all: every pixel gets
       // recolored directly off the 3-stop ramp, then composited below like
-      // every other mode's resolved output (production has no separate
-      // crossfade path the lab harness uses for this case — see this
-      // workstream's report for the resulting behavior difference).
+      // every other mode's resolved output.
       this.gradientMapTarget = this.ensureTarget(this.gradientMapTarget, width, height)
       this.runPass(this.gradientMapProgram, this.gradientMapTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -2299,9 +2257,8 @@ export class Pipeline {
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uShadowColor'), p.gumiGradientShadow)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uMidColor'), p.gumiGradientMid)
         gl.uniform3fv(gl.getUniformLocation(this.gradientMapProgram, 'uHighlightColor'), p.gumiGradientHighlight)
-        // No Pivot/Duo Tone UI for Gumi's own Gradient Map yet (v0.3 Service Update added these
-        // to Botan/Chie/Daiya/Fumiko's shared fillType selector only) — neutral values keep this
-        // call's output identical to before.
+        // No Pivot/Duo Tone UI for Gumi's own Gradient Map yet (Botan/Chie/Daiya/Fumiko's shared
+        // fillType selector has these, Gumi's doesn't) — neutral values here.
         gl.uniform1f(gl.getUniformLocation(this.gradientMapProgram, 'uGradientPivot'), 0)
         gl.uniform1i(gl.getUniformLocation(this.gradientMapProgram, 'uGradientDuoTone'), 0)
       })
@@ -2309,7 +2266,7 @@ export class Pipeline {
     } else if (p.mode === 'pathG') {
       trace('render:pathG-entry', { gumiLineInvert: p.gumiLineInvert, gumiFillInvert: p.gumiFillInvert, gumiDualLine: p.gumiDualLine, botanSeedDirty: this.botanSeedDirty })
       if (p.gumiDualLine && !p.gumiFillMode && !p.gumiColorBleed) {
-        // Dual Line (v0.3 tuning saga, session 14) — two independent, simplified-band
+        // Dual Line — two independent, simplified-band
         // detection+fill chains (Black/White), merged via Porter-Duff "over" compositing.
         // See runGumiDualBand's own doc comment for the full per-band chain — it shares
         // every other Gumi Line-mode slider value with the single-band path below, and
@@ -2345,11 +2302,9 @@ export class Pipeline {
       // (uInvert=1 — high band-weight means "this IS the selected stroke")
       // -> closing (minFilter1D's min mode). Then one of two final
       // treatments, picked by gumiColorBleed — see labPipeline.ts's pathG
-      // branch for the full rationale, ported 1:1 here. The always-on
-      // plateau ramp stage that used to run first here (Luminance
-      // Detection) was removed in v0.3 tuning saga session 14 — Dual Line
-      // above is now the only place Gumi does band-based luminance
-      // detection; this path reads detectionSource directly.
+      // branch for the full rationale, ported 1:1 here. Dual Line above is
+      // the only place Gumi does band-based luminance detection; this path
+      // reads detectionSource directly.
       this.gumiBoostTarget = this.ensureTarget(this.gumiBoostTarget, width, height)
       this.runPass(this.colorCorrectProgram, this.gumiBoostTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -2383,9 +2338,9 @@ export class Pipeline {
 
       this.gumiMaxHTarget = this.ensureTarget(this.gumiMaxHTarget, width, height)
       this.gumiMaxVTarget = this.ensureTarget(this.gumiMaxVTarget, width, height)
-      // v0.3 tuning saga, session 14 — moved onto minFilterContinuousProgram (its own private
-      // program, not the shared minFilterProgram) for genuine sub-texel float precision. p.radius
-      // now flows through unrounded. See minFilterContinuous.frag.ts's doc comment.
+      // Uses minFilterContinuousProgram (its own private program, not the shared
+      // minFilterProgram) for genuine sub-texel float precision. p.radius flows through
+      // unrounded. See minFilterContinuous.frag.ts's doc comment.
       this.runPass(this.minFilterContinuousProgram, this.gumiMaxHTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, this.gumiMaskTarget!.texture)
@@ -2393,17 +2348,9 @@ export class Pipeline {
         gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uTexelSize'), texelSize)
         gl.uniform1f(gl.getUniformLocation(this.minFilterContinuousProgram, 'uRadius'), p.radius)
         gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uDirection'), [1, 0])
-        // Shared-uniform-leak fix (Gumi radius-refresh investigation, session 11) — REVISED:
-        // this pass never set uMode explicitly. The surrounding comment's "min mode" framing
-        // turned out to describe intent, not actual correct behavior here: forcing uMode=0
-        // (session 11's first attempt) made detection consistent but *consistently empty* —
-        // user-confirmed regression, permanently locked into the "looks off" state instead of
-        // occasionally self-correcting. The value Gap Closing used to leak in here (uMode=1,
-        // left over from its own trailing shrink phase) was what actually produced real
-        // detected ink. Pinning uMode=1 explicitly here reproduces that previously-leaked-in
-        // value consistently on every render, rather than only after some other trigger left it
-        // on the shared program by accident. Now moot going forward (this program has no other
-        // consumer to leak from), kept pinned for behavioral continuity.
+        // uMode=1 is the correct value here (not 0, despite this pass conceptually being a
+        // "min mode" grow) — verified against actual rendered output, not just the shader's
+        // doc-comment intent. See CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
         gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uMode'), 1)
       })
       this.runPass(this.minFilterContinuousProgram, this.gumiMaxVTarget, width, height, () => {
@@ -2489,8 +2436,7 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), p.colorExpansion ? 1 : 0)
           gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
-          // Color Bleed predates uInvert (added for Botan's v0.3 Service Update port) — explicit 0
-          // keeps this call's output unchanged rather than leaking Botan's fillInvert state.
+          // Explicit uInvert set — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), 0)
         })
         outputTarget = this.gumiBleedTarget
@@ -2526,7 +2472,7 @@ export class Pipeline {
           gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uMidColor'), p.gumiGradientMid)
           gl.uniform3fv(gl.getUniformLocation(this.fillMaskProgram, 'uHighlightColor'), p.gumiGradientHighlight)
           // No Duo Tone/Vivid UI for Gumi Fill mode yet — neutral values. Pivot/Color Contrast
-          // now wired to real Fill-mode-specific fields (v0.3 tuning saga, session 14 polish).
+          // are wired to real Fill-mode-specific fields.
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uGradientPivot'), p.gumiFillGradientPivot)
           gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uGradientDuoTone'), 0)
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividBoost'), 1)
@@ -2573,7 +2519,7 @@ export class Pipeline {
           gl.uniform3fv(gl.getUniformLocation(this.maskFillColorProgram, 'uHighlightColor'), p.gumiGradientHighlight)
           gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.gumiLineInvert ? 1 : 0)
           // No Duo Tone/Vivid UI for Gumi Line mode yet — neutral values. Pivot/Color Contrast
-          // now wired to real Line-mode-specific fields (v0.3 tuning saga, session 14 polish).
+          // are wired to real Line-mode-specific fields.
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uGradientPivot'), p.gumiLineGradientPivot)
           gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uGradientDuoTone'), 0)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
@@ -2593,10 +2539,9 @@ export class Pipeline {
       // locally-adaptive ink color instead of one fixed polarity. Reuses
       // the same box-blur pass Fumiko's normal chain computes — the
       // blurred local-neighborhood average IS the "rough area check".
-      // Tsukiko Tuning Saga: this branch is entirely self-contained (its own blur+zero-crossing
-      // diff computed directly from detectionSource) and never touches Path H's highPassDiff or
-      // Path I's laplacian machinery, so widening the guard to include pathI needed no other
-      // changes — Edge isn't "High Pass edge" or "Laplacian edge," it's its own recipe.
+      // This branch is entirely self-contained (its own blur+zero-crossing diff computed
+      // directly from detectionSource) and never touches Path H's highPassDiff or Path I's
+      // laplacian machinery — Edge isn't "High Pass edge" or "Laplacian edge," it's its own recipe.
       this.blurHTarget = this.ensureTarget(this.blurHTarget, width, height)
       this.blurVTarget = this.ensureTarget(this.blurVTarget, width, height)
       const blurRadius = p.radius
@@ -2833,11 +2778,9 @@ export class Pipeline {
       if (p.hiToneTarget !== 'off') {
         outputTarget = this.runToneRemap(hiRaw, p.hiToneTarget, p, width, height)
       } else if (p.thresholdEnabled) {
-        // Hinata Tuning Saga Phase 1: softThresholdProgram replaces the old hard thresholdProgram
-        // so Erode's Contrast slider (hiThresholdContrast) can widen the cutoff into a smoothstep
-        // band — at hiThresholdContrast=1 (default) uSoftness=0, identical to the old hard cutoff.
-        // Phase 2: uInvert is now driven by the explicit hiThresholdInvert toggle (erosion
-        // direction) instead of the old implicit blendMode==='screen' coupling.
+        // softThresholdProgram lets Erode's Contrast slider (hiThresholdContrast) widen the cutoff
+        // into a smoothstep band — at hiThresholdContrast=1 (default) uSoftness=0, a hard cutoff.
+        // uInvert is driven by the explicit hiThresholdInvert toggle (erosion direction).
         this.hiThreshTarget = this.ensureTarget(this.hiThreshTarget, width, height)
         const hiSoftness = 0.12 * (1 - Math.max(0, Math.min(1, p.hiThresholdContrast)))
         this.runPass(this.softThresholdProgram, this.hiThreshTarget, width, height, () => {
@@ -2848,10 +2791,9 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.softThresholdProgram, 'uSoftness'), hiSoftness)
           gl.uniform1i(gl.getUniformLocation(this.softThresholdProgram, 'uInvert'), p.hiThresholdInvert ? 1 : 0)
         })
-        // Phase 2: route through the same shared fill-type mechanism Botan/Chie/Daiya/Fumiko use
-        // (Image/Solid/Gradient + Invert) instead of compositing the grayscale mask directly via
-        // blend mode — gives Erode a real alpha-based "fill image" mode and a configurable solid
-        // backdrop color, per user request. uMaskChannel=0 matches softThresholdProgram's
+        // Routes through the same shared fill-type mechanism Botan/Chie/Daiya/Fumiko use
+        // (Image/Solid/Gradient + Invert), giving Erode a real alpha-based "fill image" mode and a
+        // configurable solid backdrop color. uMaskChannel=0 matches softThresholdProgram's
         // 0=ink/1=background grayscale convention (same as every other threshold-derived mask).
         this.hiThreshFillColorTarget = this.ensureTarget(this.hiThreshFillColorTarget, width, height)
         this.runPass(this.maskFillColorProgram, this.hiThreshFillColorTarget, width, height, () => {
@@ -2891,8 +2833,7 @@ export class Pipeline {
   /**
    * Resolves an explicit LineArtDisplayMode (instead of always reading
    * `this.lineArt.displayMode`) against a raw algorithm-chain output from
-   * computeLineArtRaw — factored out of what used to be the tail end of
-   * renderLineArt so Dual Pane can call this twice (once per pane) against
+   * computeLineArtRaw — its own method (not inlined into renderLineArt) so Dual Pane can call this twice (once per pane) against
    * the one shared rawTarget, and Export's own live-preview resolve a third
    * time (see renderExportPreview), each writing into its own set of target
    * textures (slot picks pane B's or Export's fields over pane A's/the
@@ -2912,7 +2853,7 @@ export class Pipeline {
 
     if (mode === 'original') return base
 
-    // overlayPassthrough (v0.3 JSON preset saga) redirects the Composite branch into this exact
+    // overlayPassthrough redirects the Composite branch into this exact
     // same raw-alpha-flatten pass instead of the blendLayer/opacity compositing below — safe to
     // share this branch's own target fields with the plain 'overlay' mode case since the two are
     // mutually exclusive per frame (mode is never both 'overlay' and 'composite' at once).
@@ -3009,19 +2950,14 @@ export class Pipeline {
   private runColorChain(source: TargetTexture, width: number, height: number, slot: 'primary' | 'secondary' | 'export'): TargetTexture {
     const gl = this.gl
 
-    // Gradient Map (v0.3 post-Hinata close-out; reordered to run FIRST in the v0.3 polish pass,
-    // ahead of Light/Temperature/Tint too, not just Curve/HSL) — general color remap. It was
-    // originally last in the chain, then moved ahead of just Curve/HSL when HSL edits turned out
-    // invisible once Gradient Map was on; a mobile testing pass then found Temperature/Tint had
-    // the exact same "buried" problem, since they still ran upstream of it via lightColorProgram.
+    // Gradient Map runs FIRST in the Grade chain, ahead of Light/Temperature/Tint/Curve/HSL —
     // gradientMapProgram replaces color purely by luminance, discarding whatever color any
-    // earlier stage produced — so it now runs on the raw `source` first, and EVERY other Grade
-    // control (Light, Temperature/Tint, Curve, HSL, Invert) applies on top of its output instead.
-    // A real, deliberate output change for any existing preset using Gradient Map together with
-    // any of these (see docs/oshiPFP-v0.3-tuningspecs.md), not a silent regression. Bypass applied
-    // at the point of consumption (skip both extra passes, feed lightColorProgram straight from
-    // `source`) rather than by aliasing a field, per CLAUDE.md's Recurring Gotchas entry on
-    // ensureTarget field-ownership bugs.
+    // earlier stage produced, so every other Grade control applies on top of its output instead
+    // (running it later would make those controls invisible/buried). This is a deliberate output
+    // change for any preset combining Gradient Map with those controls, not a regression — see
+    // docs/oshiPFP-v0.3-tuningspecs.md. Bypass applied at the point of consumption (skip both
+    // extra passes, feed lightColorProgram straight from `source`) rather than by aliasing a
+    // field, per CLAUDE.md's Recurring Gotchas entry on ensureTarget field-ownership bugs.
     let gradeInput: TargetTexture = source
     if (this.gradeGradientMap.enabled) {
       const gm = this.gradeGradientMap
@@ -3152,7 +3088,7 @@ export class Pipeline {
   }
 
   /**
-   * Export tab's "Grade Intensity" slider (v0.3 post-Hinata close-out) — blends the ungraded
+   * Export tab's "Grade Intensity" slider — blends the ungraded
    * `base` and fully graded `graded` textures via the existing mixBlendProgram (already used for
    * the maximizer's "hardness" blend elsewhere in this class), reused here as a plain two-input
    * mix rather than a new shader. intensity>=1 and intensity<=0 are both zero-extra-cost: they
@@ -3456,14 +3392,9 @@ export class Pipeline {
       : this.tabPreviewBypass === 'lineArtOriginal' ? this.lineArtOutputTarget
       : null
     const previewTarget = tabBypassTarget ?? (this.previewMode === 'original' ? this.cropTarget! : this.colorTarget)
-    // Debug-only (Gumi radius-refresh investigation, session 11): identifies which target
-    // actually got selected for the blit — 'original' preview mode could paint something
-    // entirely unrelated to the just-computed Gumi output, which could explain a real
-    // on-screen difference even when the algorithm's own output texture is provably
-    // unchanged (confirmed via gl:gumiLineColorTarget-final(Gumi) in an earlier round). Uses the
-    // 5x5-grid sampler, not the single-center-pixel one — a center sample already proved capable
-    // of missing a real, confirmed-via-toDataURL() difference that turned out to be localized
-    // away from the center (most likely right where Gumi's detected line-art actually draws).
+    // Debug-only: identifies which target actually got selected for the blit. Uses the 5x5-grid
+    // sampler, not the single-center-pixel one, since a center sample can miss a real difference
+    // localized elsewhere (e.g. right where detected line-art actually draws).
     this.traceSampleGrid('gl:previewTarget-at-blit', previewTarget, {
       mode: this.lineArt.mode,
       previewMode: this.previewMode,

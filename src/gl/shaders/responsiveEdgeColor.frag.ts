@@ -33,27 +33,21 @@
  * directions, which is the entire point of this mode. "Replace" is the
  * mode to reach for first when testing this.
  *
- * Zero-crossing edge detection (v2): the first version thresholded
- * |sharp - blurred| directly, which is nonzero across a whole *band*
- * spanning roughly the blur radius on either side of a real edge — and
- * since ink color re-evaluates the local-area check at every pixel in
- * that band, real art showed the polarity flipping partway across a
- * single edge, producing two parallel strokes (one white, one black)
- * instead of one clean line. Classic double-lobe/ringing behavior for
- * any difference-of-Gaussians-style operator, not specific to this mode
- * — using it to pick a *color* just made it far more visible than it
- * would be as a single flat-color mask.
+ * Zero-crossing edge detection: thresholding |sharp - blurred| directly would be nonzero across
+ * a whole *band* spanning roughly the blur radius on either side of a real edge, and since ink
+ * color re-evaluates the local-area check at every pixel in that band, the polarity would flip
+ * partway across a single edge — producing two parallel strokes (one white, one black) instead of
+ * one clean line. Classic double-lobe/ringing behavior for any difference-of-Gaussians-style
+ * operator, made especially visible here because the band is used to pick a *color*, not just a
+ * flat mask.
  *
- * Fix, in the spirit of Marr-Hildreth/Laplacian-of-Gaussian zero-crossing
- * edge detection: compute the *signed* diff (not its magnitude) at this
- * pixel and its right/down neighbors. The true edge center is where that
- * signed value crosses zero — by construction a thin, single-pixel-wide
- * locus, not a band. Ink is only drawn exactly there; edgeStrength comes
- * from how large the jump across the crossing is (a steep, high-contrast
- * edge vs. a barely-there one), uStrength-scaled same as before. Because
- * ink now only gets drawn once per crossing instead of across a whole
- * band, the local-area color check that caused the double-stroke no
- * longer has room to flip mid-edge.
+ * Instead, in the spirit of Marr-Hildreth/Laplacian-of-Gaussian zero-crossing edge detection:
+ * compute the *signed* diff (not its magnitude) at this pixel and its right/down neighbors. The
+ * true edge center is where that signed value crosses zero — by construction a thin,
+ * single-pixel-wide locus, not a band. Ink is only drawn exactly there; edgeStrength comes from
+ * how large the jump across the crossing is (a steep, high-contrast edge vs. a barely-there one),
+ * uStrength-scaled. Because ink only gets drawn once per crossing instead of across a whole band,
+ * the local-area color check has no room to flip mid-edge.
  */
 export const responsiveEdgeColorFrag = `#version 300 es
 precision highp float;

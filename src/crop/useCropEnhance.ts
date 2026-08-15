@@ -17,7 +17,6 @@ export function useCropEnhance(onEnhanceChange: (params: EnhanceParams) => void)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enhance])
 
-  // "Reset oshiPFP" (v0.3 polish pass).
   const reset = () => setEnhance(IDENTITY_ENHANCE)
 
   return { enhance, setEnhance, reset }

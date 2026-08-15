@@ -17,8 +17,8 @@ interface HeaderBarProps {
   hasImage: boolean
   theme: 'light' | 'dark'
   onToggleTheme: () => void
-  /** Desktop-only (App.tsx passes isDesktop through) — Dual Pane has no mobile behavior yet, see
-   * oshiPFP v0.3 Workstream C. Omit entirely rather than disable, so it doesn't show up unusable. */
+  /** Desktop-only (App.tsx passes isDesktop through) — Dual Pane has no mobile behavior yet.
+   * Omit entirely rather than disable, so it doesn't show up unusable. */
   showDualPaneToggle: boolean
   dualPaneEnabled: boolean
   onToggleDualPane: () => void
@@ -26,17 +26,16 @@ interface HeaderBarProps {
    * dualPaneActive || gradeDualPaneActive) — distinct from dualPaneEnabled (the raw toggle
    * state), which stays true even on tabs where the pipeline has already reverted to single-pane.
    * AvatarCornerPreview's own crop math trusts this to know whether the source canvas is
-   * currently single- or double-wide; passing the raw toggle here once corrupted its output after
-   * switching off the tab that actually supports Dual Pane while leaving the toggle on. */
+   * currently single- or double-wide; passing the raw toggle instead would corrupt its output on
+   * tabs where the toggle stays on but the pipeline has reverted to single-pane. */
   dualPaneActive: boolean
   /** Which of the two dual-pane result textures the corner preview mirrors — see
    * AvatarCornerPreview's doc comment for the composite > overlay > original priority rule
    * (Line Art) — always 1 ("Graded") for Grade's own dual pane, no 3-way ambiguity there. */
   dualPanePriorityIndex: 0 | 1
-  /** "Dump State" button (see src/debug/dumpState.ts) — gated on `devMode` (v0.3 polish pass),
-   * not a build-time constant: reachable in production too via AvatarCornerPreview's secret
-   * 7-tap entrance (see its own doc comment), not just during local `npm run dev`, so it can
-   * double as a bug-report tool for real users. */
+  /** "Dump State" button (see src/debug/dumpState.ts) — gated on `devMode`, not a build-time
+   * constant: reachable in production too via AvatarCornerPreview's secret 7-tap entrance (see
+   * its own doc comment), so it can double as a bug-report tool for real users. */
   onDumpState: () => void
   /** "Load State" (see src/debug/dumpState.ts's parseStateDump) — the reverse of Dump State, for
    * a post-deploy round-trip check: dump on one build, load the same file back in on another,
@@ -46,9 +45,9 @@ interface HeaderBarProps {
    * this header's Dump State button and AvatarCornerPreview's own smiley->nerd icon swap. */
   devMode: boolean
   onUnlockDevMode: () => void
-  /** "Reset oshiPFP" (v0.3 polish pass) — clears the loaded image and every tuned param back to
-   * defaults, without a page reload. The confirm modal (open state owned here, same pattern as
-   * `aboutOpen` below) calls this only once the user actually confirms. */
+  /** "Reset oshiPFP" — clears the loaded image and every tuned param back to defaults, without a
+   * page reload. The confirm modal (open state owned here, same pattern as `aboutOpen` below)
+   * calls this only once the user actually confirms. */
   onReset: () => void
 }
 

@@ -1,20 +1,12 @@
 /**
- * Crude first-pass prototype for what Gumi was originally meant to be, per
- * user direction: a true Photoshop-style Gradient Map, not the
- * threshold-then-morphology ("dot stamping") pipeline the rest of Path G
- * is built from. No binary decision anywhere in this shader — every pixel's
- * luminance is looked up continuously against a 3-stop gradient
- * (shadow -> mid -> highlight) and recolored directly, so the output is a
- * full continuous-tone recolorization of the source, not an isolated band
- * that gets grown/composited back on. This is deliberately the simplest
- * version that can prove or disprove the idea (a real one would likely
- * want an arbitrary multi-stop ramp, closer to curvesHsl.frag.ts's LUT
- * texture than 3 hardcoded uniform colors) — evaluate qualitatively before
- * investing in that.
+ * Photoshop-style Gradient Map: every pixel's luminance is looked up continuously against a
+ * 3-stop gradient (shadow -> mid -> highlight) and recolored directly — no binary decision
+ * anywhere in this shader, so the output is a full continuous-tone recolorization of the source,
+ * not an isolated band that gets grown/composited back on.
  *
- * uGradientPivot/uGradientDuoTone (v0.3 Service Update): same stop-remapping math as
- * fillTypeColor.frag.ts's resolveFillTypeColor — kept in sync there since both duplicate
- * this exact 3-stop ramp (see that file's doc comment for the pivot/duo-tone rule).
+ * uGradientPivot/uGradientDuoTone: same stop-remapping math as fillTypeColor.frag.ts's
+ * resolveFillTypeColor — kept in sync there since both duplicate this exact 3-stop ramp (see
+ * that file's doc comment for the pivot/duo-tone rule).
  */
 export const gradientMapFrag = `#version 300 es
 precision highp float;

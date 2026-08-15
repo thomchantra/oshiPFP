@@ -21,9 +21,7 @@
  *   multiply that saturation by uVividBoost before converting back to
  *   RGB. This preserves the source's actual multiple color clusters
  *   (skin tones stay skin tones, blue hair stays blue) instead of
- *   flattening the whole tint to one extracted swatch, which is what an
- *   earlier CPU-readback single-color-extraction version did before the
- *   user asked for "several color clusters instead of monochrome."
+ *   flattening the whole tint to one extracted swatch.
  *
  * rgb2hsv/hsv2rgb are the standard branchless GLSL formulas (Sam
  * Hocevar's), not anything project-specific.

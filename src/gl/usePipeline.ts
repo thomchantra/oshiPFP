@@ -36,8 +36,8 @@ export function usePipeline() {
     }
   }, [])
 
-  // "Reset oshiPFP" (v0.3 polish pass) — unloads the source image and every downstream render
-  // target without a page reload; see Pipeline.clearSource()'s own doc comment.
+  // Unloads the source image and every downstream render target without a page reload; see
+  // Pipeline.clearSource()'s own doc comment.
   const clearSource = useCallback(() => {
     pipelineRef.current?.clearSource()
     setSourceSize(null)

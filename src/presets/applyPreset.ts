@@ -36,10 +36,10 @@ export interface ApplyPresetSetters {
  * normal Upload PFP flow and these applied settings persist (pipeline.loadFile only replaces pixels,
  * never touches tuning state) — letting them try a demo's look on their own material.
  *
- * `options.skipImage` (v0.3 polish pass — the modal's separate "Load Preset" button) applies every
- * tuning field exactly the same way but leaves whatever photo is already loaded untouched, for
- * recalling a preset's *look* onto the user's own in-progress photo instead of swapping in the
- * demo photo it was built from. */
+ * `options.skipImage` (the modal's separate "Load Preset" button) applies every tuning field
+ * exactly the same way but leaves whatever photo is already loaded untouched, for recalling a
+ * preset's *look* onto the user's own in-progress photo instead of swapping in the demo photo it
+ * was built from. */
 export async function applyPreset(
   preset: PresetManifestEntry,
   setters: ApplyPresetSetters,

@@ -36,12 +36,6 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     fillInvert: false,
   },
   pathD: {
-    // Recalibrated from jsonconfig/daiya-default-oshipfp-state-1786466157705.json (v0.3 JSON loop, session 9).
-    // fillInvert temporarily forced to false (session 11) — was true from the session 9 JSON
-    // recalibration, but the user reported it wasn't reliably rendering correctly and there were
-    // several fixing attempts since (thresholdProgram leak fix, distanceSeedProgram leak fix).
-    // Set to false here so the user can validate against a known-clean baseline before deciding
-    // whether true was ever actually correct. See changelog/oshipfp-v0.3-saga.md session 11.
     opacity: 0.94,
     threshold: 0.6,
     radius: 2,
@@ -80,8 +74,8 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     gumiLineFillType: 'solid',
     gumiLineSolidColor: [0, 0, 0],
     gumiLineInvert: false,
-    // Retired from the UI (v0.3 tuning saga, session 14, polish pass) — frozen off rather than
-    // deleted, keeping the pipeline branch dormant/revivable instead of dead code removal.
+    // Not exposed in the UI — frozen off, keeping the pipeline branch dormant/revivable rather
+    // than removing the code.
     gumiGapClosing: false,
     gumiBlobGamma: 1,
     gumiColorBleed: false,
@@ -117,9 +111,8 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     gumiDualWhiteColorContrast: 1,
   },
   pathH: {
-    // Recalibrated from jsonconfig/hinata-default-oshipfp-state-1786465670471.json (v0.3 JSON loop,
-    // session 9) — default treatment is now Edge (highPassResponsiveColor: true), both polarities
-    // set to sample from the artwork rather than the old hardcoded white/black.
+    // Default treatment is Edge (highPassResponsiveColor: true); both polarities sample from the
+    // artwork.
     opacity: 1,
     threshold: 0.48,
     radius: 2,
@@ -142,9 +135,8 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     edgeInkOverLightFillType: 'image',
   },
   pathI: {
-    // Recalibrated from jsonconfig/tsukiko-default-oshipfp-state-1786465981917.json (v0.3 JSON
-    // loop, session 9) — default treatment stays Emboss, but with a real Darken/Lighten + Contrast
-    // push and a stronger, pre-blurred Laplacian response than the flat 0/1/0/0 placeholder.
+    // Default treatment is Emboss, with a Darken/Lighten + Contrast push and a pre-blurred
+    // Laplacian response.
     opacity: 1,
     threshold: 0.48,
     radius: 1.5,

@@ -17,7 +17,7 @@ interface ExportPanelProps {
   setExportDisplayMode: (mode: ExportDisplayMode) => void
   exportColorGrade: boolean
   setExportColorGrade: (colorGrade: boolean) => void
-  /** "Grade Intensity" slider (v0.3 post-Hinata close-out) — 0..1, blends ungraded/graded via pipeline.ts's blendGradeIntensity. Only meaningful while exportColorGrade is on. */
+  /** "Grade Intensity" slider — 0..1, blends ungraded/graded via pipeline.ts's blendGradeIntensity. Only meaningful while exportColorGrade is on. */
   exportColorGradeIntensity: number
   setExportColorGradeIntensity: (intensity: number) => void
   resolutionMode: ResolutionMode

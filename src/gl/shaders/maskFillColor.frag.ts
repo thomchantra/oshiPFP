@@ -1,11 +1,9 @@
 /**
- * Shared "resolve a shape/edge decision into real RGBA" final pass — originally built for Gumi
- * (Path G) Line mode only (see fillMask.frag.ts's inline equivalent for Gumi Fill mode), promoted
- * in the v0.3 Service Update (Post-Gumi Saga, Phase 1) to the shared final pass for Botan/Chie/
- * Daiya/Fumiko too, all of which resolve color as a separate step after their own shape decision
- * rather than fusing it in (see each algorithm's own pipeline.ts branch for why — Botan is the one
- * exception, still fusing shape+color for its `fillType === 'image'` case to preserve its exact
- * pre-existing continuous falloff behavior).
+ * Shared "resolve a shape/edge decision into real RGBA" final pass, used by Botan/Chie/Daiya/
+ * Fumiko/Gumi Line mode (see fillMask.frag.ts's inline equivalent for Gumi Fill mode), all of
+ * which resolve color as a separate step after their own shape decision rather than fusing it in
+ * (see each algorithm's own pipeline.ts branch for why — Botan is the one exception, still fusing
+ * shape+color for its `fillType === 'image'` case to preserve its continuous falloff behavior).
  *
  * Deliberately its own separate pass rather than folding into any algorithm's own shape shader:
  * several of those shaders (blobMask.frag.ts via Overdrive/Hardness's minFilter1D.frag.ts/
@@ -15,7 +13,7 @@
  * uMask convention varies by source shape shader, selected by uMaskChannel:
  * - 0 (default — blobMask.frag.ts/erosionGate.frag.ts/minFilter1D.frag.ts's binary/grayscale
  *   masks): BT.709 luminance of mask.rgb, 0 = ink/shape, 1 = background — matches tintMask.
- *   frag.ts's old formula exactly (not just mask.r), since Fumiko's findEdges.frag.ts mask is
+ *   frag.ts's formula exactly (not just mask.r), since Fumiko's findEdges.frag.ts mask is
  *   genuinely colored per-channel (Sobel), not true grayscale, and .r alone would misread it.
  * - 1 (distanceToEdge.frag.ts's continuous alpha convention, Botan only): mask.a, ink weight
  *   directly (1 = full ink at the seed, fading toward 0).

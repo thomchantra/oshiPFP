@@ -117,6 +117,13 @@ export function useCropInteraction({ enabled, sourceSize, aspect, onRectChange }
     if (pointers.current.size < 2) pinchStartDist.current = null
   }, [])
 
+  // Double-tap-to-reset (CropTopContent's zoom pill) — same centered/fully-covering transform the
+  // auto-recenter effect above already computes on a fresh image load, just re-triggerable on demand.
+  const resetTransform = useCallback(() => {
+    if (!sourceSize) return
+    setTransform(clampCropTransform(defaultCropTransform(), sourceSize.width, sourceSize.height, aspect))
+  }, [sourceSize, aspect])
+
   // React attaches onWheel as a passive listener, so preventDefault() inside
   // it silently fails and the page would scroll underneath a trackpad/wheel
   // zoom gesture. Attach a native listener with { passive: false } instead.
@@ -147,5 +154,5 @@ export function useCropInteraction({ enabled, sourceSize, aspect, onRectChange }
     return () => el.removeEventListener('wheel', handleWheel)
   }, [enabled, sourceSize, aspect, getLocalPoint, scheduleTransform])
 
-  return { viewportRef, transform, handlePointerDown, handlePointerMove, endPointer }
+  return { viewportRef, transform, handlePointerDown, handlePointerMove, endPointer, resetTransform }
 }

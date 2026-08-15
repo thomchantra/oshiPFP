@@ -30,8 +30,7 @@ export interface DumpStateInput {
      * has all 7 for reference, but only this one reflects the current render. */
     activeMode: LineArtMode
     activeLabel: string
-    /** Every algorithm's own cached params (App.tsx's paramsByMode), not just the active one —
-     * previously this dump only captured the active algorithm, silently dropping the other 6. */
+    /** Every algorithm's own cached params (App.tsx's paramsByMode), not just the active one. */
     paramsByAlgorithm: Record<LineArtMode, { label: string; params: LineArtParams }>
   }
   color: {
@@ -67,8 +66,7 @@ export interface DumpStateInput {
 /** Dev-only debug dump (see HeaderBar's dev-only Dump State button) — a JSON snapshot of every
  * tab's current config, for reproducing/comparing algo-tuning results across sessions. Pure
  * function (no DOM/file access) so it's trivially testable independent of the actual download
- * trigger. Returns a single valid JSON document (not the mixed markdown+JSON-blocks a `.txt`
- * predecessor of this used) since that's what the `.json` extension it's downloaded as promises. */
+ * trigger. Returns a single valid JSON document, matching the `.json` extension it's downloaded as. */
 export function formatStateDump(input: DumpStateInput): string {
   const ext = input.fileInfo?.name.includes('.') ? input.fileInfo.name.split('.').pop() : null
   return JSON.stringify(
@@ -78,7 +76,7 @@ export function formatStateDump(input: DumpStateInput): string {
       // instead of relying on code comments this dump's own consumers never see.
       notes: [
         'lineArt.activeMode/activeLabel identify which of the 7 algorithms is currently being tuned; lineArt.paramsByAlgorithm has all 7 for reference, but only the active one reflects what is currently on screen.',
-        'This is a diagnostic/dev dump, not a portable preset file — see docs/oshiPFP-v0.3-tuningspecs.md\'s JSON preset saga notes for the planned distinction.',
+        'This is a diagnostic/dev dump, not a portable preset file — see src/presets/presetManifest.ts for the shipped preset format.',
       ],
       file: {
         name: input.fileInfo?.name ?? null,

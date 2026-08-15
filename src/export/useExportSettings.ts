@@ -5,9 +5,7 @@ import type { ExportDisplayMode, ExportFormat, ResampleMode, ResolutionMode } fr
  * Export tab's settings, lifted out of ExportPanel.tsx into a hook App.tsx
  * instantiates once — same reason useColorCurve/useColorAdjustments exist:
  * ExportPanel only renders while `tab === 'export'`, so state owned inside
- * it got wiped every time the tab was tucked away. Caught via real-device
- * testing: "when I tuck the export tab away, all the export settings are
- * wiped to default."
+ * it would otherwise get wiped every time the tab is tucked away.
  */
 export function useExportSettings(cropSize: { width: number; height: number } | null) {
   const [exportDisplayMode, setExportDisplayMode] = useState<ExportDisplayMode>('composite')
@@ -15,9 +13,9 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   // export/preview at all. Defaults true to match today's actual behavior (Composite/Overlay
   // already included grading unconditionally before this toggle existed).
   const [exportColorGrade, setExportColorGrade] = useState(true)
-  // "Grade Intensity" slider (v0.3 post-Hinata close-out) — 0..1, blends ungraded/graded via
-  // pipeline.ts's blendGradeIntensity. Defaults to 1 (fully graded) so it's a no-op alongside
-  // exportColorGrade's own existing default, matching today's behavior exactly until touched.
+  // "Grade Intensity" slider — 0..1, blends ungraded/graded via pipeline.ts's
+  // blendGradeIntensity. Defaults to 1 (fully graded) so it's a no-op alongside
+  // exportColorGrade's own default.
   const [exportColorGradeIntensity, setExportColorGradeIntensity] = useState(1)
   const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('original')
   const [customSize, setCustomSize] = useState({ width: cropSize?.width ?? 512, height: cropSize?.height ?? 512 })
@@ -28,7 +26,7 @@ export function useExportSettings(cropSize: { width: number; height: number } | 
   const [resampleMode, setResampleMode] = useState<ResampleMode>('lanczos3')
   const [format, setFormat] = useState<ExportFormat>('png')
 
-  // "Reset oshiPFP" (v0.3 polish pass) — back to this hook's own initial-useState defaults.
+  // Back to this hook's own initial-useState defaults.
   const reset = () => {
     setExportDisplayMode('composite')
     setExportColorGrade(true)

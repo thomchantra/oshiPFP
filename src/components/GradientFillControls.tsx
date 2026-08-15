@@ -15,12 +15,11 @@ export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
   overwrite: 'Overwrite', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay', normal: 'Normal', difference: 'Difference',
 }
 
-/** Shared 3-stop (or 2-stop, with Duo Tone) gradient color controls — originally Line Art's
+/** Shared 3-stop (or 2-stop, with Duo Tone) gradient color controls — used by Line Art's
  * Botan/Chie/Daiya/Fumiko Gradient Fill Type subtab (`gradientShadow`/`gradientMid`/
- * `gradientHighlight`/`gradientPivot`/`gradientDuoTone`), extracted here so Grade tab's own
- * Gradient Map processor can reuse the exact same ramp editor UI instead of duplicating it
- * (v0.3 post-Hinata close-out). See fillTypeColor.frag.ts/gradientMap.frag.ts for the shared
- * shader math this UI drives. */
+ * `gradientHighlight`/`gradientPivot`/`gradientDuoTone`) and Grade tab's Gradient Map processor,
+ * so both reuse the exact same ramp editor UI. See fillTypeColor.frag.ts/gradientMap.frag.ts for
+ * the shared shader math this UI drives. */
 export function GradientFillControls({
   shadow, mid, highlight, pivot, duoTone,
   onShadowChange, onMidChange, onHighlightChange, onPivotChange, onDuoToneChange,
@@ -62,10 +61,10 @@ export function GradientFillControls({
 }
 
 /** Just the pill row — callers supply their own "Blend Mode" label/header above. `wrap` (Line
- * Art's own 6-option list, since v0.3's Normal/Difference addition) lets the row break onto a
- * second line instead of squeezing 6 pills into one — each pill gets an explicit ~1/3-width basis
- * so they land 3-per-row instead of an uneven flex-basis-0 wrap. Grade tab's Gradient Map selector
- * (4 options) doesn't pass this, so it's unaffected — still a single row. */
+ * Art's own 6-option list) lets the row break onto a second line instead of squeezing 6 pills
+ * into one — each pill gets an explicit ~1/3-width basis so they land 3-per-row instead of an
+ * uneven flex-basis-0 wrap. Grade tab's Gradient Map selector (4 options) doesn't pass this, so
+ * it's unaffected — still a single row. */
 export function BlendModeRow({ mode, options, onChange, wrap }: { mode: BlendMode; options: BlendMode[]; onChange: (m: BlendMode) => void; wrap?: boolean }) {
   return (
     <div className="crop-bottomcontent" style={{ padding: 0, marginBottom: 16, flexWrap: wrap ? 'wrap' : undefined }}>

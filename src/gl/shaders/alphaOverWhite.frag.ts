@@ -4,13 +4,11 @@
  * algorithm now emits) onto a solid matte color, for the Line Art tab's
  * "Overlay" display mode — a raw, blend-mode-independent preview of what
  * the algorithm drew, on a neutral backdrop instead of the actual base
- * image — and (v0.3 JSON preset saga) LineArtParams.overlayPassthrough,
- * which reuses this same pass for the Composite display mode so it flows
- * downstream through Color/Export too. Needed because the WebGL canvas
- * itself is alpha-enabled; blitting an ink texture's partial alpha straight
- * to the canvas would let the page background show through instead of a
- * clean preview. uMatteColor defaults to white (this shader's original
- * hardcoded behavior) but is user-configurable — see LineArtParams.matteColor.
+ * image — and LineArtParams.overlayPassthrough, which reuses this same pass for the Composite
+ * display mode so it flows downstream through Color/Export too. Needed because the WebGL canvas
+ * itself is alpha-enabled; blitting an ink texture's partial alpha straight to the canvas would
+ * let the page background show through instead of a clean preview. uMatteColor defaults to white
+ * but is user-configurable — see LineArtParams.matteColor.
  */
 export const alphaOverWhiteFrag = `#version 300 es
 precision highp float;

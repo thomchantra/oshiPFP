@@ -29,13 +29,10 @@ export const IDENTITY_GRADE_GRADIENT_MAP: GradeGradientMapParams = {
 
 /**
  * Color tab's HSL/Invert/Light/Color-adjust state, lifted out of
- * ColorPanel.tsx into a hook App.tsx instantiates once — same reason
- * useColorCurve exists: ColorPanel only renders while `tab === 'color'`
- * (App.tsx unmounts it otherwise, e.g. for Crop/Line Art/Export), so state
- * owned inside ColorPanel itself got wiped on every tab switch. Caught via
- * real-device testing: "the RGB invert toggle switches off by itself
- * during tab bar switches" — it wasn't switching off, ColorPanel was
- * remounting from scratch every time.
+ * ColorPanel.tsx into a hook App.tsx instantiates once. ColorPanel only
+ * renders while `tab === 'color'` (App.tsx unmounts it otherwise, e.g. for
+ * Crop/Line Art/Export), so state owned inside ColorPanel itself gets wiped
+ * on every tab switch — this hook is the fix, not ColorPanel's own state.
  */
 export function useColorAdjustments(pipeline: {
   setHsl: (hslByBand: HslByBand) => void
@@ -77,8 +74,7 @@ export function useColorAdjustments(pipeline: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gradeGradientMap])
 
-  // "Reset oshiPFP" (v0.3 polish pass) — back to the same identity defaults this hook itself
-  // initializes from, mirroring useColorCurve's own reset().
+  // Back to the same identity defaults this hook itself initializes from.
   const reset = () => {
     setHslByBand(IDENTITY_HSL_BY_BAND)
     setActiveBand('master')

@@ -7,15 +7,11 @@ interface HslBandSelectorProps {
 }
 
 /**
- * Rainbow swatch, leftmost — Figma's reference "Colordrawer" component
- * (node 26-2353) only covers the 8 targeted hue bands; this is the
- * addition that makes "apply globally" a real, visually distinct option in
- * the same row instead of a separate control elsewhere. A plain vertical
- * linear-gradient wipe, not a conic/angular one — conic-gradient rendering
- * inside a circular-clipped button kept showing square seams on real
- * devices even after the -webkit-appearance fix (a second iOS Safari
- * rendering quirk stacked on the first), so sidestepping conic-gradient
- * entirely was more reliable than chasing a second workaround.
+ * Rainbow swatch, leftmost — Figma's reference "Colordrawer" component (node 26-2353) only
+ * covers the 8 targeted hue bands; this is the addition that makes "apply globally" a real,
+ * visually distinct option in the same row instead of a separate control elsewhere. Uses a plain
+ * vertical linear-gradient wipe, not conic/angular — conic-gradient inside a circular-clipped
+ * button has known iOS Safari rendering artifacts, so linear-gradient sidesteps that entirely.
  */
 const MASTER_SWATCH_BG = 'linear-gradient(180deg, #FF0000, #FF8000, #FFFF00, #00FF00, #00FFFF, #0000FF, #FF00FF)'
 

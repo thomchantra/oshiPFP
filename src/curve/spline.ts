@@ -63,14 +63,10 @@ export function sampleCurveLUT(points: CurvePoint[]): Uint8Array {
     }
   }
 
-  // Endpoints can now be dragged inward on x (see CurveEditor.tsx — used to
-  // be pinned to 0/255), which is meant to behave like a Levels-style
-  // black/white point crush: flat all the way out to the image edge, then
-  // a clean line from there. Before this, x outside [xs[0], xs[n-1]]
-  // extrapolated the boundary segment's slope instead of clamping flat —
-  // mathematically fine (still monotonic) but reads as a sloped ramp
-  // sliding down to 0/up to 255 rather than the sharp flat-then-line elbow
-  // curve tools are expected to show here.
+  // Endpoints can be dragged inward on x (see CurveEditor.tsx), behaving like
+  // a Levels-style black/white point crush: flat all the way out to the
+  // image edge, then a clean line from there — x outside [xs[0], xs[n-1]]
+  // clamps flat rather than extrapolating the boundary segment's slope.
   let seg = 0
   for (let x = 0; x < 256; x++) {
     if (x <= xs[0]) {
@@ -110,22 +106,6 @@ export function identityLutBuffer(): Uint8Array {
     buf[x * 3] = x
     buf[x * 3 + 1] = x
     buf[x * 3 + 2] = x
-  }
-  return buf
-}
-
-/**
- * Replicates a single-channel curve into an RGB LUT buffer. The MVP UI only
- * exposes one master curve applied identically to R/G/B, but the texture
- * format is 3-channel-capable so per-channel tabs later don't require a
- * texture-format migration.
- */
-export function buildRgbLutBuffer(curve: Uint8Array): Uint8Array {
-  const buf = new Uint8Array(256 * 3)
-  for (let x = 0; x < 256; x++) {
-    buf[x * 3] = curve[x]
-    buf[x * 3 + 1] = curve[x]
-    buf[x * 3 + 2] = curve[x]
   }
   return buf
 }

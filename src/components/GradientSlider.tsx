@@ -41,9 +41,9 @@ interface GradientSliderProps {
 }
 
 const DIRECTION_DEADZONE_PX = 6
-// Must match .gradient-slider-thumb's width/height in base.css — used to inset the thumb's
-// travel range so it never bleeds past the track's edges (was causing a brief horizontal
-// scrollbar on desktop and knob clipping on mobile at fillPct 0/100).
+// Must match .gradient-slider-thumb's width/height in base.css — insets the thumb's travel
+// range so it never bleeds past the track's edges (otherwise clips the knob / causes a
+// horizontal scrollbar at fillPct 0/100).
 const THUMB_SIZE_PX = 20
 
 function snap(raw: number, min: number, max: number, step: number): number {
@@ -86,29 +86,21 @@ export default function GradientSlider({
   const fillPct = valueToPos(value, min, max, curve) * 100
   const dragRef = useRef<DragState | null>(null)
 
-  // Debug-only (see docs/oshiPFP-invert-bug-devtool-trace-method.md): scoped to just Gumi's
-  // "Detection Radius" slider, the one with the long-standing "looks stuck at 0 on fresh Gumi
-  // entry" report (docs/oshiPFP-v0.3-tuningspecs.md's "Post-Hinata/Tsukiko saga" footnote).
-  // GradientSlider itself has no internal state — fillPct is recomputed fresh from `value` every
-  // render — so if this ever logs value=0 right after a fresh Gumi entry while the default is 1,
-  // that's a real upstream params bug; if it logs the correct value the whole time, the bug is a
-  // pure paint/CSS issue this component's own render can't explain.
+  // Debug-only (see docs/oshiPFP-invert-bug-devtool-trace-method.md), scoped to Gumi's
+  // "Detection Radius" slider only. GradientSlider itself has no internal state — fillPct is
+  // recomputed fresh from `value` every render — so a stale-looking fillPct here points to an
+  // upstream params bug, not a paint/CSS issue in this component.
   if (label === 'Detection Radius') {
     trace('render:GradientSlider(DetectionRadius)', { value, fillPct, min, max, curve })
   }
 
-  // Relative drag, not absolute jump-to-touch-point: touching down anywhere
-  // in the (generous, label-covering) hit zone "grabs" the slider at its
-  // current value, and horizontal movement shifts it from there — like
-  // sliding paper under your finger, not teleporting the knob to your
-  // finger. An absolute jump-on-touch first pass here also fired on every
-  // vertical scroll gesture that merely started over a slider, since any
-  // touchstart within the hit area moved the value immediately; the pending/
-  // dragging/scrolling state machine below exists specifically to tell a
-  // horizontal drag intent apart from a vertical scroll intent (a small
-  // deadzone, then whichever axis moved further wins) and only claims the
-  // gesture — via setPointerCapture + preventDefault — once it's confirmed
-  // horizontal, so vertical scrolls starting on a slider still scroll.
+  // Relative drag, not absolute jump-to-touch-point: touching down anywhere in the (generous,
+  // label-covering) hit zone "grabs" the slider at its current value, and horizontal movement
+  // shifts it from there — like sliding paper under your finger, not teleporting the knob to
+  // your finger. The pending/dragging/scrolling state machine below tells a horizontal drag
+  // intent apart from a vertical scroll intent (a small deadzone, then whichever axis moved
+  // further wins) and only claims the gesture — via setPointerCapture + preventDefault — once
+  // confirmed horizontal, so vertical scrolls starting on a slider still scroll.
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (disabled) return
     handleDoubleTap(e)
@@ -186,14 +178,12 @@ export default function GradientSlider({
             }}
           />
         ))}
-        {/* Custom thumb, positioned directly from the same fillPct the fill bar already uses
-           — the native input below is kept only for keyboard accessibility (pointer-events:
-           none, see its own comment); its *visual* thumb was found to occasionally lag a
-           repaint on fresh mount (e.g. switching Line Art algorithms swaps the whole slider
-           set) even though the underlying DOM value was already correct — a native range
-           thumb positioned by the browser after a scripted (non-gesture) value change,
-           confirmed via direct DOM inspection, not a data/logic bug. Rendering the visible
-           thumb ourselves sidesteps that timing dependency entirely. */}
+        {/* Custom thumb, positioned directly from the same fillPct the fill bar already uses —
+           the native input below is kept only for keyboard accessibility (pointer-events: none,
+           see its own comment). Rendering the visible thumb ourselves avoids relying on the
+           browser's own native-range-thumb repaint timing after a scripted (non-gesture) value
+           change (e.g. switching Line Art algorithms swaps the whole slider set on fresh
+           mount). */}
         <div
           className="gradient-slider-thumb"
           style={{ left: `calc((100% - ${THUMB_SIZE_PX}px) * ${fillPct / 100} + ${THUMB_SIZE_PX / 2}px)` }}

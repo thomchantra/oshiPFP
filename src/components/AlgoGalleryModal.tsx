@@ -78,13 +78,13 @@ interface AlgoGalleryModalProps {
   open: boolean
   onClose: () => void
   /** Which algo tab to land on when the modal opens — the Line Art panel's own "i" button passes
-   * the currently active algorithm; BlankState's "Browse Gallery" button (v0.3 polish pass, no
-   * image loaded yet so there's no "active algorithm" in the usual sense) just passes whatever
-   * App.tsx's own lineArtMode currently is (its default, unaffected by hasImage). */
+   * the currently active algorithm; BlankState's "Browse Gallery" button (no image loaded yet, so
+   * there's no "active algorithm" in the usual sense) just passes whatever App.tsx's own
+   * lineArtMode currently is (its default, unaffected by hasImage). */
   initialAlgo: LineArtMode
-  /** `options.skipImage` (v0.3 polish pass) — Load Preset applies the preset's tuning without
-   * touching the currently loaded photo; Load Demo (default) also swaps in the preset's own demo
-   * photo, per applyPreset.ts's own doc comment. */
+  /** `options.skipImage` — Load Preset applies the preset's tuning without touching the currently
+   * loaded photo; Load Demo (default) also swaps in the preset's own demo photo, per
+   * applyPreset.ts's own doc comment. */
   onLoadPreset: (presetId: string, options?: { skipImage?: boolean }) => void
   /** Load Preset only makes sense with a photo already loaded to apply the tuning onto — disabled
    * (not hidden, so its existence stays discoverable) while `hasImage` is false, e.g. opened via
@@ -93,10 +93,10 @@ interface AlgoGalleryModalProps {
 }
 
 /**
- * "Line Expansion Algorithms" info/gallery modal — extracted out of LineArtPanel.tsx (v0.3 polish
- * pass) so it can also be opened from BlankState's "Browse Gallery" button, before any image (and
- * therefore before LineArtPanel itself) exists. LineArtPanel's own "i" button now just calls
- * `onOpenGallery` (App.tsx owns the open/closed state), same as BlankState's button does.
+ * "Line Expansion Algorithms" info/gallery modal — openable both from LineArtPanel.tsx's "i"
+ * button and from BlankState's "Browse Gallery" button (before any image, and therefore before
+ * LineArtPanel itself, exists). Both callers just invoke `onOpenGallery` (App.tsx owns the
+ * open/closed state).
  */
 export default function AlgoGalleryModal({ open, onClose, initialAlgo, onLoadPreset, hasImage }: AlgoGalleryModalProps) {
   // Which algorithm's tab is showing inside the modal — independent of the app's actual live
@@ -140,17 +140,16 @@ export default function AlgoGalleryModal({ open, onClose, initialAlgo, onLoadPre
       </div>
 
       {/* Only algorithms with at least one PRESET_MANIFEST entry get a gallery card — today
-          that's Chie/Fumiko/Hinata only; the other 4 just show the tab + info blurb below,
-          same as before this modal grew a gallery. */}
+          that's Chie/Fumiko/Hinata only; the other 4 just show the tab + info blurb below. */}
       {activePreset && (
         <div className="preset-gallery">
           <div className="preset-gallery-images">
             <img src={activePreset.beforeImage} alt={`${activePreset.algoLabel} demo, before`} className="preset-gallery-image" />
             <img src={activePreset.afterImage} alt={`${activePreset.algoLabel} demo, after`} className="preset-gallery-image" />
           </div>
-          {/* Attribution row hidden for now (v0.3 polish pass) — credit is optional and unset on
-              every preset today (the app author's own work), and Load Demo moved below, so
-              there's nothing left to show here until real credits are supplied. */}
+          {/* Attribution row hidden for now — credit is optional and unset on every preset today
+              (the app author's own work), so there's nothing left to show here until real
+              credits are supplied. */}
           {modalPresets.length > 1 && (
             <div className="preset-gallery-pager">
               {modalPresets.map((p, i) => (
@@ -165,10 +164,8 @@ export default function AlgoGalleryModal({ open, onClose, initialAlgo, onLoadPre
               ))}
             </div>
           )}
-          {/* Load Demo / Load Preset row (v0.3 polish pass) — moved out of the gallery's old
-              attribute row (now hidden above) into its own row below the preset pager, per
-              direction. Load Preset disabled (not hidden) with no photo loaded yet — there'd be
-              nothing to apply the tuning onto. */}
+          {/* Load Demo / Load Preset row, below the preset pager. Load Preset disabled (not
+              hidden) with no photo loaded yet — there'd be nothing to apply the tuning onto. */}
           <div className="crop-bottomcontent" style={{ padding: 0, paddingLeft: 15, marginTop: 10 }}>
             <IconButton icon="upload" onClick={() => { onLoadPreset(activePreset.id); onClose() }}>
               Load Demo

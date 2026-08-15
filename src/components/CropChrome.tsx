@@ -14,11 +14,8 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * The "Pinch/Scroll Wheel to Zoom" hint used to sit here, with file info
- * (size/format/bytes) rendered as its own row below via a separate
- * CropDebugInfo component — that extra row made the Crop tab's viewport
- * height inconsistent with every other tab's single-row top content.
- * Folded into one row: file info replaces the hint text outright.
+ * File info (size/format/bytes) row, folded into a single row to match every other tab's
+ * single-row top content height.
  */
 export function CropTopContent({ zoom, onZoomReset, sourceSize, fileInfo }: CropTopContentProps) {
   const handleDoubleTap = useDoubleTapReset(1, onZoomReset)

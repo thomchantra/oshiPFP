@@ -8,12 +8,12 @@
  * see composite.frag.ts) passes through untouched, so this never changes
  * *where* ink shows up, only how colorful it is once it does.
  *
- * uHueInvert (Hinata Tuning Saga Phase 2, added for Path H Tone mode's chromatic-fringing
- * artifacts — see highPassDiff.frag.ts/toneRemap.frag.ts's own doc comments on why real
- * per-channel color survives into their output): rotates hue 180° via an RGB->HSV->RGB round
- * trip while leaving saturation/value untouched, applied *before* the saturation mix above so
- * the two knobs compose predictably. Off (0, default) is a no-op — every existing call site
- * (Fumiko) must set this explicitly per the shared-program-uniform-leak discipline.
+ * uHueInvert (added for Path H Tone mode's chromatic-fringing artifacts — see
+ * highPassDiff.frag.ts/toneRemap.frag.ts's own doc comments on why real per-channel color
+ * survives into their output): rotates hue 180° via an RGB->HSV->RGB round trip while leaving
+ * saturation/value untouched, applied *before* the saturation mix above so the two knobs compose
+ * predictably. Off (0, default) is a no-op — every call site must set this explicitly, see
+ * CLAUDE.md's "Known Recurring Gotchas" on shared GL program uniforms.
  */
 export const saturationAdjustFrag = `#version 300 es
 precision highp float;

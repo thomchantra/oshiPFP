@@ -31,12 +31,10 @@ const RESIZE_OPTIONS: { value: ResizeMode; label: string }[] = [
 ]
 
 /**
- * Crop tab's tray, matching Line Art's dual-pane split (fixed viewport
- * above, draggable sheet below) — aspect ratio at the top (was a bare row
- * under the viewport before), Enhancement below it. Enhancement state is
- * lifted to App.tsx (useCropEnhance) rather than local — App.tsx only
- * mounts this panel while tab === 'crop', so local state got wiped every
- * time the user switched tabs and back.
+ * Crop tab's tray, matching Line Art's dual-pane split (fixed viewport above, draggable sheet
+ * below) — aspect ratio at the top, Enhancement below it. Enhancement state is lifted to App.tsx
+ * (useCropEnhance) rather than local — App.tsx only mounts this panel while tab === 'crop', so
+ * local state would get wiped every time the user switched tabs and back.
  */
 export default function CropPanel({
   mode, onModeChange, enhance, setEnhance,

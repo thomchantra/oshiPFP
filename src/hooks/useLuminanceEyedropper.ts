@@ -1,5 +1,8 @@
 import { useCallback, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 
+// Intentionally unused/shelved, not orphaned — Gumi's Luminance Ramp eyedropper UI was pulled
+// after real clickzone issues surfaced in testing. Kept in place for a future pass; see App.tsx.
+
 /** The 4 Luminance Ramp sliders an eyedropper pick can target — Feather excluded, it's a softness param, not a luminance sample point. */
 export type RampSliderKey = 'gumiRampFloor' | 'gumiRampInnerLow' | 'gumiRampInnerHigh' | 'gumiRampCeiling'
 

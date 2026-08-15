@@ -8,17 +8,17 @@
  * MAX_RADIUS is a compile-time constant so radius changes never trigger a
  * shader recompile (which would stall a live slider).
  *
- * uMode switches min (0, default — every existing call site relies on
- * WebGL's implicit 0 for an unset int uniform, so v1/Path D's erosion-grow
- * calls don't need to pass it explicitly) vs max (1, dilation/"closing" —
- * added for the Gumi lab candidate's morphological gap-closing stage).
+ * uMode switches min (0) vs max (1, dilation/"closing" — used for the Gumi lab candidate's
+ * morphological gap-closing stage).
  *
- * uOneSided (Daiya Octagon lab, session 17) — normally each direction samples both `+offset` and
- * `-offset` (symmetric growth: N directions -> a 2N-sided facet shape, since every pass
- * contributes two opposite facets for free). Setting this to 1 samples only `+offset`, so N
- * directions instead produce a genuine N-sided polygon — at low N that's an actual spike/wedge
- * instead of a symmetric diamond/hexagon. Every call site must set this explicitly (CLAUDE.md's
- * Recurring Gotchas on this exact shared program) — 0 everywhere except Octagon's own call.
+ * uOneSided — normally each direction samples both `+offset` and `-offset` (symmetric growth:
+ * N directions -> a 2N-sided facet shape, since every pass contributes two opposite facets for
+ * free). Setting this to 1 samples only `+offset`, so N directions instead produce a genuine
+ * N-sided polygon — at low N that's an actual spike/wedge instead of a symmetric
+ * diamond/hexagon (used by Daiya's Octagon mode; 0 everywhere else).
+ *
+ * uMode and uOneSided are both shared-program uniforms — every call site must set them
+ * explicitly every call, see CLAUDE.md's "Known Recurring Gotchas".
  */
 export const minFilter1DFrag = `#version 300 es
 precision highp float;

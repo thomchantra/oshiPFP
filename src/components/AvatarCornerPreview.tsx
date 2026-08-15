@@ -13,10 +13,10 @@ interface AvatarCornerPreviewProps {
    * a composite > overlay > original priority so the corner preview always shows the most
    * "finished" of the two active panes. */
   dualPanePriorityIndex: 0 | 1
-  /** Secret dev-mode entrance (v0.3 polish pass) — whether it's already unlocked (swaps the
-   * smiley icon for nerd.svg) and the callback that unlocks it, fired once 7 taps land here
-   * within a 2-second window while `!hasImage`. One-way: doesn't toggle back off via tapping,
-   * only a reload (or App.tsx's own manual override flag) resets it. */
+  /** Secret dev-mode entrance — whether it's already unlocked (swaps the smiley icon for
+   * nerd.svg) and the callback that unlocks it, fired once 7 taps land here within a 2-second
+   * window while `!hasImage`. One-way: doesn't toggle back off via tapping, only a reload (or
+   * App.tsx's own manual override flag) resets it. */
   devMode: boolean
   onUnlockDevMode: () => void
 }
@@ -28,20 +28,15 @@ const TOAST_DURATION_MS = 4000
 const TOAST_MESSAGES = ['NERD!', 'Lucky Number 7!']
 
 /**
- * Always-visible 60x60 PFP preview, top-right of the header. Mirrors the
- * live pipeline canvas via a cheap 2D drawImage (cover-fit) each frame
- * rather than a second WebGL render target — good enough for a live
- * approximation; revisit for pixel-exact export matching in the backend
- * sweep if "original crop" framing needs its own fill-width/fill-height
- * logic independent of the main crop rect (see plan notes).
+ * Always-visible 60x60 PFP preview, top-right of the header. Mirrors the live pipeline canvas
+ * via a cheap 2D drawImage (cover-fit) each frame rather than a second WebGL render target —
+ * good enough for a live approximation; revisit for pixel-exact export matching if "original
+ * crop" framing needs its own fill-width/fill-height logic independent of the main crop rect.
  *
- * Deliberately follows the Original/Result A/B toggle (App.tsx's
- * previewMode) exactly like the main canvas does, rather than freezing on
- * "Result" — a prior round paused this mirror during 'original' preview on
- * the assumption this corner preview should always show the true final
- * result, but the user explicitly wants the toggle to drive this preview
- * too (useful for seeing how a before/after actually reads in the real PFP
- * frame's cover-fit crop, which differs from the main square viewport's).
+ * Deliberately follows the Original/Result A/B toggle (App.tsx's previewMode) exactly like the
+ * main canvas does, rather than freezing on "Result" — useful for seeing how a before/after
+ * actually reads in the real PFP frame's cover-fit crop, which differs from the main square
+ * viewport's.
  */
 export default function AvatarCornerPreview({
   sourceCanvasRef,
@@ -120,9 +115,9 @@ export default function AvatarCornerPreview({
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Secret dev-mode toast (v0.3 polish pass) — white bubble, black bold text, left of the
-          preview box. No hover/pointer cursor on the box below is intentional: a visible "this is
-          clickable" affordance would defeat the point of a hidden entrance. */}
+      {/* Secret dev-mode toast — white bubble, black bold text, left of the preview box. No
+          hover/pointer cursor on the box below is intentional: a visible "this is clickable"
+          affordance would defeat the point of a hidden entrance. */}
       {toastText && (
         <div className="avatar-corner-devmode-toast font-button-label">{toastText}</div>
       )}

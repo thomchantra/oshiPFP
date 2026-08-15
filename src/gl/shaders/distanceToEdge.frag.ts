@@ -38,24 +38,19 @@
  * feel, so they get two separate uniforms rather than overloading uGamma.
  *
  * The lab's "hardness" macro (LabApp.tsx/labPipeline.ts) maps entirely
- * onto uFeather — no separate sharpen uniform. Two earlier sharpen
- * attempts (an unsharp-mask ring, then a radius-tightening trick) were
- * both dropped after real-art review; see
- * changelog/oshipfp-v0.2-lineart-saga.md for why.
+ * onto uFeather — no separate sharpen uniform.
  *
- * uFeather-vs-uRadius clamp (v0.3, session 17 bug fix): the lower smoothstep edge is
- * `max(uRadius - uFeather, 0.0)`, not the raw `uRadius - uFeather`. `dist` (from `distance()`)
- * is never negative, so once uFeather exceeds uRadius the raw lower edge goes negative and
- * `dist == 0` (the true core/seed pixel) stops landing before that edge — smoothstep no longer
- * guarantees `t == 0` there, so even the solid interior of a shape loses opacity at strongly
- * negative Hardness. Confirmed on Daiya (HARDNESS_BASE_MAX_FEATHER lets feather run well past
- * typical radius values there), but this shader is shared with Botan too, same latent bug.
+ * uFeather-vs-uRadius clamp: the lower smoothstep edge is `max(uRadius - uFeather, 0.0)`, not
+ * the raw `uRadius - uFeather`. `dist` (from `distance()`) is never negative, so once uFeather
+ * exceeds uRadius the raw lower edge would go negative and `dist == 0` (the true core/seed
+ * pixel) would stop landing before that edge — smoothstep would no longer guarantee `t == 0`
+ * there, losing opacity at the solid interior even at strongly negative Hardness.
  *
- * uInvert (v0.3 Service Update) — only meaningful for Botan's `fillType === 'image'` case, where
- * shape and color stay fused in this one pass (see pipeline.ts's pathB branch) instead of running
- * through the shared maskFillColor.frag.ts final pass every other fillType/algorithm uses; this
- * flips the resolved alpha itself (t instead of 1-t) so "background instead of near-line glow"
- * means the same thing here as maskFillColor.frag.ts's uInvert does everywhere else.
+ * uInvert — only meaningful for Botan's `fillType === 'image'` case, where shape and color stay
+ * fused in this one pass (see pipeline.ts's pathB branch) instead of running through the shared
+ * maskFillColor.frag.ts final pass every other fillType/algorithm uses; this flips the resolved
+ * alpha itself (t instead of 1-t) so "background instead of near-line glow" means the same thing
+ * here as maskFillColor.frag.ts's uInvert does everywhere else.
  */
 export const distanceToEdgeFrag = `#version 300 es
 precision highp float;

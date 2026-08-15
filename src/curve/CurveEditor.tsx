@@ -21,7 +21,7 @@ interface CurveEditorProps {
 
 const SIZE = 255
 const MAX_POINTS = 8
-/** Visible dot diameter, in real screen px — fixed regardless of how big or small the curve area itself renders (e.g. a cramped mobile layout), per real-device feedback that a viewBox-scaled knob shrank along with the graph and became hard to grab. */
+/** Visible dot diameter, in real screen px — fixed regardless of how big or small the curve area itself renders (e.g. a cramped mobile layout); a viewBox-scaled knob shrinks along with the graph and becomes hard to grab. */
 const KNOB_SIZE = 20
 /** Touch target diameter, in real screen px — matches Apple HIG's 44pt minimum. Also fixed-size, same reasoning as KNOB_SIZE. */
 const KNOB_HIT_SIZE = 44
@@ -33,15 +33,14 @@ function clamp(v: number, min: number, max: number): number {
 /**
  * Control points are plain HTML buttons, absolutely positioned by
  * percentage over the container — not SVG circles inside the viewBox-
- * scaled `<svg>` (which only renders the curve path/lines now, and is
+ * scaled `<svg>` (which only renders the curve path/lines, and is
  * pointer-events:none). A percentage-positioned HTML element's *position*
  * scales with its container the way a curve point should, but its
  * fixed-px *size* does not — exactly the decoupling KNOB_SIZE/KNOB_HIT_SIZE
  * above need, which an SVG element's viewBox-relative radius can't give
  * without extra per-render scale math. This also sidesteps SVG-specific
- * hit-testing edge cases entirely (transparent-fill pointer-events quirks,
- * viewBox clip-at-boundary behavior) that took two prior rounds to work
- * around one at a time.
+ * hit-testing edge cases (transparent-fill pointer-events quirks, viewBox
+ * clip-at-boundary behavior).
  */
 export default function CurveEditor({ points, onChange, referenceCurves, activeColor = 'var(--blue)', opaque = true }: CurveEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -82,10 +81,9 @@ export default function CurveEditor({ points, onChange, referenceCurves, activeC
       if (draggingIndex.current === null) return
       const { x, y } = toCurveSpace(e.clientX, e.clientY)
       const idx = draggingIndex.current
-      // Endpoints move freely on both axes now (Photoshop/Lightroom-style
+      // Endpoints move freely on both axes (Photoshop/Lightroom-style
       // black-point/white-point dragging — pulling an endpoint inward on x
-      // crushes that end of the range) — used to lock endpoint x to 0/255,
-      // which only let you crush vertically.
+      // crushes that end of the range).
       const next = sorted.map((p, i) => (i === idx ? { x, y } : p))
       onChange(next)
     },

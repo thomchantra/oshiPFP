@@ -77,10 +77,9 @@ const COLOR_DISPLAY_MODE_OPTIONS: { value: 'original' | 'graded'; label: string 
   { value: 'graded', label: 'GRADED' },
 ]
 
-/** Grade's Dual Pane always shows the same fixed pair — Original left, Graded right — so there's
- * exactly one combo, rendered as a single always-active pill for row-height parity with the
- * interactive 2-way toggle it replaces while dual-pane is on (mirrors Line Art's own combo-pill
- * pattern, DUAL_PANE_MODE_OPTIONS above, but with only one possible option instead of three). */
+/** Grade's Dual Pane always shows the same fixed pair — Original left, Graded right — rendered as
+ * a single always-active pill (mirrors Line Art's DUAL_PANE_MODE_OPTIONS pattern above, but with
+ * only one possible option). */
 const GRADE_DUAL_PANE_OPTIONS: { value: 'original-graded'; label: string }[] = [
   { value: 'original-graded', label: 'ORIGINAL | GRADED' },
 ]
@@ -211,18 +210,17 @@ function buildInitialParamsByMode(): Record<LineArtMode, LineArtParams> {
   return byMode
 }
 
-/** Manual override for the secret dev-mode entrance (v0.3 polish pass, see AvatarCornerPreview's
- * 7-tap gesture) — flip to `true` to force dev mode on regardless of build mode or tapping,
- * handy for testing a production-style build (`npm run build && npm run preview`) locally without
- * needing to tap. `import.meta.env.DEV` already covers the common case automatically: dev mode
- * starts unlocked for free during `npm run dev`, no flag or tapping needed there. */
+/** Manual override for the secret dev-mode entrance (see AvatarCornerPreview's 7-tap gesture) —
+ * flip to `true` to force dev mode on regardless of build mode or tapping, for testing a
+ * production-style build (`npm run build && npm run preview`) locally without tapping.
+ * `import.meta.env.DEV` already covers `npm run dev` automatically. */
 const FORCE_DEV_MODE = false
 
 export default function App() {
   const [tab, setTab] = useState<string | null>('crop')
   const [theme, setTheme] = useState(initTheme)
-  // Session-only (v0.3 polish pass, per direction) — resets to the automatic default on every
-  // reload; the 7-tap gesture is a one-way unlock, never toggles back off once set true.
+  // Session-only — resets to the automatic default on every reload; the 7-tap gesture is a
+  // one-way unlock, never toggles back off once set true.
   const [devMode, setDevMode] = useState(FORCE_DEV_MODE || import.meta.env.DEV)
   const [pfpMode, setPfpMode] = useState<PfpMode>('square')
   const [cropMode, setCropMode] = useState<CropMode>('square')
@@ -230,40 +228,35 @@ export default function App() {
   const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('light')
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
   const [colorDisplayMode, setColorDisplayMode] = useState<'original' | 'graded'>('graded')
-  // Lifted out of LineArtPanel (which only owned this as tray-appearance
-  // state before) so the mobile vertical meter overlay below can show each
-  // meter only while its matching section is actually expanded, instead of
-  // both unconditionally whenever the Maximizer tab is open.
+  // Owned here (not LineArtPanel) so the mobile vertical meter overlay below can show each meter
+  // only while its matching section is actually expanded, instead of both unconditionally
+  // whenever the Maximizer tab is open.
   const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
   const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
-  // AlgoGalleryModal's open state (v0.3 polish pass) — lifted here (rather than owned by
-  // LineArtPanel, as it originally was) so BlankState's "Browse Gallery" button can open the same
-  // modal before any image (and therefore LineArtPanel itself) exists.
+  // AlgoGalleryModal's open state lives here (not LineArtPanel) so BlankState's "Browse Gallery"
+  // button can open the same modal before any image (and therefore LineArtPanel itself) exists.
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
-  // Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — off by default, only meaningful at
-  // the 900px breakpoint (isDesktop below); see the tab === 'maximizer' block for how this and
-  // dualPaneMode swap out the single-mode SegmentedControl for a 3-way pane-pair one.
+  // Desktop-only Dual Pane toggle — off by default, only meaningful at the 900px breakpoint
+  // (isDesktop below); see the tab === 'maximizer' block for how this and dualPaneMode swap out
+  // the single-mode SegmentedControl for a 3-way pane-pair one.
   const [dualPaneEnabled, setDualPaneEnabled] = useState(false)
   const [dualPaneMode, setDualPaneMode] = useState<DualPaneMode>('original-composite')
   const isDesktop = useIsDesktop()
   // Dual Pane visually reverts to single-pane behavior below the desktop breakpoint even if
-  // dualPaneEnabled is still true (e.g. the window was resized narrower after enabling it on
-  // desktop) — gated here, once, rather than repeating `dualPaneEnabled && isDesktop` at each of
-  // the toggle's several call sites below. One shared toggle, two mutually-exclusive-by-tab kinds:
-  // Line Art's own [LineArtDisplayMode, LineArtDisplayMode] pane pair, and Grade's fixed
-  // Original|Graded pair (pipeline.ts's setGradeDualPane) — Crop/Export still have neither, per
-  // docs/oshiPFP-v0.3-tuningspecs.md's existing single-pane-only precedent for those two tabs.
+  // dualPaneEnabled is still true — gated here, once, rather than repeating
+  // `dualPaneEnabled && isDesktop` at each call site below. One shared toggle, two mutually-
+  // exclusive-by-tab kinds: Line Art's own [LineArtDisplayMode, LineArtDisplayMode] pane pair, and
+  // Grade's fixed Original|Graded pair (pipeline.ts's setGradeDualPane) — Crop/Export have neither.
   const dualPaneActive = dualPaneEnabled && isDesktop && tab === 'maximizer'
   const gradeDualPaneActive = dualPaneEnabled && isDesktop && tab === 'color'
   const pipeline = usePipeline()
   const hasImage = pipeline.sourceSize !== null
   const viewportWrapperRef = useRef<HTMLDivElement | null>(null)
-  // Desktop-only drag-and-drop to replace an already-loaded image (like
-  // Dropbox web) — BlankState already covers drag-and-drop for the initial,
-  // no-image-yet load; this covers the loaded-image case, which previously
-  // had no drop handling at all outside HeaderBar's plain file input.
+  // Desktop-only drag-and-drop to replace an already-loaded image (like Dropbox web) — BlankState
+  // already covers drag-and-drop for the initial, no-image-yet load; this covers the loaded-image
+  // case.
   const [viewportDragOver, setViewportDragOver] = useState(false)
   const handleViewportDragOver = (e: DragEvent<HTMLDivElement>) => {
     if (!hasImage || !isDesktop) return
@@ -314,11 +307,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, exportSettings.exportDisplayMode, exportSettings.exportColorGrade, exportSettings.exportColorGradeIntensity, exportSettings.resampleMode, exportTarget?.width, exportTarget?.height])
 
-  // Promoted from "reset the curve" to "reset everything in the Color tab" —
-  // curve + HSL (all 9 bands) + Invert + Light + Color basic adjustments —
-  // even though "Reset Grade" now only lives in the LIGHT sub-tab (first row,
-  // alongside the relocated curve controls) rather than a top-of-viewport row
-  // visible from every sub-tab.
+  // Resets everything in the Color tab: curve + HSL (all 9 bands) + Invert + Light + Color basic
+  // adjustments. "Reset Grade" lives in the LIGHT sub-tab, alongside the curve controls.
   const resetColorTab = () => {
     colorCurve.reset()
     colorAdjustments.setHslByBand(() => IDENTITY_HSL_BY_BAND)
@@ -379,10 +369,10 @@ export default function App() {
   // above via parseStateDump, for a post-deploy round-trip check: dump on one build, load the same
   // file back in on another (e.g. after a Netlify deploy), then dump again and diff the two files
   // to confirm every param survived. Restores everything the dump captures except crop.transform
-  // (pan/zoom) — useCropInteraction deliberately has no external setter for it (it self-recenters
-  // from sourceSize instead, see its own comment), and fileInfo (the dump only records the loaded
-  // file's name/type/size, not its bytes — there's no image to restore, just whatever's already
-  // loaded stays as-is).
+  // (pan/zoom) — useCropInteraction only exposes a reset-to-default setter (resetTransform), not an
+  // arbitrary-value one, so a saved pan/zoom position specifically can't be replayed — and fileInfo
+  // (the dump only records the loaded file's name/type/size, not its bytes — there's no image to
+  // restore, just whatever's already loaded stays as-is).
   const handleLoadState = async (file: File) => {
     let data: Awaited<ReturnType<typeof parseStateDump>>
     try {
@@ -432,8 +422,7 @@ export default function App() {
   }
 
   // Dev-only "Load Demo" trigger (see HeaderBar's PRESET_MANIFEST-driven buttons, gated the same
-  // as handleDumpState) — exercises applyPreset.ts's real code path for the JSON preset saga's
-  // round-trip validation. Not the eventual gallery UI (deferred), just *a* way to invoke it.
+  // as handleDumpState) — exercises applyPreset.ts's real code path.
   const handleLoadPreset = (presetId: string, options?: { skipImage?: boolean }) => {
     const preset = PRESET_MANIFEST.find((p) => p.id === presetId)
     if (!preset) return
@@ -602,11 +591,10 @@ export default function App() {
     setLineArtDisplayMode('composite')
   }
 
-  // "Reset oshiPFP" (v0.3 pre-Netlify polish pass) — clears the loaded image and every tuned
-  // param back to defaults without a page reload. Deliberately does NOT touch `theme` — a
-  // display preference, not app data. Every other hook holding its own state gets its own
-  // reset() (added alongside this feature) rather than this function reaching into their
-  // internals, same separation resetColorTab/handleLineArtReset already keep.
+  // "Reset oshiPFP" — clears the loaded image and every tuned param back to defaults without a
+  // page reload. Deliberately does NOT touch `theme` — a display preference, not app data. Every
+  // other hook holding its own state exposes its own reset() rather than this function reaching
+  // into their internals, same separation resetColorTab/handleLineArtReset keep.
   const resetApp = () => {
     pipeline.clearSource()
     setTab('crop')
@@ -632,11 +620,8 @@ export default function App() {
     cropResize.reset()
   }
 
-  // Gumi's Luminance Ramp calibration picker (v0.3 tuning) — shelved out of the UI
-  // for now (real clickzone issues surfaced in testing, needs its own dedicated
-  // session). Pipeline.sampleEnhancePixel/usePipeline's wrapper/this hook are left
-  // in place unchanged so the next pass can pick it back up without re-deriving the
-  // enhanceTarget-sourcing work; see changelog. Not instantiated here anymore.
+  // Gumi's Luminance Ramp eyedropper (useLuminanceEyedropper) is shelved — not instantiated here.
+  // See that hook's file header for details.
 
   const selectTab = (id: string) => setTab((current) => (current === id ? null : id))
 
@@ -662,8 +647,8 @@ export default function App() {
         onUnlockDevMode={() => setDevMode(true)}
       />
 
-      {/* Rendered unconditionally (v0.3 polish pass) — needs to work whether or not hasImage,
-          since BlankState's "Browse Gallery" opens it before any photo exists. */}
+      {/* Rendered unconditionally — needs to work whether or not hasImage, since BlankState's
+          "Browse Gallery" opens it before any photo exists. */}
       <AlgoGalleryModal
         open={galleryOpen}
         onClose={() => setGalleryOpen(false)}
@@ -677,7 +662,7 @@ export default function App() {
         {hasImage && tab === 'crop' && (
           <CropTopContent
             zoom={crop.transform.scale}
-            onZoomReset={() => {}}
+            onZoomReset={crop.resetTransform}
             sourceSize={pipeline.sourceSize}
             fileInfo={pipeline.fileInfo}
           />
@@ -788,16 +773,11 @@ export default function App() {
                   width: colorCurveSize,
                   height: colorCurveSize,
                   pointerEvents: 'auto',
-                  // Without these, iOS's long-press callout (image save/copy
-                  // menu) and text/image selection compete with grabbing a
-                  // curve point — the corner points sit right where a photo
-                  // is most likely to trigger it, so a drag can take several
-                  // attempts to register instead of the callout's touch-hold
-                  // timer winning the race the first try or two. Set
-                  // redundantly at every layer down to the svg itself
-                  // (CurveEditor.tsx) — Safari's touch-callout suppression
-                  // has historically been inconsistent about which ancestor
-                  // "counts" for a given descendant, especially for SVG.
+                  // Without these, iOS's long-press callout (image save/copy menu) and text/image
+                  // selection compete with grabbing a curve point. Set redundantly at every layer
+                  // down to the svg itself (CurveEditor.tsx) — Safari is inconsistent about which
+                  // ancestor "counts" for touch-callout suppression on a given descendant,
+                  // especially for SVG.
                   WebkitTouchCallout: 'none',
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
@@ -819,12 +799,10 @@ export default function App() {
 
       </div>
 
-      {/* Order within this column is CSS-controlled (see .panel-col rules in
-          base.css): mobile keeps the tab bar pinned below the panel/sheet
-          (its historical position as a trailing sibling of .viewport-area),
-          desktop's two-column layout puts the tab row above the drawer
-          content instead, matching the Figma desktop reference. DOM order
-          here doesn't need to match either — `order` handles both. */}
+      {/* Order within this column is CSS-controlled (see .panel-col rules in base.css): mobile
+          keeps the tab bar pinned below the panel/sheet, desktop's two-column layout puts the tab
+          row above the drawer content instead. DOM order here doesn't need to match either —
+          `order` handles both. */}
       <div className="panel-col">
         <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />
 

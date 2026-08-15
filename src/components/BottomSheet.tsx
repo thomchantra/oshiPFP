@@ -33,10 +33,9 @@ interface BottomSheetProps {
  * Height is capped to the content's own natural height (measured via
  * ResizeObserver on an unconstrained inner wrapper, not the flex/overflow-
  * clamped .bottom-sheet-content itself) rather than a flat viewport
- * fraction — a short panel (e.g. Crop's 2-slider Enhancement section)
- * used to leave a dead-space gap below the last row once dragged (or even
- * defaulted) past its actual content height; this makes "all rows
- * visible, no more" the hard ceiling instead.
+ * fraction, so a short panel (e.g. Crop's 2-slider Enhancement section)
+ * never shows a dead-space gap below its last row — "all rows visible, no
+ * more" is the hard ceiling.
  */
 export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_FRACTION }: BottomSheetProps) {
   // The drag-to-resize sheet only makes sense in the mobile layout, where it

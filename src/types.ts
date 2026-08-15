@@ -41,7 +41,7 @@ export interface HslShift {
   lightness: number
 }
 
-/** 'master' applies globally (the old simple HSL panel); the other 8 are the same HSL-module palette as ColorLiftParams, each independently hue/sat/lightness-shiftable — a real (if first-pass) port of the targeted HSL kernel from referencecode/Shaders2.metal, see curvesHsl.frag.ts. */
+/** 'master' applies globally; the other 8 are the same HSL-module palette as ColorLiftParams, each independently hue/sat/lightness-shiftable — see curvesHsl.frag.ts. */
 export type HslBand = 'master' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'purple' | 'magenta'
 
 export type HslByBand = Record<HslBand, HslShift>
@@ -55,23 +55,20 @@ export interface InvertParams {
 }
 
 /** How each algorithm's resolved "ink" color composites onto the base image — see
- * composite.frag.ts's blendLayer. 'normal' (v0.3, added to unblock the JSON preset saga's demo
- * creation — the raw algorithm output wasn't reachable through Color/Export any other clean way)
- * is a full, alpha-ignoring pass of the algorithm's own output — unlike 'overwrite', which still
- * lets the base show through wherever the mask's own alpha is partial/zero. 'difference' is a
- * standard abs(base-layer) blend, added alongside since it reads well for line work; only Line
- * Art's own main compositing selector offers both today (Grade tab's Gradient Map blend selector
- * still only offers the original 4 — 'normal'/'difference' don't add value there, see
- * ColorPanel.tsx's own ALL_BLEND_OPTIONS). */
+ * composite.frag.ts's blendLayer. 'normal' is a full, alpha-ignoring pass of the algorithm's own
+ * output — unlike 'overwrite', which still lets the base show through wherever the mask's own
+ * alpha is partial/zero. 'difference' is a standard abs(base-layer) blend. Only Line Art's own
+ * main compositing selector offers both today — Grade tab's Gradient Map blend selector only
+ * offers the original 4, see ColorPanel.tsx's own ALL_BLEND_OPTIONS. */
 export type BlendMode = 'overwrite' | 'multiply' | 'screen' | 'overlay' | 'normal' | 'difference'
 
-/** Grade tab's Gradient Map processor (v0.3 post-Hinata close-out) — a general post-grade 3-stop
- * (or 2-stop, with Duo Tone) color remap applied to the whole graded image, distinct from Line
- * Art's per-algorithm Gradient Fill Type (a mask/shape-scoped insertion point, see
- * fillTypeColor.frag.ts). Shares its shader math (gradientMap.frag.ts) and ramp editor UI
- * (GradientFillControls.tsx) with that Line Art feature, but is entirely separate state — see
- * pipeline.ts's runColorChain for how `intensity`/`blendMode` composite the mapped result back
- * over the pre-gradient-map graded color via the existing compositeProgram. */
+/** Grade tab's Gradient Map processor — a general post-grade 3-stop (or 2-stop, with Duo Tone)
+ * color remap applied to the whole graded image, distinct from Line Art's per-algorithm Gradient
+ * Fill Type (a mask/shape-scoped insertion point, see fillTypeColor.frag.ts). Shares its shader
+ * math (gradientMap.frag.ts) and ramp editor UI (GradientFillControls.tsx) with that Line Art
+ * feature, but is entirely separate state — see pipeline.ts's runColorChain for how
+ * `intensity`/`blendMode` composite the mapped result back over the pre-gradient-map graded color
+ * via the existing compositeProgram. */
 export interface GradeGradientMapParams {
   enabled: boolean
   shadow: [number, number, number]
@@ -83,7 +80,9 @@ export interface GradeGradientMapParams {
   blendMode: BlendMode
 }
 
-/** Botan/Chie/Daiya/Fumiko/Gumi/Hinata/Inori, kept as their internal pathB/C/D/F/G/H/I ids (ported straight from the lab harness) — display names are cosmetic only. Botan is the default from first load; the expensive recompute itself is gated by Pipeline.setLineArtActive (tab-based), not by mode. */
+/** Botan/Chie/Daiya/Fumiko/Gumi/Hinata/Inori, kept as their internal pathB/C/D/F/G/H/I ids —
+ * display names are cosmetic only. Botan is the default from first load; the expensive recompute
+ * itself is gated by Pipeline.setLineArtActive (tab-based), not by mode. */
 export type LineArtMode = 'pathB' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
 
 /** What the Line Art tab's viewport (and downstream Color/Export) actually reads: the algorithm's raw mask/color output, the multiply/crossfade composite onto the base, or a bypass back to the uncropped base. */
@@ -97,16 +96,16 @@ export type LineArtDisplayMode = 'composite' | 'overlay' | 'original'
  * currently showing. */
 export type ExportDisplayMode = 'original' | 'composite' | 'overlay'
 
-/** Desktop-only Dual Pane toggle (oshiPFP v0.3 Workstream C) — replaces the single DISPLAY_MODE_OPTIONS
- * segmented control with a 3-way pane-PAIR selector when active. Each option names the two
- * LineArtDisplayMode variants shown side-by-side (left|right) — see pipeline.ts's setDualPane,
- * which takes the resolved [LineArtDisplayMode, LineArtDisplayMode] tuple directly rather than this
- * string union (App.tsx maps between the two). */
+/** Desktop-only Dual Pane toggle — replaces the single DISPLAY_MODE_OPTIONS segmented control with
+ * a 3-way pane-PAIR selector when active. Each option names the two LineArtDisplayMode variants
+ * shown side-by-side (left|right) — see pipeline.ts's setDualPane, which takes the resolved
+ * [LineArtDisplayMode, LineArtDisplayMode] tuple directly rather than this string union (App.tsx
+ * maps between the two). */
 export type DualPaneMode = 'original-composite' | 'composite-overlay' | 'original-overlay'
 
-/** v0.3 Service Update: 'image'/'solid'/'gradient' fill-type selector shared by Botan/Chie/Daiya/
- * Fumiko (and Gumi's own gumiFillType/gumiLineFillType, kept separate since Gumi alone needs two
- * simultaneous fill contexts) — see fillTypeColor.frag.ts. */
+/** 'image'/'solid'/'gradient' fill-type selector shared by Botan/Chie/Daiya/Fumiko (and Gumi's own
+ * gumiFillType/gumiLineFillType, kept separate since Gumi alone needs two simultaneous fill
+ * contexts) — see fillTypeColor.frag.ts. */
 export type FillType = 'image' | 'solid' | 'gradient'
 
 /** Standard 2-point black/white clip — the original Tone Lift ramp, still the default mode. */
@@ -173,125 +172,116 @@ export interface ResizeParams {
 export interface LineArtParams {
   mode: LineArtMode
   displayMode: LineArtDisplayMode
-  /** Always applied — identity default values make each a no-op when untouched, so pre-processing no longer needs a boolean gate (see changelog: expand/collapse used to double as an on/off switch, now it's tray-appearance-only). */
+  /** Always applied — identity default values make each a no-op when untouched, so the tray's expand/collapse is appearance-only, not an on/off gate. */
   toneShaping: ToneShapingParams
   denoise: DenoiseParams
   colorLift: ColorLiftParams
 
   opacity: number
   blendMode: BlendMode
-  /** v0.3 JSON preset saga — bypasses blendMode/opacity compositing entirely, reusing the exact
-   * same raw-alpha-flattened-onto-matteColor computation the "Overlay" viewport display mode
-   * already produces (see pipeline.ts's resolveLineArtDisplay), but for the *Composite* display
-   * mode — meaning it flows downstream through Color grading and Export like Composite normally
-   * does, unlike switching the top-level display mode to Overlay itself would (a separate,
+  /** Bypasses blendMode/opacity compositing entirely, reusing the exact same
+   * raw-alpha-flattened-onto-matteColor computation the "Overlay" viewport display mode already
+   * produces (see pipeline.ts's resolveLineArtDisplay), but for the *Composite* display mode —
+   * meaning it flows downstream through Color grading and Export like Composite normally does,
+   * unlike switching the top-level display mode to Overlay itself would (a separate,
    * preview-only toggle). LineArtPanel.tsx hides the Blend Mode row and Overlay Opacity slider
    * while this is on, since neither has any effect once compositing is bypassed. */
   overlayPassthrough: boolean
   /** Backdrop color for the raw alpha-flatten both Overlay display mode and overlayPassthrough
-   * use (alphaOverWhite.frag.ts) — defaults to white, matching the name's original hardcoded
-   * behavior before this became configurable. Shared by both consumers (same shader call site),
-   * so changing it while overlayPassthrough is on also affects the plain Overlay tab's own
+   * use (alphaOverWhite.frag.ts) — defaults to white. Shared by both consumers (same shader call
+   * site), so changing it while overlayPassthrough is on also affects the plain Overlay tab's own
    * preview — that's intentional single-source-of-truth behavior, not a bug. */
   matteColor: [number, number, number]
   threshold: number
   radius: number
-  /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi (v0.3 tuning) reuses this same field with its own, unrelated meaning — see pipeline.ts's runGumiLinePostProcess: 1 (default) = untouched, 0 = final Line-mode mask box-blurred and mixed in at full strength (a soft/antialiased edge instead of a hard one). Each mode interprets its own shared fields independently, same convention `radius` etc. already follow. */
+  /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi
+   * reuses this same field with its own, unrelated meaning — see pipeline.ts's
+   * runGumiLinePostProcess: 1 (default) = untouched, 0 = final Line-mode mask box-blurred and
+   * mixed in at full strength (a soft/antialiased edge instead of a hard one). Each mode
+   * interprets its own shared fields independently, same convention `radius` etc. already
+   * follow. */
   hardness: number
   blobContrast: number
-  /** Daiya's 2-mode op selector (v0.3, session 17 — "Daiya pt 2" consolidation, closing out the
-   * "sit with Daiya" tuning discussion). `false` = JFA (the session-14 port, shared distance-
-   * transform math with Botan; float-precision Radius, the one thing Octagon can never match).
-   * `true` = Octagon (the pre-session-14 4-direction separable min-filter dilate, resurrected from
-   * git history — genuinely distinct now that it has its own Radius/Hardness/Facets/Rotation/
+  /** Daiya's 2-mode op selector. `false` = JFA (shared distance-transform math with Botan;
+   * float-precision Radius, the one thing Octagon can never match). `true` = Octagon (a
+   * 4-direction separable min-filter dilate with its own Radius/Hardness/Facets/Rotation/
    * One-Sided). Threshold, Soft Threshold, and Invert Seed apply to both modes identically (same
    * shared `thresholdProgram`/`softThresholdProgram` calls either way) and sit above this selector
    * in the UI rather than being duplicated per-mode. See pipeline.ts's pathD branch doc comment. */
   daiyaOctagonMode: boolean
-  /** Octagon's own independent Radius/Hardness (session 17 consolidation) — deliberately separate
-   * fields from the shared `radius`/`hardness` above (which JFA keeps using unchanged) rather than
-   * reusing them, so switching between the two op-mode tabs doesn't make them fight over one
-   * value. `daiyaOctagonRadius` is a plain integer texel count (a literal step=1 UI slider, not
-   * run through any float-to-int correction) — JFA's Radius stays the only float-precision one,
-   * the one permanent, unfixable advantage it has over Octagon. `daiyaOctagonHardness` maps to
+  /** Octagon's own independent Radius/Hardness — deliberately separate fields from the shared
+   * `radius`/`hardness` above (which JFA keeps using unchanged) rather than reusing them, so
+   * switching between the two op-mode tabs doesn't make them fight over one value.
+   * `daiyaOctagonRadius` is a plain integer texel count (a literal step=1 UI slider, not run
+   * through any float-to-int correction) — JFA's Radius stays the only float-precision one, the
+   * one permanent, unfixable advantage it has over Octagon. `daiyaOctagonHardness` maps to
    * `runSoftHardness` (box-blur post-process), not JFA Hardness's `uFeather` smoothstep falloff —
    * same slider shape/range, genuinely different math, hence a genuinely separate value. */
   daiyaOctagonRadius: number
   daiyaOctagonHardness: number
-  /** Octagon's own facet-count/rotation controls (session 17 follow-up) — only read while
-   * `daiyaOctagonMode` is on. `daiyaOctagonDirections` generalizes the old hardcoded 4-direction
-   * pass count (each direction is bidirectional in minFilter1D.frag.ts by default, so N directions
-   * produce a 2N-sided facet shape — the original 4 gave the 8-sided "octagon"); 3 is the minimum
-   * that still produces a real polygon under the default bidirectional shape, 1 once
-   * `daiyaOctagonOneSided` is on (the default this session was promoted to, per direction — the
-   * one-sided single spike is what actually made this mode work). `daiyaOctagonRotation` (degrees,
+  /** Octagon's own facet-count/rotation controls — only read while `daiyaOctagonMode` is on.
+   * `daiyaOctagonDirections` sets the pass count (each direction is bidirectional in
+   * minFilter1D.frag.ts by default, so N directions produce a 2N-sided facet shape — 4 gives the
+   * 8-sided "octagon"); 3 is the minimum that still produces a real polygon under the default
+   * bidirectional shape, 1 once `daiyaOctagonOneSided` is on. `daiyaOctagonRotation` (degrees,
    * 0-360) offsets where the first facet points — a real, visible control once One-Sided breaks
    * point-symmetry (see below); barely perceptible under the default bidirectional shape, which
    * stays point-symmetric no matter the rotation. The full 360° range (not just 180°) matters once
-   * One-Sided is on with more than 1 direction: unlike the bidirectional case, a one-sided N-gon's
-   * directions are generated across a full turn, not a half-turn, so every unique orientation
-   * needs the full range to reach it (see pipeline.ts's pathD branch). */
+   * One-Sided is on with more than 1 direction: a one-sided N-gon's directions are generated
+   * across a full turn, not a half-turn, so every unique orientation needs the full range to reach
+   * it (see pipeline.ts's pathD branch). */
   daiyaOctagonDirections: number
   daiyaOctagonRotation: number
-  /** One-sided growth (session 17, 2nd follow-up) — minFilter1D.frag.ts normally samples both
-   * `+offset` and `-offset` per direction (symmetric growth, the reason more directions only ever
-   * approaches a rounder circle, never a spike). This flips each direction pass to sample only
-   * `+offset`, so N directions now produce a genuine N-sided polygon instead of a 2N-sided one —
-   * at low N (1-3) that's an actual spike/wedge/triangle instead of a symmetric diamond/hexagon,
-   * and `daiyaOctagonRotation` above becomes meaningful for the first time. Small, explicitly-set
-   * addition to the existing shared `minFilterProgram` (new `uOneSided` uniform, every other call
-   * site sets it to 0) rather than a new shader — see pipeline.ts's pathD branch. */
+  /** One-sided growth — minFilter1D.frag.ts normally samples both `+offset` and `-offset` per
+   * direction (symmetric growth, the reason more directions only ever approaches a rounder
+   * circle, never a spike). This flips each direction pass to sample only `+offset`, so N
+   * directions produce a genuine N-sided polygon instead of a 2N-sided one — at low N (1-3) that's
+   * an actual spike/wedge/triangle instead of a symmetric diamond/hexagon, and
+   * `daiyaOctagonRotation` above becomes meaningful. Uses the shared `minFilterProgram`'s
+   * `uOneSided` uniform — every other call site must explicitly set it to 0. */
   daiyaOctagonOneSided: boolean
-  /** Flips Daiya's hard-threshold seed mask's own polarity (thresholdProgram's uInvert, hardcoded
-   * off before this) — shared by *both* growth modes (session 17 consolidation; originally
-   * Octagon-only, widened once it was confirmed to be the same shared threshold pass either way,
-   * nothing octagon-specific about it), independent of `fillInvert`'s own unrelated "which side
-   * gets the fill color" job at the very final compositing step. Tests whether growing from the
-   * opposite tonal side reads as shading rather than line-tracing. */
+  /** Flips Daiya's hard-threshold seed mask's own polarity (thresholdProgram's uInvert) — shared
+   * by *both* growth modes (same threshold pass either way, nothing octagon-specific about it),
+   * independent of `fillInvert`'s own unrelated "which side gets the fill color" job at the very
+   * final compositing step. Tests whether growing from the opposite tonal side reads as shading
+   * rather than line-tracing. */
   daiyaInvertSeed: boolean
   /** Multiplies a second, independently-computed soft/antialiased threshold weight (same
    * smoothstep-based technique as Hinata Erode's own softThresholdProgram) into the grown mask's
    * alpha, regardless of which of the two growth modes produced it — JFA needs a strictly binary
-   * seed mask so this can't soften the seeding itself, only the final result. Promoted from a
-   * boolean lab toggle to a real slider (session 17 consolidation) — 0 = off/hard threshold
-   * (identity, matches every existing preset), >0 = softness half-width, same units `uThreshold`
-   * itself uses (0-1 luminance space). */
+   * seed mask so this can't soften the seeding itself, only the final result. 0 = off/hard
+   * threshold (identity, matches every existing preset), >0 = softness half-width, same units
+   * `uThreshold` itself uses (0-1 luminance space). */
   daiyaSoftThresholdWidth: number
-  /** Boosts the soft threshold's own weight before it's multiplied in (session 17 follow-up,
-   * `alphaModulate.frag.ts`'s `uMaskGain`) — a plain `clamp(mask * gain, 0, 1)`. The raw smoothstep
-   * output reads as faint/washed-out at any real softness width (most of the transition band sits
-   * well under full alpha), so this pushes it back toward solid while keeping the softened edge
-   * itself. No-op at 1 (identity, matches every existing preset) and only ever read while
-   * `daiyaSoftThresholdWidth > 0` — irrelevant otherwise, since a hard threshold has no "weak"
-   * midband to boost. */
+  /** Boosts the soft threshold's own weight before it's multiplied in (`alphaModulate.frag.ts`'s
+   * `uMaskGain`) — a plain `clamp(mask * gain, 0, 1)`. The raw smoothstep output reads as
+   * faint/washed-out at any real softness width (most of the transition band sits well under full
+   * alpha), so this pushes it back toward solid while keeping the softened edge itself. No-op at
+   * 1 and only ever read while `daiyaSoftThresholdWidth > 0` — irrelevant otherwise, since a hard
+   * threshold has no "weak" midband to boost. */
   daiyaSoftThresholdOverdrive: number
-  /** Gumi's Color Bleed feature only now (v0.3 Service Update) — reuses distanceToEdge.frag.ts's
-   * own image-vs-flat-tint branch independently of the shared `fillType` selector below. Botan no
-   * longer reads this field; its own `fillType === 'image'` drives the same `uColorExpansion`
-   * uniform at its call site instead (see pipeline.ts). Kept only for Gumi Color Bleed, which is
-   * untouched this phase. */
+  /** Gumi's Color Bleed feature only — reuses distanceToEdge.frag.ts's own image-vs-flat-tint
+   * branch independently of the shared `fillType` selector below. Botan does not read this field;
+   * its own `fillType === 'image'` drives the same `uColorExpansion` uniform at its call site
+   * instead (see pipeline.ts). */
   colorExpansion: boolean
-  /** Botan's Image-subtab vivid slider (v0.3 Service Update) — a contrast curve applied to the
-   * nearest-line source color before it's used, only meaningful when `fillType === 'image'`.
-   * Also still used by Gumi's Color Bleed alongside `colorExpansion` above. */
+  /** Botan's Image-subtab vivid slider — a contrast curve applied to the nearest-line source
+   * color before it's used, only meaningful when `fillType === 'image'`. Also used by Gumi's
+   * Color Bleed alongside `colorExpansion` above. */
   colorContrast: number
   gateThreshold: number
   sensitivity: number
   saturation: number
-  /** Fumiko-only (v0.3 Service Update, replaces the old 3-way `colorMode` union now that
-   * `tint`/`vivid` have migrated to the shared `fillType` selector below) — bypasses `fillType`
-   * entirely and shows the raw Sobel edge map's own per-channel color, forced to Multiply blend.
-   * Deferred: promoting this into a toggle row above Blend Mode (per the tuning doc) is a
-   * follow-up phase, not done here. */
+  /** Fumiko-only — bypasses `fillType` entirely and shows the raw Sobel edge map's own
+   * per-channel color, forced to Multiply blend. */
   findEdge: boolean
   tintColor: [number, number, number]
   vividDeadzone: number
   vividBoost: number
 
-  /** v0.3 Service Update (Post-Gumi Saga, Phase 1) — shared fill-type selector for Botan/Chie/
-   * Daiya/Fumiko, ported from Gumi's own gumiFillType/gumiLineFillType mechanism. Flat/shared
-   * (not per-algo-prefixed) since each of these four only has one fill context at a time, unlike
-   * Gumi's simultaneous Line+Fill. See fillTypeColor.frag.ts for the shader-side contract. */
+  /** Shared fill-type selector for Botan/Chie/Daiya/Fumiko. Flat/shared (not per-algo-prefixed)
+   * since each of these four only has one fill context at a time, unlike Gumi's simultaneous
+   * Line+Fill. See fillTypeColor.frag.ts for the shader-side contract. */
   fillType: FillType
   /** Colors the background side instead of the detected stroke/shape — see lineFillColor.frag.ts's
    * uInvert convention, reused here for all four algos. For Botan's continuous (non-binary) alpha
@@ -316,20 +306,35 @@ export interface LineArtParams {
   // own distance-to-edge machinery).
   gumiContrastBoost: number
   blobMaxDt: number
-  /** "Overdrive" (v0.3 tuning) — line-thickening independent of blobMaxDt: a true morphological dilate (min-filter grow) on the final Line-mode mask, an optical (not algorithmic) post-process that doesn't touch blob suppression's own sizing. Rounded to an int px radius. 0 = off. An earlier box-blur-then-rethreshold version had a real ceiling for thin strokes (erased instead of growing past a certain radius) — see pipeline.ts's runGumiLinePostProcess and changelog/oshipfp-v0.3-saga.md. */
+  /** "Overdrive" — line-thickening independent of blobMaxDt: a true morphological dilate
+   * (min-filter grow) on the final Line-mode mask, an optical (not algorithmic) post-process that
+   * doesn't touch blob suppression's own sizing. Rounded to an int px radius. 0 = off. See
+   * pipeline.ts's runGumiLinePostProcess. */
   gumiOverdrive: number
-  /** Line mode's own fill-type color, mirroring Fill mode's (see gumiFillType/gumiFillInvert/gumiFillSolidColor below) — reuses the same 3 options/logic (lineFillColor.frag.ts + fillTypeColor.frag.ts) applied to the finished Line-mode mask instead of the fill-region mask. Defaults to 'solid' + black so the default look matches what Line mode always rendered before this existed (plain dark strokes under Multiply), not a silent visual change. */
+  /** Line mode's own fill-type color, mirroring Fill mode's (see gumiFillType/gumiFillInvert/
+   * gumiFillSolidColor below) — reuses the same 3 options/logic (lineFillColor.frag.ts +
+   * fillTypeColor.frag.ts) applied to the finished Line-mode mask instead of the fill-region
+   * mask. Defaults to 'solid' + black (plain dark strokes under Multiply). */
   gumiLineFillType: 'image' | 'solid' | 'gradient'
   gumiLineSolidColor: [number, number, number]
   /** Colors the background side instead of the detected strokes — see lineFillColor.frag.ts. */
   gumiLineInvert: boolean
-  /** Prototype toggle (v0.3 tuning) — a real morphological closing (grow by a fixed small radius, then shrink back by the same amount) applied to the closed detection mask before blob/bleed/fill, meant to bridge small gaps at V/Y stroke intersections without permanently thickening straight runs (unlike just cranking `radius`, which grows everywhere). Boolean-only for now to validate whether it's worth promoting to a real radius param — see pipeline.ts's GUMI_GAP_CLOSING_RADIUS. */
+  /** A morphological closing (grow by a fixed small radius, then shrink back by the same amount)
+   * applied to the closed detection mask before blob/bleed/fill, meant to bridge small gaps at
+   * V/Y stroke intersections without permanently thickening straight runs (unlike just cranking
+   * `radius`, which grows everywhere). See pipeline.ts's GUMI_GAP_CLOSING_RADIUS. */
   gumiGapClosing: boolean
-  /** "Detection Contrast" (v0.3 tuning) — shared by blobMask.frag.ts and fillMask.frag.ts: reshapes their distance-to-edge boundary decision from a hard single-pixel cutoff into an antialiased, gamma-adjustable falloff (exact same `pow(t, gamma)` idea as distanceToEdge.frag.ts's own uGamma, just applied to blob/fill's boundary instead of bleed's). 1 = matches the old hard-cutoff behavior at the boundary; >1 sharper/more decisive edge, <1 softer. */
+  /** "Detection Contrast" — shared by blobMask.frag.ts and fillMask.frag.ts: reshapes their
+   * distance-to-edge boundary decision from a hard single-pixel cutoff into an antialiased,
+   * gamma-adjustable falloff (exact same `pow(t, gamma)` idea as distanceToEdge.frag.ts's own
+   * uGamma, just applied to blob/fill's boundary instead of bleed's). 1 = hard-cutoff behavior at
+   * the boundary; >1 sharper/more decisive edge, <1 softer. */
   gumiBlobGamma: number
   gumiColorBleed: boolean
   gumiBleedFeather: number
-  /** Color Bleed's own bleed-distance radius (distanceToEdge.frag.ts's uRadius) — deliberately separate from blobMaxDt (v0.3 tuning): both used to share blobMaxDt directly, coupling "how thick strokes render" to "how far ink bleeds from a detected line," two different jobs on one knob. */
+  /** Color Bleed's own bleed-distance radius (distanceToEdge.frag.ts's uRadius) — deliberately
+   * separate from blobMaxDt, so "how thick strokes render" and "how far ink bleeds from a
+   * detected line" stay two independent knobs. */
   gumiBleedRadius: number
   gumiSoftDetection: boolean
   gumiSoftness: number
@@ -348,14 +353,12 @@ export interface LineArtParams {
   gumiGradientMid: [number, number, number]
   gumiGradientHighlight: [number, number, number]
   /**
-   * Dual Line (v0.3+, see pipeline.ts's pathG branch) — runs two independent,
-   * simplified luminance-band detectors (Black Line / White Line) instead of
-   * Gumi's old single always-on ramp, each using the same Pinch Mode shape
-   * ToneShapingParams' pinchMode already uses (position/expand/feathering,
-   * converted via pinchToPlateau()). Each band gets its own full
-   * threshold->grow->JFA->blob->fill-color chain, sharing every other Gumi
-   * Line-mode slider value (radius/blobMaxDt/gumiOverdrive/hardness/etc),
-   * then the two results are merged via Porter-Duff "over" compositing.
+   * Dual Line (see pipeline.ts's pathG branch) — runs two independent, simplified
+   * luminance-band detectors (Black Line / White Line), each using the same Pinch Mode shape
+   * ToneShapingParams' pinchMode already uses (position/expand/feathering, converted via
+   * pinchToPlateau()). Each band gets its own full threshold->grow->JFA->blob->fill-color chain,
+   * sharing every other Gumi Line-mode slider value (radius/blobMaxDt/gumiOverdrive/hardness/
+   * etc), then the two results are merged via Porter-Duff "over" compositing.
    */
   gumiDualLine: boolean
   gumiDualBlack: PinchModeParams
@@ -374,13 +377,11 @@ export interface LineArtParams {
   gumiDualWhiteOnTop: boolean
 
   /**
-   * Color Contrast (Image fill) / Gradient Pivot (Gradient fill) — v0.3 tuning saga, session 14
-   * polish pass. Botan/Chie/Daiya/Fumiko already expose these per CLAUDE.md's Service Update
-   * Saga; Gumi never got them despite having up to 4 simultaneous fill contexts (Line mode, Fill
-   * mode, and Dual Line's two bands). Independent per context rather than reusing the shared
-   * top-level colorContrast/gradientPivot fields — those 4 contexts can be live at once (Dual
-   * Line's two bands definitely are), so one shared value would have them fighting over it.
-   * Dual Line's two bands are Image/Solid only (no Gradient), so no gumiDual*GradientPivot.
+   * Color Contrast (Image fill) / Gradient Pivot (Gradient fill), one pair per Gumi fill context
+   * (Line mode, Fill mode, and Dual Line's two bands). Independent per context rather than
+   * reusing the shared top-level colorContrast/gradientPivot fields, since all 4 contexts can be
+   * live at once and would otherwise fight over one value. Dual Line's two bands are Image/Solid
+   * only (no Gradient), so no gumiDual*GradientPivot.
    */
   gumiLineColorContrast: number
   gumiLineGradientPivot: number
@@ -397,30 +398,26 @@ export interface LineArtParams {
   hiToneTarget: 'off' | 'multiply' | 'screen'
   hiToneGain: number
   hiToneContrast: number
-  /** Hinata Tuning Saga Phase 1 — shared-tail field (like hiToneGain/hiToneContrast above), even
-   * though only Hinata's UI exposes it this phase: -1..1, 0 = identity (matches today's Raw
+  /** Shared-tail field (like hiToneGain/hiToneContrast above): -1..1, 0 = identity (matches Raw
    * output exactly). Negative crushes toward solid black, positive toward solid white — see
    * pipeline.ts's runHiRawDarkenLighten (reuses colorCorrectProgram's black/white clip). */
   hiRawDarkenLighten: number
-  /** Hinata Tuning Saga Phase 1 — shared-tail field: 0..1, 1 = today's unchanged hard cutoff
-   * (softThresholdProgram's uSoftness=0). Lower values widen the threshold's transition band —
-   * see pipeline.ts's Output Treatment tail. */
+  /** Shared-tail field: 0..1, 1 = hard cutoff (softThresholdProgram's uSoftness=0). Lower values
+   * widen the threshold's transition band — see pipeline.ts's Output Treatment tail. */
   hiThresholdContrast: number
-  /** Hinata Tuning Saga Phase 2 — shared-tail field: pivoted-at-0.5 contrast curve applied
-   * alongside hiRawDarkenLighten's black/white clip in runHiRawDarkenLighten, 1 = identity. */
+  /** Shared-tail field: pivoted-at-0.5 contrast curve applied alongside hiRawDarkenLighten's
+   * black/white clip in runHiRawDarkenLighten, 1 = identity. */
   hiRawContrast: number
-  /** Hinata Tuning Saga Phase 2 — shared-tail field, applies to Tone only: standard luma-mix
-   * saturation (reuses saturationAdjustProgram, already used by Fumiko), 1 = identity. */
+  /** Shared-tail field, applies to Tone only: standard luma-mix saturation (reuses
+   * saturationAdjustProgram, already used by Fumiko), 1 = identity. */
   hiToneSaturation: number
-  /** Hinata Tuning Saga Phase 2 — shared-tail field, applies to Tone only: rotates hue 180°
-   * (HSV round-trip) while preserving luminance/saturation — see saturationAdjust.frag.ts's
-   * uHueInvert. */
+  /** Shared-tail field, applies to Tone only: rotates hue 180° (HSV round-trip) while preserving
+   * luminance/saturation — see saturationAdjust.frag.ts's uHueInvert. */
   hiToneHueInvert: boolean
-  /** Hinata Tuning Saga Phase 2 — Erode's own erosion-direction toggle, replacing the old
-   * implicit `blendMode==='screen'` coupling on softThresholdProgram's uInvert: flips which
-   * luminance side (surface/shading vs. line art) is classified as ink at the threshold stage
-   * itself. Independent of `fillInvert` below, which operates one stage later (color resolution,
-   * not shape) — see pipeline.ts's Erode branch. */
+  /** Erode's own erosion-direction toggle: flips which luminance side (surface/shading vs. line
+   * art) is classified as ink at the threshold stage itself. Independent of `fillInvert` below,
+   * which operates one stage later (color resolution, not shape) — see pipeline.ts's Erode
+   * branch. */
   hiThresholdInvert: boolean
   // Path H only.
   highPassStrength: number
@@ -428,13 +425,11 @@ export interface LineArtParams {
   responsiveCrossover: number
   responsiveGrow: number
   responsiveGrowBias: number
-  /** Hinata Tuning Saga Phase 2 — Edge's independent per-polarity fill-type (Image/Solid only,
-   * no Gradient — Edge's ink color is a per-pixel binary choice, not a luminance-driven ramp).
-   * "Dark"/"Light" name the *local background area* the ink is drawn over (matching
-   * responsiveEdgeColor.frag.ts's uCrossover convention), not the ink's own color — defaults
-   * (white-over-dark, black-over-light) match today's hardcoded behavior exactly, so switching
-   * either side to 'image' is the only way this changes existing output. See
-   * pipeline.ts's runEdgeFillColor / edgeFillColor.frag.ts. */
+  /** Edge's independent per-polarity fill-type (Image/Solid only, no Gradient — Edge's ink color
+   * is a per-pixel binary choice, not a luminance-driven ramp). "Dark"/"Light" name the *local
+   * background area* the ink is drawn over (matching responsiveEdgeColor.frag.ts's uCrossover
+   * convention), not the ink's own color. See pipeline.ts's runEdgeFillColor /
+   * edgeFillColor.frag.ts. */
   edgeInkOverDarkFillType: 'image' | 'solid'
   edgeInkOverDarkSolidColor: [number, number, number]
   edgeInkOverLightFillType: 'image' | 'solid'

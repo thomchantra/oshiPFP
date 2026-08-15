@@ -109,11 +109,10 @@ function hslGradients(band: HslBand): { hue: string; saturation: string; lightne
  * left, see HslBandSelector.tsx) with one shared Hue/Saturation/Lightness
  * slider trio whose bound values switch based on which swatch is selected.
  *
- * All state here (hslByBand/invert/light/colorAdjust/activeBand) is owned
- * by App.tsx via useColorAdjustments, not locally — this component only
- * renders while `tab === 'color'`, so state that lived here got wiped on
- * every tab switch (a real bug caught via testing: the invert toggle
- * "switching off by itself" was actually this component remounting).
+ * All state here (hslByBand/invert/light/colorAdjust/activeBand) must stay owned by App.tsx via
+ * useColorAdjustments, not moved to local state here — this component only renders while
+ * `tab === 'color'`, so any state kept locally would get wiped on every tab switch (this is why
+ * the invert toggle, for example, must not become local state here).
  */
 export default function ColorPanel({
   subTab, onSubTabChange,

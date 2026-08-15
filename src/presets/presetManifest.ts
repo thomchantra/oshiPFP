@@ -38,11 +38,11 @@ export interface PresetManifestEntry {
   enhance: EnhanceParams
 }
 
-/** v0.3 JSON preset saga — each preset is a fully self-contained JSON file under ./data/<algo>/
- * <slug>.json (paired with public/presets/<algo>/<slug>/{before,after}.webp), auto-discovered here
- * at build time instead of being a hand-maintained array. scripts/import-presets.sh is the only
- * thing that should ever add to this — drop a new triplet in presetsprep/, run the script, done;
- * this file itself never needs editing again. */
+/** Each preset is a fully self-contained JSON file under ./data/<algo>/<slug>.json (paired with
+ * public/presets/<algo>/<slug>/{before,after}.webp), auto-discovered here at build time instead of
+ * being a hand-maintained array. scripts/import-presets.sh is the only thing that should ever add
+ * to this — drop a new triplet in presetsprep/, run the script, done; this file itself never needs
+ * editing again. */
 const modules = import.meta.glob('./data/*/*.json', { eager: true }) as Record<string, { default: PresetManifestEntry }>
 
 export const PRESET_MANIFEST: PresetManifestEntry[] = Object.keys(modules)

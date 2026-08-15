@@ -5,19 +5,15 @@
  * ("Minimum" filter) grow pass expects: picking the darkest neighbor
  * naturally spreads (thickens) the black line regions.
  *
- * uInvert flips that polarity — explicitly set 0 at every Botan/Path D call site (a real,
- * user-visible bug fixed in the v0.3 saga: those two used to rely on WebGL's implicit 0 for an
- * unset int uniform, which silently broke the moment Gumi — the only other consumer of this
- * shared program — rendered first and left its own uInvert=1 on the program object). Added for
- * Path G/Gumi: its detection input isn't "luminance below
- * cutoff" but "band-weight above cutoff" (from plateauRamp.frag.ts — a
- * high band-weight means the pixel IS the selected line/stroke), so
- * without inversion the naive comparison would emit 1 for a detected
- * stroke and 0 for background — backwards from every other mask-mode
- * path in this codebase (0 = line/ink, 1 = fill/background). uInvert=1
- * flips it back at the source, so everything downstream (grow direction,
- * distance-transform seeding) can stay in the one shared convention
- * instead of needing per-path polarity patches later in the chain.
+ * uInvert flips that polarity. This is a shared-program uniform — every call site must set it
+ * explicitly every call, see CLAUDE.md's "Known Recurring Gotchas". Added for Path G/Gumi: its
+ * detection input isn't "luminance below cutoff" but "band-weight above cutoff" (from
+ * plateauRamp.frag.ts — a high band-weight means the pixel IS the selected line/stroke), so
+ * without inversion the naive comparison would emit 1 for a detected stroke and 0 for
+ * background — backwards from every other mask-mode path in this codebase (0 = line/ink,
+ * 1 = fill/background). uInvert=1 flips it back at the source, so everything downstream (grow
+ * direction, distance-transform seeding) can stay in the one shared convention instead of
+ * needing per-path polarity patches later in the chain.
  */
 export const thresholdFrag = `#version 300 es
 precision highp float;
