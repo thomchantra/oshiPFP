@@ -1110,6 +1110,10 @@ button, input {
 }
 .confirm-reset-btn { background: #E31212; color: #fff; border: none; }
 .confirm-cancel-btn { background: var(--white-50); color: var(--accent-title); border: none; }
+/* About tab hero screenshot — bleeds edge-to-edge against .modal-body's 16px padding, same
+   negative-margin trick .preset-gallery already uses, since .modal-card clips to its own
+   border-radius. */
+.about-modal-hero { display: block; width: calc(100% + 32px); margin: 16px -16px 8px; }
 .algo-info-entry { margin-bottom: 20px; }
 .algo-info-entry:last-child { margin-bottom: 0; }
 .algo-info-entry-title {

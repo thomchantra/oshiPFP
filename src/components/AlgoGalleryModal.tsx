@@ -35,10 +35,10 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
   {
     mode: 'pathD',
     label: 'Daiya',
-    technique: 'Octagon Approximation',
+    technique: 'Distance Transform + Octagon Mode',
     icon: 'diamond',
     blurb:
-      "Grows lines in 4 directions at once (like stamping in a cross + diagonal pattern), which gives a faceted, slightly angular blob shape instead of a perfect circle. At a low radius this turns into a grainy, textured look.",
+      "Grows lines using the same true distance-transform math as Botan, smooth and round by default. Switch to Octagon mode for a faceted, chisel marker look",
   },
   {
     mode: 'pathF',
@@ -51,26 +51,26 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
   {
     mode: 'pathG',
     label: 'Gumi',
-    technique: 'Luminance Band + Closing',
+    technique: 'Contrast Threshold + Dual Line',
     icon: 'bear',
     blurb:
-      "Isolates a luminance band, boosts its contrast, then closes and cleans up the result — rejects wide fill interiors so only thin strokes survive (or, in Color Bleed mode, a soft stylized ink falloff instead).",
+      "Boosts contrast and thresholds to pull out thin strokes while rejecting wide fill interiors. Dual Line mode runs two independent luminance-band detectors and merges them into one result, or switch to Fill mode for a soft, stylized ink falloff instead.",
   },
   {
     mode: 'pathH',
     label: 'Hinata',
-    technique: 'High Pass (Blur Diff)',
+    technique: 'High Pass + Output Treatments',
     icon: 'sun',
     blurb:
-      "Subtracts a blurred version of the image from itself to isolate high-frequency detail — reads as a soft, painterly edge response rather than a hard line.",
+      "Subtracts a blurred version of the image from itself to isolate high-frequency detail, then resolves it through one of 4 output treatments — Edge, Emboss, Erode, or Tone — each reading closer to a soft, painterly response than a hard line.",
   },
   {
     mode: 'pathI',
     label: 'Tsukiko',
-    technique: 'Laplacian',
+    technique: 'Laplacian + Output Treatments',
     icon: 'moon',
     blurb:
-      "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass, with optional pre-blur/post-sharpen to tune noise vs. definition.",
+      "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass — with the same 4 Edge/Emboss/Erode/Tone output treatments as Hinata, plus optional pre-blur/post-sharpen to tune noise vs. definition.",
   },
 ]
 

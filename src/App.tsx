@@ -22,7 +22,7 @@ import { useElementSize } from './crop/useElementSize'
 import { useColorCurve } from './curve/useColorCurve'
 import { useCropEnhance } from './crop/useCropEnhance'
 import { useCropResize } from './crop/useCropResize'
-import { formatStateDump } from './debug/dumpState'
+import { formatStateDump, parseStateDump } from './debug/dumpState'
 import { PRESET_MANIFEST } from './presets/presetManifest'
 import { applyPreset } from './presets/applyPreset'
 import { trace } from './debug/renderTrace'
@@ -375,6 +375,62 @@ export default function App() {
     downloadBlob(new Blob([text], { type: 'application/json' }), `${lineArtMode}-oshipfp-state-${Date.now()}.json`)
   }
 
+  // Dev-only "Load State" (see HeaderBar's button next to Dump State) — reverses handleDumpState
+  // above via parseStateDump, for a post-deploy round-trip check: dump on one build, load the same
+  // file back in on another (e.g. after a Netlify deploy), then dump again and diff the two files
+  // to confirm every param survived. Restores everything the dump captures except crop.transform
+  // (pan/zoom) — useCropInteraction deliberately has no external setter for it (it self-recenters
+  // from sourceSize instead, see its own comment), and fileInfo (the dump only records the loaded
+  // file's name/type/size, not its bytes — there's no image to restore, just whatever's already
+  // loaded stays as-is).
+  const handleLoadState = async (file: File) => {
+    let data: Awaited<ReturnType<typeof parseStateDump>>
+    try {
+      data = parseStateDump(await file.text())
+    } catch (err) {
+      alert(`Couldn't load state: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
+
+    setCropMode(data.crop.mode)
+    cropEnhance.setEnhance(data.crop.enhance)
+    cropResize.setMode(data.crop.resize.mode)
+    cropResize.setCustomSize(data.crop.resize.customSize)
+
+    setParamsByMode(() =>
+      Object.fromEntries(
+        LINE_ART_MODES.map((mode) => [mode, data.lineArt.paramsByAlgorithm[mode].params]),
+      ) as Record<LineArtMode, LineArtParams>,
+    )
+    setLineArtMode(data.lineArt.activeMode)
+    setLineArtDisplayMode(data.lineArt.paramsByAlgorithm[data.lineArt.activeMode].params.displayMode)
+
+    setColorSubTab(data.color.subTab as ColorSubTab)
+    colorAdjustments.setLight(data.color.light)
+    colorAdjustments.setColorAdjust(data.color.colorAdjust)
+    colorAdjustments.setInvert(data.color.invert)
+    colorAdjustments.setHslByBand(() => data.color.hslByBand)
+    colorAdjustments.setGradeGradientMap(data.color.gradeGradientMap)
+    colorCurve.setChannel(data.color.curveChannel)
+    colorCurve.setCurves(data.color.curves)
+    colorCurve.setVisible(data.color.curveVisible)
+
+    exportSettings.setExportDisplayMode(data.export.displayMode)
+    exportSettings.setExportColorGrade(data.export.colorGrade)
+    exportSettings.setExportColorGradeIntensity(data.export.colorGradeIntensity)
+    exportSettings.setResolutionMode(data.export.resolutionMode)
+    exportSettings.setCustomSize(data.export.customSize)
+    exportSettings.setExportCustomRatio(data.export.customRatio)
+    exportSettings.setResampleMode(data.export.resampleMode)
+    exportSettings.setFormat(data.export.format)
+
+    setPfpMode(data.view.pfpMode)
+    if (data.view.theme !== theme) setTheme(toggleTheme())
+    setPreviewMode(data.view.previewMode)
+    setDualPaneEnabled(data.view.dualPaneEnabled)
+    setDualPaneMode(data.view.dualPaneMode as DualPaneMode)
+  }
+
   // Dev-only "Load Demo" trigger (see HeaderBar's PRESET_MANIFEST-driven buttons, gated the same
   // as handleDumpState) — exercises applyPreset.ts's real code path for the JSON preset saga's
   // round-trip validation. Not the eventual gallery UI (deferred), just *a* way to invoke it.
@@ -600,6 +656,7 @@ export default function App() {
         dualPaneActive={dualPaneActive || gradeDualPaneActive}
         dualPanePriorityIndex={gradeDualPaneActive ? 1 : DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
         onDumpState={handleDumpState}
+        onLoadState={handleLoadState}
         onReset={resetApp}
         devMode={devMode}
         onUnlockDevMode={() => setDevMode(true)}

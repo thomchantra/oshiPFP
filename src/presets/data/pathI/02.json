@@ -35,7 +35,7 @@
       "purple": 0,
       "magenta": 0
     },
-    "opacity": 1.08,
+    "opacity": 1.21,
     "blendMode": "multiply",
     "overlayPassthrough": false,
     "matteColor": [
@@ -131,9 +131,9 @@
     "hiToneTarget": "off",
     "hiToneGain": 1,
     "hiToneContrast": 1,
-    "hiRawDarkenLighten": 0.55,
+    "hiRawDarkenLighten": 0.5900000000000001,
     "hiThresholdContrast": 1,
-    "hiRawContrast": 1.73,
+    "hiRawContrast": 1.22,
     "hiToneSaturation": 1,
     "hiToneHueInvert": false,
     "hiThresholdInvert": false,
@@ -154,9 +154,9 @@
       0,
       0
     ],
-    "laplacianStrength": 5.1000000000000005,
-    "laplacianPreBlur": 0.4,
-    "laplacianSharpenAmount": 0.9,
+    "laplacianStrength": 4.45,
+    "laplacianPreBlur": 0,
+    "laplacianSharpenAmount": 0.5,
     "laplacianGrow": 0
   },
   "color": {

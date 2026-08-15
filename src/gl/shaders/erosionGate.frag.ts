@@ -15,6 +15,16 @@
  * composite.frag.ts does that mixing now (blend mode + opacity), so
  * gate=0 pixels resolve back to the untouched base regardless of which
  * blend mode is selected.
+ *
+ * uFeather-vs-domain clamp (v0.3, same bug class as distanceToEdge.frag.ts's session-17 fix on
+ * Daiya): erosionRgb.frag.ts's componentwise min() guarantees erodedLum <= origLum, so
+ * edgeStrength is always in [0, 1] — but the raw smoothstep(uGateThreshold - uFeather,
+ * uGateThreshold + uFeather, edgeStrength) let both edges wander outside that range once uFeather
+ * (from Hardness) grew large. Lower edge going negative let perfectly flat pixels (edgeStrength
+ * == 0) leak a nonzero gate instead of staying pinned at 0; upper edge exceeding 1 meant even the
+ * strongest genuine edge pixels (edgeStrength near its 1.0 ceiling) couldn't reach gate == 1,
+ * reading as a softened/faded stroke core instead of a hard edge with a wider feather zone around
+ * it. Fixed by clamping both edges to edgeStrength's known [0, 1] domain.
  */
 export const erosionGateFrag = `#version 300 es
 precision highp float;
@@ -31,7 +41,9 @@ void main() {
   float origLum = dot(orig, vec3(0.2126, 0.7152, 0.0722));
   float erodedLum = dot(eroded, vec3(0.2126, 0.7152, 0.0722));
   float edgeStrength = origLum - erodedLum;
-  float gate = smoothstep(uGateThreshold - uFeather, uGateThreshold + uFeather, edgeStrength);
+  float edge0 = clamp(uGateThreshold - uFeather, 0.0, 1.0);
+  float edge1 = clamp(uGateThreshold + uFeather, 0.0, 1.0);
+  float gate = smoothstep(edge0, edge1, edgeStrength);
   outColor = vec4(eroded, gate);
 }
 `

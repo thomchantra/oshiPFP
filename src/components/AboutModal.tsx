@@ -12,6 +12,9 @@ interface AboutModalProps {
    * version text opens straight to 'changelog', the "oshiPFP" title opens to 'about'. Defaults to
    * 'about' when omitted (e.g. any future opener that doesn't care which tab). */
   initialTab?: AboutTab
+  /** Picks the About tab's hero screenshot (light vs dark app chrome) — HeaderBar already owns
+   * this as top-level theme state, so it's threaded down rather than re-derived here. */
+  theme: 'light' | 'dark'
 }
 
 const TABS: { value: AboutTab; label: string }[] = [
@@ -26,7 +29,7 @@ const TABS: { value: AboutTab; label: string }[] = [
  * skeleton content for now, per the v0.3 tuning spec's own scoping — EDIT ME when real copy is
  * ready. About is today's original content, unchanged, just moved into its own tab body.
  */
-export default function AboutModal({ open, onClose, initialTab = 'about' }: AboutModalProps) {
+export default function AboutModal({ open, onClose, initialTab = 'about', theme }: AboutModalProps) {
   const [tab, setTab] = useState<AboutTab>(initialTab)
 
   useEffect(() => {
@@ -81,11 +84,35 @@ export default function AboutModal({ open, onClose, initialTab = 'about' }: Abou
               Double-tap the curve's floor or ceiling to reset it to its default position.
             </p>
           </div>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">Tuning Tips</p>
+            <ul className="algo-info-entry-body">
+              <li className="changelogbullet">
+                Not sure where to start? The algorithm info modal's gallery has real before/after examples with their exact settings — Load Preset applies them straight onto your own photo.
+              </li>
+              <li className="changelogbullet">
+                Fill Type works the same way everywhere — Image samples color straight from the artwork, Solid Color fills flat, Gradient Map remaps by luminance across a shadow/mid/highlight ramp.
+              </li>
+              <li className="changelogbullet">
+                If an algorithm is missing lines or picking up noise, check Pre-detection Tuning before reaching for the algorithm's own sliders — cleaning up the input first is often the shorter path.
+              </li>
+              <li className="changelogbullet">
+                When in doubt, switch to Overlay view — it isolates the line art module's own output, so it's much easier to see exactly what each slider is doing. 
+                <br></br>
+                One caveat: Overlay can't tell white ink apart from fully-transparent (empty) pixels, since both render the same — set a more prominent color temporarily to dial in the shape, then switch back once the look is settled.
+              </li>
+            </ul>
+          </div>
         </>
       )}
 
       {tab === 'about' && (
         <>
+          <img
+            src={theme === 'dark' ? '/about/darkscreen.webp' : '/about/lightscreen.webp'}
+            alt="oshiPFP app screenshot"
+            className="about-modal-hero"
+          />
           <p className="algo-info-entry-body">
             oshiPFP tunes your drawing/illustration image into an optimized profile picture that looks sharp and legible at small thumbnail sizes.
           </p>

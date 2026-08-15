@@ -4,6 +4,7 @@
   "algoLabel": "Chie",
   "beforeImage": "/presets/pathC/02/before.webp",
   "afterImage": "/presets/pathC/02/after.webp",
+  "sourceFileName": "colorcombo.png",
   "lineArtParams": {
     "mode": "pathC",
     "displayMode": "composite",
@@ -35,43 +36,58 @@
       "purple": 0,
       "magenta": 0
     },
-    "opacity": 2.0300000000000002,
+    "opacity": 0.8,
     "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
     "threshold": 0,
-    "radius": 1.01,
+    "radius": 0.4,
     "hardness": 1,
     "blobContrast": 1,
+    "daiyaOctagonMode": false,
+    "daiyaOctagonRadius": 2,
+    "daiyaOctagonHardness": 0,
+    "daiyaOctagonDirections": 1,
+    "daiyaOctagonRotation": 0,
+    "daiyaOctagonOneSided": false,
+    "daiyaInvertSeed": false,
+    "daiyaSoftThresholdWidth": 0,
+    "daiyaSoftThresholdOverdrive": 1,
     "colorExpansion": false,
     "colorContrast": 1,
-    "gateThreshold": 0.12,
+    "gateThreshold": 0.04,
     "sensitivity": 3,
     "saturation": 0.5,
     "findEdge": false,
     "tintColor": [
-      0.9333333333333333,
-      0.22745098039215686,
-      0.22745098039215686
+      0.2627450980392157,
+      0.30196078431372547,
+      0.8980392156862745
     ],
     "vividDeadzone": 0.15,
     "vividBoost": 1,
-    "fillType": "solid",
-    "fillInvert": true,
+    "fillType": "gradient",
+    "fillInvert": false,
     "gradientShadow": [
-      0.4823529411764706,
-      0.47843137254901963,
-      0.7215686274509804
+      0.054901960784313725,
+      0.10980392156862745,
+      0.4235294117647059
     ],
     "gradientMid": [
-      0.8862745098039215,
-      0.29411764705882354,
-      0.9686274509803922
+      0.5176470588235295,
+      0.00392156862745098,
+      0.4235294117647059
     ],
     "gradientHighlight": [
-      0.34509803921568627,
-      0.9764705882352941,
-      0.5647058823529412
+      1,
+      1,
+      1
     ],
-    "gradientPivot": -0.43999999999999995,
+    "gradientPivot": -0.25,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -83,7 +99,7 @@
       0
     ],
     "gumiLineInvert": false,
-    "gumiGapClosing": true,
+    "gumiGapClosing": false,
     "gumiBlobGamma": 1,
     "gumiColorBleed": false,
     "gumiBleedFeather": 1.5,
@@ -116,11 +132,38 @@
       1,
       1
     ],
-    "gumiRampFloor": 0,
-    "gumiRampInnerLow": 0.3,
-    "gumiRampInnerHigh": 0.7,
-    "gumiRampCeiling": 1,
-    "gumiRampFeather": 0,
+    "gumiDualLine": false,
+    "gumiDualBlack": {
+      "position": 0.2,
+      "expand": 0.3,
+      "feathering": 0.15
+    },
+    "gumiDualWhite": {
+      "position": 0.8,
+      "expand": 0.3,
+      "feathering": 0.15
+    },
+    "gumiDualBlackFillType": "solid",
+    "gumiDualBlackSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "gumiDualBlackInvert": false,
+    "gumiDualWhiteFillType": "solid",
+    "gumiDualWhiteSolidColor": [
+      1,
+      1,
+      1
+    ],
+    "gumiDualWhiteInvert": false,
+    "gumiDualWhiteOnTop": true,
+    "gumiLineColorContrast": 1,
+    "gumiLineGradientPivot": 0,
+    "gumiFillColorContrast": 1,
+    "gumiFillGradientPivot": 0,
+    "gumiDualBlackColorContrast": 1,
+    "gumiDualWhiteColorContrast": 1,
     "thresholdEnabled": false,
     "hiToneTarget": "off",
     "hiToneGain": 1,
@@ -151,13 +194,7 @@
     "laplacianStrength": 1,
     "laplacianPreBlur": 0,
     "laplacianSharpenAmount": 0,
-    "laplacianGrow": 0,
-    "overlayPassthrough": false,
-    "matteColor": [
-      1,
-      1,
-      1
-    ]
+    "laplacianGrow": 0
   },
   "color": {
     "light": {
@@ -178,7 +215,7 @@
       "rgb": false,
       "r": false,
       "g": false,
-      "b": true
+      "b": false
     },
     "hslByBand": {
       "master": {
@@ -227,7 +264,7 @@
         "lightness": 0
       }
     },
-    "curveChannel": "g",
+    "curveChannel": "rgb",
     "curves": {
       "rgb": [
         {
@@ -279,23 +316,23 @@
         0
       ],
       "mid": [
-        1,
-        0.1411764705882353,
-        0.22745098039215686
+        0.5,
+        0.5,
+        0.5
       ],
       "highlight": [
-        0.9607843137254902,
-        0.9803921568627451,
+        1,
+        1,
         1
       ],
       "pivot": 0,
       "duoTone": false,
-      "intensity": 0.5,
+      "intensity": 1,
       "blendMode": "overwrite"
     }
   },
   "enhance": {
-    "smooth": 0,
-    "sharpen": 0
+    "smooth": 0.09,
+    "sharpen": 0.31
   }
 }

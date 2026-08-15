@@ -6,7 +6,7 @@
   "afterImage": "/presets/pathC/03/after.webp",
   "lineArtParams": {
     "mode": "pathC",
-    "displayMode": "original",
+    "displayMode": "composite",
     "toneShaping": {
       "exposure": 0,
       "contrast": 0,
@@ -36,48 +36,42 @@
       "magenta": 0
     },
     "opacity": 1,
-    "blendMode": "normal",
-    "overlayPassthrough": false,
-    "matteColor": [
-      1,
-      1,
-      1
-    ],
+    "blendMode": "multiply",
     "threshold": 0,
-    "radius": 0.87,
+    "radius": 0.6900000000000001,
     "hardness": 1,
     "blobContrast": 1,
     "colorExpansion": false,
     "colorContrast": 1,
-    "gateThreshold": 0.02,
+    "gateThreshold": 0.04,
     "sensitivity": 3,
     "saturation": 0.5,
     "findEdge": false,
     "tintColor": [
-      0,
-      0,
-      0
+      0.22745098039215686,
+      0.6627450980392157,
+      0.9333333333333333
     ],
     "vividDeadzone": 0.15,
     "vividBoost": 1,
-    "fillType": "solid",
-    "fillInvert": true,
+    "fillType": "gradient",
+    "fillInvert": false,
     "gradientShadow": [
-      0,
-      0,
-      0
+      0.4823529411764706,
+      0.47843137254901963,
+      0.7215686274509804
     ],
     "gradientMid": [
-      0.5,
-      0.5,
-      0.5
+      0.8862745098039215,
+      0.29411764705882354,
+      0.9686274509803922
     ],
     "gradientHighlight": [
-      1,
-      1,
-      1
+      0.34509803921568627,
+      0.9764705882352941,
+      0.5647058823529412
     ],
-    "gradientPivot": 0,
+    "gradientPivot": -0.41000000000000003,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -157,7 +151,13 @@
     "laplacianStrength": 1,
     "laplacianPreBlur": 0,
     "laplacianSharpenAmount": 0,
-    "laplacianGrow": 0
+    "laplacianGrow": 0,
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ]
   },
   "color": {
     "light": {

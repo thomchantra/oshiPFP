@@ -8,11 +8,11 @@
     "mode": "pathB",
     "displayMode": "composite",
     "toneShaping": {
-      "exposure": -0.06999999999999984,
-      "contrast": 0,
+      "exposure": -0.3700000000000001,
+      "contrast": 0.42999999999999994,
       "mode": "clip",
       "clipMode": {
-        "blackClip": 0,
+        "blackClip": 0.05,
         "whiteClip": 1
       },
       "pinchMode": {
@@ -36,19 +36,13 @@
       "magenta": 0
     },
     "opacity": 1,
-    "blendMode": "multiply",
-    "overlayPassthrough": false,
-    "matteColor": [
-      1,
-      1,
-      1
-    ],
-    "threshold": 0.47000000000000003,
-    "radius": 6,
+    "blendMode": "overwrite",
+    "threshold": 0.07,
+    "radius": 3,
     "hardness": 1,
-    "blobContrast": 4.05,
+    "blobContrast": 1.53,
     "colorExpansion": false,
-    "colorContrast": 1.43,
+    "colorContrast": 0.30000000000000004,
     "gateThreshold": 0,
     "sensitivity": 3,
     "saturation": 0.5,
@@ -60,24 +54,24 @@
     ],
     "vividDeadzone": 0.15,
     "vividBoost": 1,
-    "fillType": "image",
-    "fillInvert": false,
+    "fillType": "solid",
+    "fillInvert": true,
     "gradientShadow": [
-      0,
-      0,
-      0
+      0.8509803921568627,
+      0.5176470588235295,
+      0.3058823529411765
     ],
     "gradientMid": [
-      0.5,
-      0.5,
-      0.5
+      0.8901960784313725,
+      0.7176470588235294,
+      0.40784313725490196
     ],
     "gradientHighlight": [
-      1,
-      1,
-      1
+      0.796078431372549,
+      0.7294117647058823,
+      0.6666666666666666
     ],
-    "gradientPivot": 0,
+    "gradientPivot": -1,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -157,7 +151,13 @@
     "laplacianStrength": 1,
     "laplacianPreBlur": 0,
     "laplacianSharpenAmount": 0,
-    "laplacianGrow": 0
+    "laplacianGrow": 0,
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ]
   },
   "color": {
     "light": {
@@ -235,14 +235,6 @@
           "y": 0
         },
         {
-          "x": 89.46065512048193,
-          "y": 20.975150602409656
-        },
-        {
-          "x": 137.30845256024097,
-          "y": 140.14777861445782
-        },
-        {
           "x": 255,
           "y": 255
         }
@@ -303,7 +295,7 @@
     }
   },
   "enhance": {
-    "smooth": 0.28,
-    "sharpen": 0.8200000000000001
+    "smooth": 0.19,
+    "sharpen": 2.49
   }
 }

@@ -4,16 +4,17 @@
   "algoLabel": "Fumiko",
   "beforeImage": "/presets/pathF/01/before.webp",
   "afterImage": "/presets/pathF/01/after.webp",
+  "sourceFileName": "bounce-fb.jpg",
   "lineArtParams": {
     "mode": "pathF",
     "displayMode": "composite",
     "toneShaping": {
-      "exposure": 0,
-      "contrast": 0,
+      "exposure": 0.03000000000000025,
+      "contrast": 0.5900000000000001,
       "mode": "clip",
       "clipMode": {
         "blackClip": 0,
-        "whiteClip": 1
+        "whiteClip": 0.8200000000000001
       },
       "pinchMode": {
         "position": 0.5,
@@ -36,30 +37,36 @@
       "magenta": 0
     },
     "opacity": 1,
-    "blendMode": "multiply",
+    "blendMode": "difference",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
     "threshold": 0,
-    "radius": 2.31,
-    "hardness": 0.26,
+    "radius": 1.62,
+    "hardness": 0.15999999999999992,
     "blobContrast": 1,
     "colorExpansion": false,
-    "colorContrast": 2.7,
+    "colorContrast": 1,
     "gateThreshold": 0,
-    "sensitivity": 11.32,
-    "saturation": 1.07,
+    "sensitivity": 6.54,
+    "saturation": 1.33,
     "findEdge": false,
     "tintColor": [
       1,
-      0.475,
-      0.886
+      0,
+      0
     ],
-    "vividDeadzone": 0.39,
-    "vividBoost": 3.47,
-    "fillType": "image",
+    "vividDeadzone": 0.15,
+    "vividBoost": 1,
+    "fillType": "solid",
     "fillInvert": false,
     "gradientShadow": [
       0,
-      0,
-      0
+      1,
+      0.4823529411764706
     ],
     "gradientMid": [
       0.5,
@@ -71,7 +78,7 @@
       1,
       1
     ],
-    "gradientPivot": 0,
+    "gradientPivot": -0.04999999999999993,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -151,22 +158,16 @@
     "laplacianStrength": 1,
     "laplacianPreBlur": 0,
     "laplacianSharpenAmount": 0,
-    "laplacianGrow": 0,
-    "overlayPassthrough": false,
-    "matteColor": [
-      1,
-      1,
-      1
-    ]
+    "laplacianGrow": 0
   },
   "color": {
     "light": {
       "exposure": 0,
-      "contrast": 0,
-      "brilliance": 0,
+      "contrast": -0.31000000000000005,
+      "brilliance": 0.1200000000000001,
       "whites": 0,
       "highlights": 0,
-      "shadows": 0,
+      "shadows": -0.22999999999999998,
       "blacks": 0
     },
     "colorAdjust": {
@@ -183,7 +184,7 @@
     "hslByBand": {
       "master": {
         "hue": 0,
-        "saturation": 0,
+        "saturation": 0.26,
         "lightness": 0
       },
       "red": {
@@ -193,7 +194,7 @@
       },
       "orange": {
         "hue": 0,
-        "saturation": 0,
+        "saturation": 0.6100000000000001,
         "lightness": 0
       },
       "yellow": {
@@ -227,7 +228,7 @@
         "lightness": 0
       }
     },
-    "curveChannel": "rgb",
+    "curveChannel": "g",
     "curves": {
       "rgb": [
         {
@@ -242,7 +243,11 @@
       "r": [
         {
           "x": 0,
-          "y": 0
+          "y": 83.92178087349396
+        },
+        {
+          "x": 84.9835278614458,
+          "y": 100.71206701807228
         },
         {
           "x": 255,
@@ -255,7 +260,11 @@
           "y": 0
         },
         {
-          "x": 255,
+          "x": 142.3644578313253,
+          "y": 152.4835278614458
+        },
+        {
+          "x": 206.91782756024097,
           "y": 255
         }
       ],
@@ -265,7 +274,11 @@
           "y": 0
         },
         {
-          "x": 255,
+          "x": 142.1964420180723,
+          "y": 162.68025225903614
+        },
+        {
+          "x": 182.08960843373492,
           "y": 255
         }
       ]
@@ -296,6 +309,6 @@
   },
   "enhance": {
     "smooth": 0,
-    "sharpen": 0
+    "sharpen": 1.44
   }
 }

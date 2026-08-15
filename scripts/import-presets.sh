@@ -67,6 +67,29 @@ Modes:
 EOF
 }
 
+# Resolves a user-typed algo argument to its actual on-disk casing (e.g. "pathg" -> "pathG"),
+# by matching case-insensitively against DATA_DIR's subdirectories. Echoes the canonical name.
+# On macOS's default case-insensitive-but-case-preserving filesystem, `[ -d "$DATA_DIR/pathg" ]`
+# would silently succeed against a real "pathG" dir while leaving the literal lowercase string
+# baked into jq-generated id/beforeImage/afterImage fields — this resolver exists specifically
+# to normalize the arg *before* it's used for anything, so that bug class can't recur.
+resolve_algo() {
+  local input="$1"
+  local d name matches=()
+  for d in "$DATA_DIR"/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    if [ "${name,,}" = "${input,,}" ]; then
+      matches+=("$name")
+    fi
+  done
+  case "${#matches[@]}" in
+    0) echo "No such algo directory (case-insensitive match failed): $input" >&2; exit 1 ;;
+    1) echo "${matches[0]}" ;;
+    *) echo "Ambiguous algo \"$input\" — matches multiple installed dirs: ${matches[*]}" >&2; exit 1 ;;
+  esac
+}
+
 # Every 2-digit slug currently installed for an algo, in ascending (= current gallery) order.
 list_slugs() {
   local algo="$1"
@@ -214,6 +237,7 @@ cmd_list() {
   local filter_algo="${1:-}"
   local algos=()
   if [ -n "$filter_algo" ]; then
+    filter_algo="$(resolve_algo "$filter_algo")"
     algos=("$filter_algo")
   else
     local d
@@ -251,12 +275,15 @@ cmd_list() {
 }
 
 cmd_reorder() {
-  local algo="${1:-}"
+  local algo_raw="${1:-}"
   local seq_raw="${2:-}"
-  if [ -z "$algo" ] || [ -z "$seq_raw" ]; then
+  if [ -z "$algo_raw" ] || [ -z "$seq_raw" ]; then
     echo "Usage: import-presets.sh reorder <algo> \"<seq>\"" >&2
     exit 1
   fi
+  local algo
+  algo="$(resolve_algo "$algo_raw")"
+  [ "$algo" != "$algo_raw" ] && echo "Note: resolved \"$algo_raw\" -> \"$algo\""
 
   local algo_dir="$DATA_DIR/$algo"
   [ -d "$algo_dir" ] || { echo "No such algo directory: $algo_dir" >&2; exit 1; }
@@ -294,12 +321,15 @@ cmd_reorder() {
 }
 
 cmd_delete() {
-  local algo="${1:-}"
+  local algo_raw="${1:-}"
   local positions_raw="${2:-}"
-  if [ -z "$algo" ] || [ -z "$positions_raw" ]; then
+  if [ -z "$algo_raw" ] || [ -z "$positions_raw" ]; then
     echo "Usage: import-presets.sh delete <algo> \"<positions>\"" >&2
     exit 1
   fi
+  local algo
+  algo="$(resolve_algo "$algo_raw")"
+  [ "$algo" != "$algo_raw" ] && echo "Note: resolved \"$algo_raw\" -> \"$algo\""
 
   local algo_dir="$DATA_DIR/$algo"
   [ -d "$algo_dir" ] || { echo "No such algo directory: $algo_dir" >&2; exit 1; }
@@ -324,9 +354,12 @@ cmd_delete() {
   for k in "${to_delete[@]}"; do delete_mask[$((k - 1))]=1; done
 
   echo "The following $algo preset(s) will be permanently deleted:"
+  local label source_file
   for ((k = 0; k < n; k++)); do
     if [ "${delete_mask[$k]}" -eq 1 ]; then
-      echo "  $((k + 1)). ${old_slugs[$k]}  ${algo}-${old_slugs[$k]}"
+      label="$(jq -r '.algoLabel' "$DATA_DIR/$algo/${old_slugs[$k]}.json")"
+      source_file="$(jq -r '.sourceFileName // "(unknown)"' "$DATA_DIR/$algo/${old_slugs[$k]}.json")"
+      echo "  $((k + 1)). ${old_slugs[$k]}  ${algo}-${old_slugs[$k]}  $label  $source_file"
     fi
   done
   read -r -p "Delete these ${#to_delete[@]} preset(s) from $algo? [y/N] " confirm

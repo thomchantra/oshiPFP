@@ -4,22 +4,21 @@
   "algoLabel": "Fumiko",
   "beforeImage": "/presets/pathF/03/before.webp",
   "afterImage": "/presets/pathF/03/after.webp",
-  "sourceFileName": "bounce-fb.jpg",
   "lineArtParams": {
     "mode": "pathF",
     "displayMode": "composite",
     "toneShaping": {
-      "exposure": 0.03000000000000025,
-      "contrast": 0.5900000000000001,
+      "exposure": 0.22999999999999998,
+      "contrast": -0.24,
       "mode": "clip",
       "clipMode": {
         "blackClip": 0,
-        "whiteClip": 0.8200000000000001
+        "whiteClip": 0.41000000000000003
       },
       "pinchMode": {
-        "position": 0.5,
-        "expand": 0.3,
-        "feathering": 0.5
+        "position": 0.08,
+        "expand": 0.22,
+        "feathering": 0.46
       }
     },
     "denoise": {
@@ -36,8 +35,8 @@
       "purple": 0,
       "magenta": 0
     },
-    "opacity": 1,
-    "blendMode": "difference",
+    "opacity": 1.47,
+    "blendMode": "overlay",
     "overlayPassthrough": false,
     "matteColor": [
       1,
@@ -45,19 +44,19 @@
       1
     ],
     "threshold": 0,
-    "radius": 1.62,
-    "hardness": 0.15999999999999992,
+    "radius": 0.72,
+    "hardness": 1,
     "blobContrast": 1,
     "colorExpansion": false,
     "colorContrast": 1,
     "gateThreshold": 0,
-    "sensitivity": 6.54,
-    "saturation": 1.33,
+    "sensitivity": 1.6300000000000001,
+    "saturation": 0.72,
     "findEdge": false,
     "tintColor": [
-      1,
-      0,
-      0
+      0.0392156862745098,
+      0.1411764705882353,
+      0.403921568627451
     ],
     "vividDeadzone": 0.15,
     "vividBoost": 1,
@@ -65,8 +64,8 @@
     "fillInvert": false,
     "gradientShadow": [
       0,
-      1,
-      0.4823529411764706
+      0,
+      0
     ],
     "gradientMid": [
       0.5,
@@ -78,7 +77,7 @@
       1,
       1
     ],
-    "gradientPivot": -0.04999999999999993,
+    "gradientPivot": 0,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -163,11 +162,11 @@
   "color": {
     "light": {
       "exposure": 0,
-      "contrast": -0.31000000000000005,
-      "brilliance": 0.1200000000000001,
+      "contrast": 0,
+      "brilliance": 0,
       "whites": 0,
       "highlights": 0,
-      "shadows": -0.22999999999999998,
+      "shadows": 0,
       "blacks": 0
     },
     "colorAdjust": {
@@ -184,7 +183,7 @@
     "hslByBand": {
       "master": {
         "hue": 0,
-        "saturation": 0.26,
+        "saturation": 0,
         "lightness": 0
       },
       "red": {
@@ -194,7 +193,7 @@
       },
       "orange": {
         "hue": 0,
-        "saturation": 0.6100000000000001,
+        "saturation": 0,
         "lightness": 0
       },
       "yellow": {
@@ -228,7 +227,7 @@
         "lightness": 0
       }
     },
-    "curveChannel": "g",
+    "curveChannel": "rgb",
     "curves": {
       "rgb": [
         {
@@ -243,11 +242,7 @@
       "r": [
         {
           "x": 0,
-          "y": 83.92178087349396
-        },
-        {
-          "x": 84.9835278614458,
-          "y": 100.71206701807228
+          "y": 0
         },
         {
           "x": 255,
@@ -260,11 +255,7 @@
           "y": 0
         },
         {
-          "x": 142.3644578313253,
-          "y": 152.4835278614458
-        },
-        {
-          "x": 206.91782756024097,
+          "x": 255,
           "y": 255
         }
       ],
@@ -274,41 +265,37 @@
           "y": 0
         },
         {
-          "x": 142.1964420180723,
-          "y": 162.68025225903614
-        },
-        {
-          "x": 182.08960843373492,
+          "x": 255,
           "y": 255
         }
       ]
     },
     "curveVisible": true,
     "gradeGradientMap": {
-      "enabled": false,
+      "enabled": true,
       "shadow": [
         0,
         0,
         0
       ],
       "mid": [
-        0.5,
-        0.5,
-        0.5
+        0.22745098039215686,
+        0.2235294117647059,
+        0.5568627450980392
       ],
       "highlight": [
         1,
         1,
         1
       ],
-      "pivot": 0,
+      "pivot": -0.010000000000000009,
       "duoTone": false,
-      "intensity": 1,
-      "blendMode": "overwrite"
+      "intensity": 0.15,
+      "blendMode": "overlay"
     }
   },
   "enhance": {
     "smooth": 0,
-    "sharpen": 1.44
+    "sharpen": 0
   }
 }

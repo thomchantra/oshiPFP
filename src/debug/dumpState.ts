@@ -96,3 +96,18 @@ export function formatStateDump(input: DumpStateInput): string {
     2,
   )
 }
+
+/** Reverses formatStateDump — parses a previously-dumped JSON file back into applyable state, for
+ * "Load State" (see HeaderBar's dev-only button next to Dump State). The main use case is a
+ * post-deploy round-trip check: dump state locally, load the same file back in on a fresh Netlify
+ * deploy, then dump again and diff the two files to confirm every param actually round-tripped —
+ * not a general-purpose preset format (see applyPreset.ts/presetManifest.ts for that). Only checks
+ * the top-level sections exist, not each field's shape — this is a dev tool for files this same
+ * dump function produced, not a public import surface that needs to defend against garbage input. */
+export function parseStateDump(text: string): Omit<DumpStateInput, 'fileInfo'> {
+  const data = JSON.parse(text)
+  for (const key of ['crop', 'lineArt', 'color', 'export', 'view'] as const) {
+    if (!data[key]) throw new Error(`Not a recognized oshiPFP state dump — missing "${key}" section.`)
+  }
+  return { crop: data.crop, lineArt: data.lineArt, color: data.color, export: data.export, view: data.view }
+}

@@ -38,6 +38,10 @@ interface HeaderBarProps {
    * 7-tap entrance (see its own doc comment), not just during local `npm run dev`, so it can
    * double as a bug-report tool for real users. */
   onDumpState: () => void
+  /** "Load State" (see src/debug/dumpState.ts's parseStateDump) — the reverse of Dump State, for
+   * a post-deploy round-trip check: dump on one build, load the same file back in on another,
+   * dump again, diff. Same gating as Dump State, sits right next to it. */
+  onLoadState: (file: File) => void
   /** Whether the secret dev-mode entrance has been unlocked (see AvatarCornerPreview) — gates
    * this header's Dump State button and AvatarCornerPreview's own smiley->nerd icon swap. */
   devMode: boolean
@@ -62,11 +66,13 @@ export default function HeaderBar({
   dualPaneActive,
   dualPanePriorityIndex,
   onDumpState,
+  onLoadState,
   onReset,
   devMode,
   onUnlockDevMode,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const stateFileInputRef = useRef<HTMLInputElement | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [aboutInitialTab, setAboutInitialTab] = useState<AboutTab>('about')
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -82,6 +88,12 @@ export default function HeaderBar({
     e.target.value = ''
   }
 
+  const handleStateFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) onLoadState(file)
+    e.target.value = ''
+  }
+
   const confirmReset = () => {
     setResetConfirmOpen(false)
     onReset()
@@ -89,7 +101,7 @@ export default function HeaderBar({
 
   return (
     <div className="header-bar">
-      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} initialTab={aboutInitialTab} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} initialTab={aboutInitialTab} theme={theme} />
       <Modal open={resetConfirmOpen} onClose={() => setResetConfirmOpen(false)} title="Confirm Reset oshiPFP?">
         <div className="confirm-modal-actions">
           <button type="button" className="confirm-reset-btn" onClick={confirmReset}>Reset</button>
@@ -129,6 +141,18 @@ export default function HeaderBar({
               <Icon name="download" size={16} color="var(--accent-title)" />
             </button>
           )}
+          {devMode && (
+            <button
+              type="button"
+              className="theme-btn"
+              aria-label="Load a dumped debug state file (dev mode)"
+              title="Load debug state (dev mode)"
+              onClick={() => stateFileInputRef.current?.click()}
+            >
+              <Icon name="upload" size={16} color="var(--accent-title)" />
+            </button>
+          )}
+          <input ref={stateFileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleStateFileChange} />
         </div>
         <div className="header-bar-action-row">
           <IconButton icon="upload" onClick={() => fileInputRef.current?.click()}>

@@ -4,6 +4,7 @@
   "algoLabel": "Hinata",
   "beforeImage": "/presets/pathH/02/before.webp",
   "afterImage": "/presets/pathH/02/after.webp",
+  "sourceFileName": "angelf.png",
   "lineArtParams": {
     "mode": "pathH",
     "displayMode": "composite",
@@ -36,11 +37,26 @@
       "magenta": 0
     },
     "opacity": 1,
-    "blendMode": "multiply",
-    "threshold": 0.53,
-    "radius": 2.92,
+    "blendMode": "difference",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
+    "threshold": 0.48,
+    "radius": 1.31,
     "hardness": 1,
     "blobContrast": 1,
+    "daiyaOctagonMode": false,
+    "daiyaOctagonRadius": 2,
+    "daiyaOctagonHardness": 0,
+    "daiyaOctagonDirections": 1,
+    "daiyaOctagonRotation": 0,
+    "daiyaOctagonOneSided": false,
+    "daiyaInvertSeed": false,
+    "daiyaSoftThresholdWidth": 0,
+    "daiyaSoftThresholdOverdrive": 1,
     "colorExpansion": false,
     "colorContrast": 1,
     "gateThreshold": 0,
@@ -54,7 +70,7 @@
     ],
     "vividDeadzone": 0.15,
     "vividBoost": 1,
-    "fillType": "gradient",
+    "fillType": "image",
     "fillInvert": false,
     "gradientShadow": [
       0,
@@ -62,16 +78,16 @@
       0
     ],
     "gradientMid": [
-      0.5098039215686274,
-      0.5098039215686274,
-      0.5098039215686274
+      0.5,
+      0.5,
+      0.5
     ],
     "gradientHighlight": [
       1,
       1,
       1
     ],
-    "gradientPivot": 0.3500000000000001,
+    "gradientPivot": 0,
     "gradientDuoTone": false,
     "gumiContrastBoost": 1,
     "blobMaxDt": 8,
@@ -83,7 +99,7 @@
       0
     ],
     "gumiLineInvert": false,
-    "gumiGapClosing": true,
+    "gumiGapClosing": false,
     "gumiBlobGamma": 1,
     "gumiColorBleed": false,
     "gumiBleedFeather": 1.5,
@@ -116,12 +132,39 @@
       1,
       1
     ],
-    "gumiRampFloor": 0,
-    "gumiRampInnerLow": 0.3,
-    "gumiRampInnerHigh": 0.7,
-    "gumiRampCeiling": 1,
-    "gumiRampFeather": 0,
-    "thresholdEnabled": true,
+    "gumiDualLine": false,
+    "gumiDualBlack": {
+      "position": 0.2,
+      "expand": 0.3,
+      "feathering": 0.15
+    },
+    "gumiDualWhite": {
+      "position": 0.8,
+      "expand": 0.3,
+      "feathering": 0.15
+    },
+    "gumiDualBlackFillType": "solid",
+    "gumiDualBlackSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "gumiDualBlackInvert": false,
+    "gumiDualWhiteFillType": "solid",
+    "gumiDualWhiteSolidColor": [
+      1,
+      1,
+      1
+    ],
+    "gumiDualWhiteInvert": false,
+    "gumiDualWhiteOnTop": true,
+    "gumiLineColorContrast": 1,
+    "gumiLineGradientPivot": 0,
+    "gumiFillColorContrast": 1,
+    "gumiFillGradientPivot": 0,
+    "gumiDualBlackColorContrast": 1,
+    "gumiDualWhiteColorContrast": 1,
+    "thresholdEnabled": false,
     "hiToneTarget": "off",
     "hiToneGain": 1,
     "hiToneContrast": 1,
@@ -131,16 +174,16 @@
     "hiToneSaturation": 1,
     "hiToneHueInvert": false,
     "hiThresholdInvert": false,
-    "highPassStrength": 3.25,
-    "highPassResponsiveColor": false,
+    "highPassStrength": 5.25,
+    "highPassResponsiveColor": true,
     "responsiveCrossover": 0.5,
-    "responsiveGrow": 2.2800000000000002,
-    "responsiveGrowBias": 0.45999999999999996,
+    "responsiveGrow": 0.22,
+    "responsiveGrowBias": -0.040000000000000036,
     "edgeInkOverDarkFillType": "image",
     "edgeInkOverDarkSolidColor": [
-      1,
-      1,
-      1
+      0.09019607843137255,
+      0.07450980392156863,
+      0.984313725490196
     ],
     "edgeInkOverLightFillType": "image",
     "edgeInkOverLightSolidColor": [
@@ -151,13 +194,7 @@
     "laplacianStrength": 1,
     "laplacianPreBlur": 0,
     "laplacianSharpenAmount": 0,
-    "laplacianGrow": 0,
-    "overlayPassthrough": false,
-    "matteColor": [
-      1,
-      1,
-      1
-    ]
+    "laplacianGrow": 0
   },
   "color": {
     "light": {
@@ -295,7 +332,7 @@
     }
   },
   "enhance": {
-    "smooth": 0,
-    "sharpen": 1.12
+    "smooth": 0.14,
+    "sharpen": 0.19
   }
 }
