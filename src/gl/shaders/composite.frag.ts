@@ -31,12 +31,12 @@
  * is that Overwrite still respects the mask's own per-pixel alpha (mix(result, layer,
  * opacity*alpha)), letting the base show through wherever alpha is partial/zero, while Normal
  * ignores alpha entirely — a full, unblended pass of the algorithm's own raw output at the given
- * opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer). Modes 6-11 (v0.4 blend
- * expansion) — 6 Add, 7 Color Dodge (epsilon-guarded against the 1-layer==0 singularity), 8 Darker
- * Color (whole-pixel BT.709 luminance compare, not per-channel min — preserves the winning
- * pixel's own hue/sat), 9 Linear Burn, 10 Soft Light (W3C/Photoshop formula, not a simple
- * Overlay-with-roles-swapped lerp — genuinely softer falloff), 11 Hard Light (Overlay's own
- * formula with the step() discriminant driven by `layer` instead of `base`).
+ * opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer). Modes 6-11: 6 Add, 7 Color
+ * Dodge (epsilon-guarded against the 1-layer==0 singularity), 8 Darker Color (whole-pixel BT.709
+ * luminance compare, not per-channel min — preserves the winning pixel's own hue/sat), 9 Linear
+ * Burn, 10 Soft Light (W3C/Photoshop formula, not a simple Overlay-with-roles-swapped lerp —
+ * genuinely softer falloff), 11 Hard Light (Overlay's own formula with the step() discriminant
+ * driven by `layer` instead of `base`).
  */
 export const compositeFrag = `#version 300 es
 precision highp float;

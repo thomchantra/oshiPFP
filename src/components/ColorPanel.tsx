@@ -1,6 +1,6 @@
 import BottomSheet from './BottomSheet'
 import SegmentedControl from './SegmentedControl'
-import GradientSlider from './GradientSlider'
+import GradientSlider, { formatPercent, formatSignedPercent } from './GradientSlider'
 import HslBandSelector from './HslBandSelector'
 import Icon from './Icon'
 import ToggleSwitch from './ToggleSwitch'
@@ -183,25 +183,29 @@ export default function ColorPanel({
             onChange={(v) => setLightField('exposure', v)}
           />
           <GradientSlider label="Contrast" value={light.contrast} min={-0.8} max={2} defaultValue={0} onChange={(v) => setLightField('contrast', v)} />
-          <GradientSlider label="Brilliance" value={light.brilliance} min={-1} max={1} defaultValue={0} onChange={(v) => setLightField('brilliance', v)} />
+          <GradientSlider label="Brilliance" value={light.brilliance} min={-1} max={1} defaultValue={0} formatValue={formatSignedPercent} onChange={(v) => setLightField('brilliance', v)} />
           <GradientSlider
             label="Whites" value={light.whites} min={-1} max={1} defaultValue={0}
             trackGradient={BLACK_WHITE_GRADIENT}
+            formatValue={formatSignedPercent}
             onChange={(v) => setLightField('whites', v)}
           />
           <GradientSlider
             label="Highlights" value={light.highlights} min={-1} max={1} defaultValue={0}
             trackGradient={BLACK_WHITE_GRADIENT}
+            formatValue={formatSignedPercent}
             onChange={(v) => setLightField('highlights', v)}
           />
           <GradientSlider
             label="Shadows" value={light.shadows} min={-1} max={1} defaultValue={0}
             trackGradient={BLACK_WHITE_GRADIENT}
+            formatValue={formatSignedPercent}
             onChange={(v) => setLightField('shadows', v)}
           />
           <GradientSlider
             label="Blacks" value={light.blacks} min={-1} max={1} defaultValue={0}
             trackGradient={BLACK_WHITE_GRADIENT}
+            formatValue={formatSignedPercent}
             onChange={(v) => setLightField('blacks', v)}
           />
         </div>
@@ -212,16 +216,19 @@ export default function ColorPanel({
           <GradientSlider
             label="Temperature" value={colorAdjust.temperature} min={-1} max={1} defaultValue={0}
             trackGradient="linear-gradient(90deg, #5297FF 0%, #FF9547 100%)"
+            formatValue={formatSignedPercent}
             onChange={(v) => setColorAdjustField('temperature', v)}
           />
           <GradientSlider
             label="Tint" value={colorAdjust.tint} min={-1} max={1} defaultValue={0}
             trackGradient="linear-gradient(90deg, #FF52EE 0%, #51FF47 100%)"
+            formatValue={formatSignedPercent}
             onChange={(v) => setColorAdjustField('tint', v)}
           />
           <GradientSlider
             label="Vibrance" value={colorAdjust.vibrance} min={-1} max={1} defaultValue={0}
             trackGradient="linear-gradient(90deg, #8D8D8D 0%, #C144C8 51.923%, #FF0000 100%)"
+            formatValue={formatSignedPercent}
             onChange={(v) => setColorAdjustField('vibrance', v)}
           />
           <div className="lineart-divider" />
@@ -280,6 +287,7 @@ export default function ColorPanel({
             <>
               <GradientSlider
                 label="Intensity" value={gradeGradientMap.intensity} min={0} max={1} defaultValue={1}
+                formatValue={formatPercent}
                 onChange={(v) => setGradeGradientMapField('intensity', v)}
               />
               <div className="field-row">
@@ -327,10 +335,12 @@ export default function ColorPanel({
           <GradientSlider
             label="Saturation" value={activeShift.saturation} min={-1} max={1} defaultValue={0}
             trackGradient={gradients.saturation}
+            formatValue={formatSignedPercent}
             onChange={(v) => setActiveShift('saturation', v)}
           />
           <GradientSlider
             label="Lightness" value={activeShift.lightness} min={-1} max={1} defaultValue={0}
+            formatValue={formatSignedPercent}
             trackGradient={gradients.lightness}
             onChange={(v) => setActiveShift('lightness', v)}
           />

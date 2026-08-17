@@ -37,7 +37,7 @@
     },
     "opacity": 1,
     "blendMode": "normal",
-    "overlayPassthrough": false,
+    "overlayPassthrough": true,
     "matteColor": [
       1,
       1,

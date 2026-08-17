@@ -31,9 +31,7 @@
  * Alpha is derived from `value`'s BT.709 luminance (1 - luminance): near-white/no-edge pixels
  * (value ~= white) get alpha ~= 0 (no ink), strong edges (value darkens toward black) get alpha
  * ~= 1 (full ink coverage) — the same ".rgb = color, .a = coverage" convention every other
- * algorithm follows (see composite.frag.ts's header). Previously hardcoded to 1.0, which made
- * overlay passthrough's matte color unreachable (mix(matte, rgb, alpha) always resolved to rgb)
- * — see docs/oshiPFP-v0.4-spec.md's Fumiko Find Edge bug entry.
+ * algorithm follows (see composite.frag.ts's header).
  */
 export const findEdgesFrag = `#version 300 es
 precision highp float;

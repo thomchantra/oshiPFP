@@ -48,39 +48,43 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">Workflow</p>
             <p className="algo-info-entry-body">
-              Upload an image, then work through the 4 tabs left to right: Crop, Line Art, Grade, Export. Each tab's changes carry forward into the next, the live preview above always shows the full result of everything tuned so far.
+              Upload an image, then work through the 4 tabs left to right: <strong>Crop, Lineart, Grade, Export</strong><br />
+              Each tab's changes carry forward into the next.
             </p>
           </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">Navigation</p>
             <p className="algo-info-entry-body">
-              In 'Crop' tab, scroll wheel or pinch on the viewport to zoom.<br />
-              Double-tap a slider resets to its default value.
+              <strong>In 'Crop' tab:</strong> Scroll wheel/pinch on the viewport to zoom. Double-tap <strong>Zoom Pill</strong> to reset crop.<br />
+              <br />
+              Double-tap a slider resets to its default value.<br /><br />
+              On mobile, tap the active tab again to unselect it.<br />
+              This hides the panel entirely and gives the preview the full viewport.
             </p>
           </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">Viewport View Mode</p>
             <p className="algo-info-entry-body">
-              <strong>Original</strong> — the source image, post-crop.<br />
-              <strong>Composite</strong> — the original blended with the line art processing output.<br />
-              <strong>Overlay</strong> — just the line art output on its own, isolated from the original.<br />
+              <strong>Original:</strong> The source image, post-crop.<br />
+              <strong>Composite:</strong> The original blended with the lineart processing output.<br />
+              <strong>Overlay:</strong> Just the lineart output on its own, isolated from the original.
             </p>
           </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">Line Art Workspaces</p>
             <p className="algo-info-entry-body">
               The Line Art tab splits into 3 subtabs:<br></br>
-              <strong>Tuning</strong> — fine-tunes what the line art module "sees" before it runs, try adjusting this subtab if detection is missing lines or picking up noise.<br></br>
-              <strong>Lineart</strong> — the algorithm picker<br></br>
-              <strong>Blending</strong> — how the result composites onto your photo.
+              <strong>Tuning:</strong> Fine-tunes what the lineart module "sees" before it runs.<br></br>
+              <strong>Lineart:</strong> Houses line art expansion modes and parameters.<br></br>
+              <strong>Blending:</strong> Tweaks how the result composites onto your image.
             </p>
           </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">Blending</p>
             <p className="algo-info-entry-body">
-              <strong>Color Correct</strong> — optional color correction applied to the line art right before it blends onto your image.<br />
-              <strong>Blend Mode</strong> — 12 modes across 4 groups (Composite/Lighten/Darken/Contrast); each group's 3 modes run mild to strong left to right.<br />
-              <strong>Overlay Passthrough</strong> — bypasses blend mode/opacity entirely and flattens the line art straight onto a flat matte color instead, useful for solid-background exports.
+              <strong>Color Correct:</strong> Optional color correction applied to the line art right before it blends onto your image.<br />
+              <strong>Blend Mode:</strong> 12 modes across 4 groups (Composite/Lighten/Darken/Contrast); each group's 3 modes run mild to strong left to right.<br />
+              <strong>Overlay Passthrough:</strong> Output lineart processing result straight onto a flat matte color instead, useful for solid-background exports.
             </p>
           </div>
           <div className="algo-info-entry">
@@ -95,21 +99,22 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
             <p className="algo-info-entry-title font-param-label">Tuning Tips</p>
             <ul className="algo-info-entry-body">
               <li className="changelogbullet">
-                Not sure where to start? The algorithm info modal's gallery has real before/after examples with their exact settings — Load Preset applies them straight onto your own photo.
+                Not sure where to start? Press the 'i' icon next to 'Line Art Expansion Algorithm' to view gallery showcase.
               </li>
               <li className="changelogbullet">
-                Fill Type works the same way everywhere — Image samples color straight from the artwork, Solid Color fills flat, Gradient Map remaps by luminance across a shadow/mid/highlight ramp.
+                Fill Type works the same way everywhere:<br />
+                <strong>Image</strong> samples color straight from the artwork,<br />
+                <strong>Solid Color</strong> fills flat single color,<br />
+                <strong>Gradient Map</strong> colorizes across image's luminance.
               </li>
               <li className="changelogbullet">
-                If an algorithm is missing lines or picking up noise, check the Tuning subtab before reaching for the algorithm's own sliders — cleaning up the input first is often the shorter path.
+                If an algorithm is missing lines or picking up noise, try adjust <strong>Tuning</strong> subtab; cleaning up the input first helps refine lineart output.
               </li>
               <li className="changelogbullet">
-                When in doubt, switch to Overlay view — it isolates the line art module's own output, so it's much easier to see exactly what each slider is doing.
-                <br></br>
-                One caveat: Overlay can't tell white ink apart from fully-transparent (empty) pixels, since both render the same — set a more prominent color temporarily to dial in the shape, then switch back once the look is settled.
+                When in doubt, switch to Overlay view: it isolates the line art module's own output, so it's much easier to see exactly what each slider is doing.
               </li>
               <li className="changelogbullet">
-                On mobile, tap the active tab again to unselect it — this hides the panel entirely and gives the preview the full viewport.
+                Overlay view mode currently can't tell white ink apart from transparent pixels. Set a more prominent color temporarily to dial in the parameters first, then switch back once the look is settled.
               </li>
             </ul>
           </div>
@@ -179,6 +184,9 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
               <li className="changelogbullet">
                 Algorithm picker is a single scrollable row on mobile instead of wrapping awkwardly.
               </li>
+              <li className="changelogbullet">
+                Tuning and Grade sliders now show percentages instead of raw decimals, matching Blending's style.
+              </li>
             </ul>
           </div>
           <div className="algo-info-entry">
@@ -192,6 +200,9 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
               </li>
               <li className="changelogbullet">
                 Fixed Overlay Passthrough's matte color picker leaking its last color through even while the toggle itself was off.
+              </li>
+              <li className="changelogbullet">
+                Fixed the Tuning subtab showing a dead "doesn't apply to this algorithm" message when Chie was selected — it's now hidden instead, and switching to Chie while on Tuning bounces you back to LineArt automatically.
               </li>
             </ul>
           </div>

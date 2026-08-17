@@ -20,24 +20,22 @@ export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
 type BlendCategoryId = 'comp' | 'light' | 'dark' | 'punch'
 /** 4 UI groups for the 12-mode blend selector, each non-Comp trio ordered least->most intense. */
 const BLEND_CATEGORIES: { id: BlendCategoryId; label: string; modes: BlendMode[] }[] = [
-  { id: 'comp', label: 'COMPOSITE', modes: ['overwrite', 'normal', 'difference'] },
-  { id: 'light', label: 'LIGHTEN', modes: ['screen', 'add', 'dodge'] },
-  { id: 'dark', label: 'DARKEN', modes: ['darken', 'multiply', 'burn'] },
-  { id: 'punch', label: 'CONTRAST', modes: ['softLight', 'overlay', 'hardLight'] },
+  { id: 'comp', label: 'Composite', modes: ['overwrite', 'normal', 'difference'] },
+  { id: 'light', label: 'Lighten', modes: ['screen', 'add', 'dodge'] },
+  { id: 'dark', label: 'Darken', modes: ['darken', 'multiply', 'burn'] },
+  { id: 'punch', label: 'Contrast', modes: ['softLight', 'overlay', 'hardLight'] },
 ]
 function categoryOf(mode: BlendMode): BlendCategoryId {
   return BLEND_CATEGORIES.find((c) => c.modes.includes(mode))?.id ?? 'comp'
 }
 
-/** Grouped 12-mode Blend Mode selector (v0.4 blend expansion) — a 4-way category row
- * (Comp/Light/Dark/Punch) plus the selected category's 3-pill row, one unified layout for both
- * mobile and desktop. Category shown defaults to whichever contains `mode`, but a category click
- * can view a different one before any pill in it is picked (manualCategory); picking a pill clears
- * that override since the derived category already matches. `allowedModes` (Fumiko's Find Edge
- * lock, currently the only caller) disables whichever pills/categories fall outside it rather than
- * removing them, so the layout stays consistent regardless of restriction. Plain solid pill-toggle-
- * btn styling for now (same as the Comp category) — deferred the pale->medium->dark intensity
- * cosmetic until later. */
+/** Grouped 12-mode Blend Mode selector — a 4-way category row (Comp/Light/Dark/Punch) plus the
+ * selected category's 3-pill row, one unified layout for both mobile and desktop. Category shown
+ * defaults to whichever contains `mode`, but a category click can view a different one before any
+ * pill in it is picked (manualCategory); picking a pill clears that override since the derived
+ * category already matches. `allowedModes` (Fumiko's Find Edge lock, currently the only caller)
+ * disables whichever pills/categories fall outside it rather than removing them, so the layout
+ * stays consistent regardless of restriction. */
 export function BlendModeCategoryRow({ mode, onChange, allowedModes }: { mode: BlendMode; onChange: (m: BlendMode) => void; allowedModes?: BlendMode[] }) {
   const [manualCategory, setManualCategory] = useState<BlendCategoryId | null>(null)
   const activeCategoryId = manualCategory ?? categoryOf(mode)

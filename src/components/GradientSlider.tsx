@@ -16,6 +16,11 @@ export interface SliderCurve {
   breakpointPosition: number
 }
 
+/** `formatValue` for a 0..1-domain slider displayed as a plain percentage (e.g. Denoise Intensity). */
+export const formatPercent = (v: number) => `${Math.round(v * 100)}%`
+/** `formatValue` for a -1..1-domain slider displayed as a signed percentage (e.g. Color Lift, Grade's Whites/Blacks). */
+export const formatSignedPercent = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`
+
 interface GradientSliderProps {
   label: string
   value: number

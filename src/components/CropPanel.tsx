@@ -99,8 +99,6 @@ export default function CropPanel({
         <GradientSlider label="Sharpen" value={enhance.sharpen} min={0} max={5} defaultValue={0} onChange={(v) => set('sharpen', v)} />
       </div>
 
-      <div className="lineart-divider" />
-
       <div className="lineart-preprocessing-header">
         <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Resize</span>
       </div>

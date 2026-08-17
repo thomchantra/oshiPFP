@@ -35,7 +35,7 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
   {
     mode: 'pathD',
     label: 'Daiya',
-    technique: 'Distance Transform + Octagon Mode',
+    technique: 'Distance Transform + Octagon',
     icon: 'diamond',
     blurb:
       "Grows lines using the same true distance-transform math as Botan, smooth and round by default. Switch to Octagon mode for a faceted, chisel marker look",

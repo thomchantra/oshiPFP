@@ -389,8 +389,8 @@ export default function App() {
     cropResize.setCustomSize(data.crop.resize.customSize)
 
     // Merged against each mode's own freshly-built defaults rather than a wholesale replace — a
-    // state dump saved before a LineArtParams field addition (e.g. v0.4's colorCorrect* fields)
-    // would otherwise leave that field `undefined` instead of falling back to its real default.
+    // state dump saved before a LineArtParams field addition would otherwise leave that field
+    // `undefined` instead of falling back to its real default.
     setParamsByMode(() =>
       Object.fromEntries(
         LINE_ART_MODES.map((mode) => [mode, { ...buildDefaultParams(mode), ...data.lineArt.paramsByAlgorithm[mode].params }]),
@@ -518,8 +518,8 @@ export default function App() {
   // tabPreviewBypass's doc comment in pipeline.ts. 'original' reuses the same 'enhance' bypass Grade
   // uses (literal same texture, enhanceTarget); 'overlay' gets its own dedicated 'lineArtOverlay'
   // bypass, computed on demand by the pipeline only while active. Neither ever touches the real,
-  // always-composite lineArtOutputTarget/colorTarget (see the v0.4 preview/pipeline decoupling fix)
-  // — this is purely a live-canvas substitution. Guarded by !dualPaneActive since Dual Pane resolves
+  // always-composite lineArtOutputTarget/colorTarget — this is purely a live-canvas substitution.
+  // Guarded by !dualPaneActive since Dual Pane resolves
   // its own per-pane peeks directly in its blit branch instead (two panes can independently want
   // different modes at once, which this single tab-scoped value can't express). Export tab is the
   // sole WYSIWYG authority for its own (displayMode, colorGrade) selection — its own resolve

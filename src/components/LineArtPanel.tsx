@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import IconButton from './IconButton'
-import GradientSlider, { type SliderCurve } from './GradientSlider'
+import GradientSlider, { formatPercent, formatSignedPercent, type SliderCurve } from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
 import RampMeter from './RampMeter'
 import SegmentedControl from './SegmentedControl'
@@ -16,6 +16,9 @@ const SUB_TAB_OPTIONS: { value: LineArtSubTab; label: string }[] = [
   { value: 'lineart', label: 'LINEART' },
   { value: 'blending', label: 'BLENDING' },
 ]
+/** Chie (pathC) erodes the crop directly — pre-detection tuning doesn't apply to it, so the
+ * Tuning subtab is hidden for this mode rather than left selectable into a blank-message state. */
+const SUB_TAB_OPTIONS_NO_TUNING = SUB_TAB_OPTIONS.filter((opt) => opt.value !== 'tuning')
 
 interface LineArtPanelProps {
   params: LineArtParams
@@ -98,18 +101,25 @@ export default function LineArtPanel({
 
   const opacityPct = Math.round(params.opacity * 100)
 
+  // Switching to Chie mid-session while already on Tuning would otherwise land on a blank/message
+  // state — bounce to Lineart instead, same subtab the Tuning option resolves to when hidden below.
+  useEffect(() => {
+    if (params.mode === 'pathC' && subTab === 'tuning') {
+      onSubTabChange('lineart')
+    }
+  }, [params.mode, subTab, onSubTabChange])
+
   return (
     <BottomSheet>
       <div className="subtab-sticky-wrapper">
-        <SegmentedControl options={SUB_TAB_OPTIONS} value={subTab} onChange={onSubTabChange} />
+        <SegmentedControl
+          options={params.mode === 'pathC' ? SUB_TAB_OPTIONS_NO_TUNING : SUB_TAB_OPTIONS}
+          value={subTab}
+          onChange={onSubTabChange}
+        />
       </div>
 
-      {subTab === 'tuning' && (
-        params.mode === 'pathC' ? (
-          <p className="font-param-label" style={{ color: 'var(--accent-dark)', padding: '4px 0 12px' }}>
-            Chie erodes the crop directly — pre-detection tuning doesn't apply to this algorithm.
-          </p>
-        ) : (
+      {subTab === 'tuning' && params.mode !== 'pathC' && (
           <>
             <div className="lineart-preprocessing-header">
               <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
@@ -123,10 +133,12 @@ export default function LineArtPanel({
             <div className="lineart-slidergroup-stack">
               <GradientSlider
                 label="Intensity" value={params.denoise.intensity} min={0} max={1} defaultValue={0}
+                formatValue={formatPercent}
                 onChange={(v) => set('denoise', { ...params.denoise, intensity: v })}
               />
               <GradientSlider
                 label="Threshold" value={params.denoise.threshold} min={0} max={1} defaultValue={0}
+                formatValue={formatPercent}
                 onChange={(v) => set('denoise', { ...params.denoise, threshold: v })}
               />
             </div>
@@ -161,11 +173,13 @@ export default function LineArtPanel({
                   <GradientSlider
                     label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={1} defaultValue={0}
                     trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    formatValue={formatPercent}
                     onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: Math.min(v, params.toneShaping.clipMode.whiteClip) } })}
                   />
                   <GradientSlider
                     label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0} max={1} defaultValue={1}
                     trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    formatValue={formatPercent}
                     onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: Math.max(v, params.toneShaping.clipMode.blackClip) } })}
                   />
                 </>
@@ -174,14 +188,17 @@ export default function LineArtPanel({
                   <GradientSlider
                     label="Pinch Position" value={params.toneShaping.pinchMode.position} min={0} max={1} defaultValue={0.5}
                     trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    formatValue={formatPercent}
                     onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, position: v } })}
                   />
                   <GradientSlider
                     label="Pinch Size" value={params.toneShaping.pinchMode.expand} min={0} max={1} defaultValue={0.3}
+                    formatValue={formatPercent}
                     onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, expand: v } })}
                   />
                   <GradientSlider
                     label="Pinch Feathering" value={params.toneShaping.pinchMode.feathering} min={0} max={1} defaultValue={0.5}
+                    formatValue={formatPercent}
                     onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, feathering: v } })}
                   />
                 </>
@@ -210,12 +227,12 @@ export default function LineArtPanel({
                   max={1}
                   defaultValue={0}
                   trackGradient={`linear-gradient(90deg, #000000, ${swatch.hex}, #FFFFFF)`}
+                  formatValue={formatSignedPercent}
                   onChange={(v) => set('colorLift', { ...params.colorLift, [swatch.key]: v })}
                 />
               ))}
             </div>
           </>
-        )
       )}
 
       {subTab === 'blending' && (
@@ -247,17 +264,17 @@ export default function LineArtPanel({
             <div className="lineart-slidergroup-stack">
               <GradientSlider
                 label="Exposure" value={params.colorCorrectExposure} min={-1} max={1} defaultValue={0}
-                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                formatValue={formatSignedPercent}
                 onChange={(v) => set('colorCorrectExposure', v)}
               />
               <GradientSlider
                 label="Contrast" value={params.colorCorrectContrast} min={-1} max={1} defaultValue={0}
-                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                formatValue={formatSignedPercent}
                 onChange={(v) => set('colorCorrectContrast', v)}
               />
               <GradientSlider
                 label="Saturation" value={params.colorCorrectSaturation} min={-1} max={1} defaultValue={0}
-                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                formatValue={formatSignedPercent}
                 onChange={(v) => set('colorCorrectSaturation', v)}
               />
               <div

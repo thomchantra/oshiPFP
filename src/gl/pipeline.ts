@@ -480,23 +480,20 @@ export class Pipeline {
    * own preview strip (Original/Overlay buttons), and Export tab's own group peek at an earlier
    * pipeline stage (or Export's own independent resolve) on the live canvas, same idea as
    * previewMode above but for later stage boundaries previewMode was never built to express.
-   * 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm) — used for
-   * BOTH Grade's "Original" toggle AND Line Art's own "Original" preview button, since they mean the
-   * literal same texture; deliberately NOT lineArtOutputTarget, which (as of the v0.4 preview/
-   * pipeline decoupling fix) always holds the true composite result now, never a stand-in for
-   * "original." 'exportPreview' -> exportPreviewResult, see renderExportPreview — Export tab is the
-   * sole WYSIWYG authority for its own (displayMode, colorGrade) selection, fully decoupled from
-   * Line Art's/Grade's own live tab state. 'lineArtOverlay' -> lineArtPeekOverlayTarget, computed
-   * on-demand right here at blit time (see render()'s consumption of this value) via a dedicated
-   * 'previewA' resolveLineArtDisplay call — lineArtOutputTarget/colorTarget themselves must never be
-   * repointed to show this (see the colorDirty block's own comment: an earlier version of this exact
-   * mistake, aliasing colorTarget to lineArtOutputTarget, once corrupted enhanceTarget by violating
-   * ensureTarget's "this field always owns its own private texture" invariant) — the substitution
-   * happens only here, at the point of consumption. App.tsx computes this from whichever tab is
-   * actually active, resetting to 'none' whenever none of these apply, so it can't leak into Crop/
-   * deselected views or Grade's own "Graded" mode. Dual Pane bypasses this mechanism entirely (see
-   * its own blit branch's own previewA/previewB peek resolves, same underlying idea, different
-   * consumption point since two panes can each want a different mode simultaneously). */
+   * 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm), shared by
+   * Grade's "Original" toggle and Line Art's own "Original" preview button (literal same texture);
+   * deliberately NOT lineArtOutputTarget, which always holds the true composite result, never a
+   * stand-in for "original." 'exportPreview' -> exportPreviewResult, see renderExportPreview —
+   * Export tab is the sole WYSIWYG authority for its own (displayMode, colorGrade) selection, fully
+   * decoupled from Line Art's/Grade's own live tab state. 'lineArtOverlay' -> lineArtPeekOverlayTarget,
+   * computed on-demand right here at blit time via a dedicated 'previewA' resolveLineArtDisplay call
+   * — lineArtOutputTarget/colorTarget themselves must never be repointed to show this (see
+   * ensureTarget's "this field always owns its own private texture" invariant, CLAUDE.md's Recurring
+   * Gotchas) — the substitution happens only here, at the point of consumption. App.tsx computes
+   * this from whichever tab is actually active, resetting to 'none' whenever none of these apply, so
+   * it can't leak into Crop/deselected views or Grade's own "Graded" mode. Dual Pane bypasses this
+   * mechanism entirely (its own blit branch has its own previewA/previewB peek resolves, since two
+   * panes can each want a different mode simultaneously). */
   private tabPreviewBypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOverlay' = 'none'
   /** Export tab's own (displayMode, colorGrade) selection — see setExportPreviewParams/
    * renderExportPreview. Independent of this.lineArt.displayMode; that's the whole point. */
@@ -953,10 +950,9 @@ export class Pipeline {
     this.dualPaneModes = modes
     if (!changed) return
     // Forces a fresh render/blit so a pane-mode switch (or Dual Pane on/off) doesn't leave a stale
-    // texture on screen. The real composite output no longer depends on `modes`, so this recompute
-    // is stricter than strictly necessary — kept anyway rather than trying to skip it, since
-    // reasoning precisely about which dirty flags are truly safe to withhold here is exactly the
-    // kind of cache-gating bug CLAUDE.md's Recurring Gotchas warns to be careful with.
+    // texture on screen. The real composite output doesn't actually depend on `modes` (only the
+    // on-screen peek does), so this recompute is stricter than strictly necessary — kept anyway,
+    // per CLAUDE.md's Recurring Gotchas on cache-gating bugs.
     this.lineArtDirty = true
     this.colorDirty = true
     this.exportPreviewDirty = true
@@ -3005,12 +3001,11 @@ export class Pipeline {
 
   /** Runs the full algorithm chain and always resolves it as 'composite' (respecting the sticky
    * overlayPassthrough toggle) — the non-Dual-Pane case. Deliberately ignores
-   * `this.lineArt.displayMode`: that field now drives only the on-screen preview-strip peek (see
-   * tabPreviewBypass's 'lineArtOverlay' case), never the real output runColorChain grades — see
-   * docs/oshiPFP-v0.4-spec.md's Grade-stuck-on-overlay fix. See computeLineArtRaw/
-   * resolveLineArtDisplay for the two halves this composes. Caches the (Color-Correct-if-enabled)
-   * raw output onto lineArtRawTarget so renderExportPreview (and the preview-strip peek) can reuse
-   * it without a second (expensive) compute. */
+   * `this.lineArt.displayMode`: that field drives only the on-screen preview-strip peek (see
+   * tabPreviewBypass's 'lineArtOverlay' case), never the real output runColorChain grades. See
+   * computeLineArtRaw/resolveLineArtDisplay for the two halves this composes. Caches the
+   * (Color-Correct-if-enabled) raw output onto lineArtRawTarget so renderExportPreview (and the
+   * preview-strip peek) can reuse it without a second (expensive) compute. */
   private renderLineArt(base: TargetTexture, width: number, height: number): TargetTexture {
     this.lineArtRawTarget = this.applyInkCorrect(this.computeLineArtRaw(base, width, height), width, height)
     return this.resolveLineArtDisplay(base, this.lineArtRawTarget, 'composite', width, height, 'primary')
@@ -3215,10 +3210,9 @@ export class Pipeline {
       return
     }
 
-    // Fast path: lineArtOutputTarget/colorTarget always resolve 'composite' now (see the v0.4
-    // preview/pipeline decoupling fix — neither the preview-strip selector nor dualPaneModes drives
-    // them anymore, regardless of Dual Pane state), so whenever Export also wants 'composite',
-    // colorTarget already IS the answer — zero extra GPU work.
+    // Fast path: lineArtOutputTarget/colorTarget always resolve 'composite' regardless of Dual Pane
+    // state (neither the preview-strip selector nor dualPaneModes drives them), so whenever Export
+    // also wants 'composite', colorTarget already IS the answer — zero extra GPU work.
     if (this.exportDisplayMode === 'composite' && this.exportColorGrade && this.colorTarget && this.lineArtOutputTarget) {
       const { width, height } = this.colorTarget
       this.exportPreviewResult = this.blendGradeIntensity(this.lineArtOutputTarget, this.colorTarget, this.exportColorGradeIntensity, width, height)
@@ -3375,12 +3369,10 @@ export class Pipeline {
         if (this.dualPaneEnabled) {
           // Shared raw algorithm output (Botan JFA etc. — the expensive part) computed once. Both
           // panes' REAL targets (lineArtOutputTarget/lineArtOutputTargetB, feeding runColorChain
-          // below) always resolve 'composite' now, regardless of dualPaneModes — dualPaneModes only
+          // below) always resolve 'composite', regardless of dualPaneModes — dualPaneModes only
           // drives the on-screen split-pane view's own independent peek resolve (see the
           // dualPaneEnabled blit branch further down), never the real graded output. See
-          // computeLineArtRaw/resolveLineArtDisplay and docs/oshiPFP-v0.4-spec.md's Grade-stuck-on-
-          // overlay fix — this used to be the actual repro path for that bug (switch a Dual Pane
-          // side to Overlay, leave the tab, Grade stayed stuck showing it).
+          // computeLineArtRaw/resolveLineArtDisplay for the two halves this composes.
           this.lineArtRawTarget = this.applyInkCorrect(this.computeLineArtRaw(this.enhanceTarget, width, height), width, height)
           this.lineArtOutputTarget = this.resolveLineArtDisplay(
             this.enhanceTarget, this.lineArtRawTarget, 'composite', width, height, 'primary',
@@ -3465,9 +3457,9 @@ export class Pipeline {
       // before-everything: enhanceTarget directly, zero extra cost. "Overlay" needs its own
       // ungraded peek resolve (lineArtPeekOverlayTarget/B via resolveLineArtDisplay's 'previewA'/
       // 'previewB' slots) — computed here on demand, only when a pane actually wants it, never fed
-      // into the real chain. "Composite" is just colorTarget/colorTargetB, which (as of the v0.4
-      // preview/pipeline decoupling fix) always hold the true graded composite now regardless of
-      // dualPaneModes, so this substitution can never leak into Grade after leaving Dual Pane.
+      // into the real chain. "Composite" is just colorTarget/colorTargetB, which always hold the
+      // true graded composite regardless of dualPaneModes, so this substitution can never leak
+      // into Grade after leaving Dual Pane.
       const { width, height } = this.lineArtOutputTarget
       const resolvePeekTexture = (mode: LineArtDisplayMode, slot: 'previewA' | 'previewB', graded: TargetTexture): TargetTexture => {
         if (mode === 'original') return this.enhanceTarget!

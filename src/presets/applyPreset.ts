@@ -53,9 +53,8 @@ export async function applyPreset(
   }
 
   // Merged against the mode's own current (always fully-populated) params rather than a wholesale
-  // replace — a preset JSON older than a LineArtParams field addition (e.g. v0.4's colorCorrect*
-  // fields) would otherwise leave that field `undefined` on the resulting object instead of falling
-  // back to its real default.
+  // replace — a preset JSON older than a LineArtParams field addition would otherwise leave that
+  // field `undefined` on the resulting object instead of falling back to its real default.
   setters.setParamsByMode((prev) => ({ ...prev, [preset.algo]: { ...prev[preset.algo], ...preset.lineArtParams } }))
   setters.setLineArtMode(preset.algo)
   setters.setLineArtDisplayMode(preset.lineArtParams.displayMode)

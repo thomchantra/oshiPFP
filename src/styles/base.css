@@ -34,21 +34,21 @@ button, input {
 .font-param-label {
   font-family: 'Fredoka', sans-serif;
   font-weight: 400;
-  font-size: 14px;
+  font-size: 16px;
 }
 .font-button-label {
   font-family: 'Fredoka', sans-serif;
   font-weight: 500;
-  font-size: 16px;
+  font-size: 18px;
 }
 .font-tab-label {
   font-family: 'Fredoka', sans-serif;
   font-weight: 500;
-  font-size: 15px;
+  font-size: 16px;
 }
 .font-value {
   font-family: 'Questrial', sans-serif;
-  font-size: 15px;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -71,7 +71,7 @@ button, input {
   border: none;
   background: transparent;
   color: var(--accent-title);
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -246,8 +246,8 @@ button, input {
   .panel-col {
     /* Bumped 390px -> 440px (v0.3 polish pass) — the 7-algo Line Expansion Algorithm pill row
        was wrapping to 3 lines at the old width, more than it needs to. */
-    flex: 0 0 410px;
-    width: 410px;
+    flex: 0 0 420px;
+    width: 420px;
     gap: 10px;
   }
   /* Desktop: tab row sits above the drawer content instead (matches the
@@ -421,7 +421,7 @@ button, input {
   margin-right: 5px;
   vertical-align: middle;
 }
-/* Section-header variant — dot follows the title text instead of preceding it (v0.4 UI pass). */
+/* Section-header variant — dot follows the title text instead of preceding it. */
 .modified-dot-after { margin-right: 0; margin-left: 5px; }
 .pill-toggle-btn.active .modified-dot {
   background: var(--bg-light);
@@ -453,7 +453,7 @@ button, input {
   background: var(--tab-active-bg);
   color: var(--tab-active-text);
 }
-.tab-btn .font-tab-label { font-size: 12px; }
+.tab-btn .font-tab-label { font-size: 14px; }
 
 .tool-panel { padding: 1.25rem; }
 
@@ -711,12 +711,12 @@ button, input {
    .active's filled-background look. */
 .segmented-button-selected-child { text-decoration: underline; text-underline-offset: 3px; }
 
-/* Blend Mode category+pill selector (GradientFillControls.tsx's BlendModeCategoryRow, v0.4 blend
-   expansion) — plain pill-toggle-btn styling for now, same as every other pill row. */
+/* Blend Mode category+pill selector (GradientFillControls.tsx's BlendModeCategoryRow) — plain
+   pill-toggle-btn styling for now, same as every other pill row. */
 .blend-category-row { margin-bottom: 16px; }
 .blend-category-row .segmented-control { margin-bottom: 8px; }
 
-/* Sticky workspace subtab bar (v0.4) — Line Art's Tuning|LineArt|Blending switcher and Grade's
+/* Sticky workspace subtab bar — Line Art's Tuning|LineArt|Blending switcher and Grade's
    LIGHT|COLOR|HSL switcher both pin to the top of .bottom-sheet-content while scrolling, since
    both are meant to be switched back and forth at any point rather than scrolled away from. Solid
    background (matching the sheet's own) so content scrolling underneath doesn't show through once
@@ -727,10 +727,9 @@ button, input {
   z-index: 2;
   background: var(--bg-light);
   /* Bleeds to .bottom-sheet-content's true edges (cancelling its 10px inset), same technique as
-     .lineart-preprocessing-header — its own width previously stopped at the 10px inset, so scrolled
-     content could show through right at the scroll container's actual edge (e.g. under a
-     scrollbar gutter). Matching padding keeps the segmented control itself at the same visual
-     position as before. */
+     .lineart-preprocessing-header uses — otherwise scrolled content could show through right at
+     the scroll container's actual edge (e.g. under a scrollbar gutter). Matching padding keeps the
+     segmented control itself at the same visual position as unstuck. */
   margin: 0 -10px 4px;
   padding: 0 10px 5px;
 }
@@ -821,10 +820,10 @@ button, input {
 }
 
 /* Line Art panel */
-/* Subtle fill tint (v0.3 polish pass) — reuses --white-50, the same theme-aware overlay tint
-   already used everywhere else in this app (pills, tracks), and --radius, the standard card
-   rounding — to set the algo selector apart from the plain parameter bar below it, which stays
-   untinted (as do the Tuning/Blending subtabs' own content, v0.4 UI pass). */
+/* Subtle fill tint — reuses --white-50, the same theme-aware overlay tint already used everywhere
+   else in this app (pills, tracks), and --radius, the standard card rounding — to set the algo
+   selector apart from the plain parameter bar below it, which stays untinted (as do the
+   Tuning/Blending subtabs' own content). */
 .lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px 12px 4px 12px; }
 .lineart-algoselector-header { display: flex; align-items: center; justify-content: space-between; }
 .lineart-algoselector-header-label { display: flex; align-items: center; gap: 8px; }
@@ -850,8 +849,8 @@ button, input {
   .lineart-algoselector-row { flex-wrap: wrap; overflow-x: visible; }
   .lineart-algoselector-row .icon-button { flex: initial; }
 }
-/* Full-bleed highlighted bar (v0.4 UI pass) — every submodule header/Reset row (Denoise, Tone
-   Lift, Color Lift, Blending Mode, Gumi's Operation Mode) reads as its own section divider now, so
+/* Full-bleed highlighted bar — every submodule header/Reset row (Denoise, Tone
+   Lift, Color Lift, Blending Mode, Gumi's Operation Mode) reads as its own section divider, so
    the param content below it stays plain/untinted and the dashed .lineart-divider is redundant
    right after one. No corner rounding (a solid bar, not a card) — negative left/right margin
    cancels .bottom-sheet-content's own 10px inset so this bleeds to the sheet's true edges, and the
@@ -1224,7 +1223,7 @@ button, input {
 .algo-info-entry-technique { position: relative; top: 1px; }
 .algo-info-entry-body {
   color: var(--accent-dark);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
 }
 /* AboutModal's Changelog tab (v0.3 polish pass) uses a <ul> for "What's New" instead of <br>-
