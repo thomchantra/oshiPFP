@@ -30,7 +30,7 @@ import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
 import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST, IDENTITY_GRADE_GRADIENT_MAP } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
-import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, TabDef } from './types'
+import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, LineArtSubTab, TabDef } from './types'
 
 const TABS: TabDef[] = [
   { id: 'crop', label: 'CROP', icon: 'crop' },
@@ -104,6 +104,11 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   blendMode: 'multiply',
   overlayPassthrough: false,
   matteColor: [1, 1, 1],
+  colorCorrectEnabled: false,
+  colorCorrectExposure: 0,
+  colorCorrectContrast: 0,
+  colorCorrectSaturation: 0,
+  colorCorrectInvertMatte: false,
   threshold: 0,
   radius: 1,
   hardness: 1,
@@ -226,13 +231,9 @@ export default function App() {
   const [cropMode, setCropMode] = useState<CropMode>('square')
   const [lineArtMode, setLineArtMode] = useState<LineArtMode>('pathB')
   const [colorSubTab, setColorSubTab] = useState<ColorSubTab>('light')
+  const [lineArtSubTab, setLineArtSubTab] = useState<LineArtSubTab>('lineart')
   const [lineArtDisplayMode, setLineArtDisplayMode] = useState<LineArtDisplayMode>('composite')
   const [colorDisplayMode, setColorDisplayMode] = useState<'original' | 'graded'>('graded')
-  // Owned here (not LineArtPanel) so the mobile vertical meter overlay below can show each meter
-  // only while its matching section is actually expanded, instead of both unconditionally
-  // whenever the Maximizer tab is open.
-  const [toneLiftExpanded, setToneLiftExpanded] = useState(false)
-  const [colorLiftExpanded, setColorLiftExpanded] = useState(false)
   // AlgoGalleryModal's open state lives here (not LineArtPanel) so BlankState's "Browse Gallery"
   // button can open the same modal before any image (and therefore LineArtPanel itself) exists.
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -387,9 +388,12 @@ export default function App() {
     cropResize.setMode(data.crop.resize.mode)
     cropResize.setCustomSize(data.crop.resize.customSize)
 
+    // Merged against each mode's own freshly-built defaults rather than a wholesale replace — a
+    // state dump saved before a LineArtParams field addition (e.g. v0.4's colorCorrect* fields)
+    // would otherwise leave that field `undefined` instead of falling back to its real default.
     setParamsByMode(() =>
       Object.fromEntries(
-        LINE_ART_MODES.map((mode) => [mode, data.lineArt.paramsByAlgorithm[mode].params]),
+        LINE_ART_MODES.map((mode) => [mode, { ...buildDefaultParams(mode), ...data.lineArt.paramsByAlgorithm[mode].params }]),
       ) as Record<LineArtMode, LineArtParams>,
     )
     setLineArtMode(data.lineArt.activeMode)
@@ -509,24 +513,32 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, previewMode])
 
-  // Grade tab's Original/Graded toggle and Line Art tab's own "Original" display-mode button both
-  // peek at an earlier pipeline stage on the live canvas — see tabPreviewBypass's doc comment in
-  // pipeline.ts. Export tab is the sole WYSIWYG authority for its own (displayMode, colorGrade)
-  // selection — its own resolve (renderExportPreview) is fully decoupled from Line Art's/Grade's
-  // live tab state, not just an earlier-stage peek. Only one of these can be "active" at a time
-  // since they're keyed off which tab is actually open, and it resets to 'none' the moment none
-  // of them apply (including Grade's own "Graded" mode, which must show true full grading
-  // regardless of what Line Art's displayMode happens to be).
+  // Grade tab's Original/Graded toggle and Line Art tab's own preview-strip buttons (Original/
+  // Overlay) both peek at an earlier/alternate pipeline stage on the live canvas — see
+  // tabPreviewBypass's doc comment in pipeline.ts. 'original' reuses the same 'enhance' bypass Grade
+  // uses (literal same texture, enhanceTarget); 'overlay' gets its own dedicated 'lineArtOverlay'
+  // bypass, computed on demand by the pipeline only while active. Neither ever touches the real,
+  // always-composite lineArtOutputTarget/colorTarget (see the v0.4 preview/pipeline decoupling fix)
+  // — this is purely a live-canvas substitution. Guarded by !dualPaneActive since Dual Pane resolves
+  // its own per-pane peeks directly in its blit branch instead (two panes can independently want
+  // different modes at once, which this single tab-scoped value can't express). Export tab is the
+  // sole WYSIWYG authority for its own (displayMode, colorGrade) selection — its own resolve
+  // (renderExportPreview) is fully decoupled from Line Art's/Grade's live tab state, not just an
+  // earlier-stage peek. Only one of these can be "active" at a time since they're keyed off which
+  // tab is actually open, and it resets to 'none' the moment none of them apply (including Grade's
+  // own "Graded" mode, which must show true full grading regardless of what Line Art's preview strip
+  // happens to show).
   useEffect(() => {
     const bypass =
       tab === 'color' && colorDisplayMode === 'original' ? 'enhance' :
       tab === 'export' ? 'exportPreview' :
-      tab === 'maximizer' && lineArtDisplayMode === 'original' ? 'lineArtOriginal' :
+      tab === 'maximizer' && !dualPaneActive && lineArtDisplayMode === 'original' ? 'enhance' :
+      tab === 'maximizer' && !dualPaneActive && lineArtDisplayMode === 'overlay' ? 'lineArtOverlay' :
       'none'
     pipeline.setTabPreviewBypass(bypass)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, colorDisplayMode, lineArtDisplayMode])
+  }, [tab, colorDisplayMode, lineArtDisplayMode, dualPaneActive])
 
   useEffect(() => {
     if (tab !== 'export') return
@@ -602,10 +614,9 @@ export default function App() {
     setCropMode('square')
     setLineArtMode('pathB')
     setColorSubTab('light')
+    setLineArtSubTab('lineart')
     setLineArtDisplayMode('composite')
     setColorDisplayMode('graded')
-    setToneLiftExpanded(false)
-    setColorLiftExpanded(false)
     setPreviewMode('result')
     setParamsByMode(buildInitialParamsByMode())
     setDualPaneEnabled(false)
@@ -751,10 +762,10 @@ export default function App() {
               viewport at its own stable 1:1 size (colorCurveSize above),
               independent of whatever shape the photo underneath happens to
               be at the moment. */}
-          {hasImage && tab === 'maximizer' && lineArtMode !== 'pathC' && (toneLiftExpanded || colorLiftExpanded) && (
+          {hasImage && tab === 'maximizer' && lineArtSubTab === 'tuning' && lineArtMode !== 'pathC' && (
             <div className="rampmeter-mobile-overlay" aria-hidden="true">
-              {toneLiftExpanded && <RampMeter kind="tone" toneShaping={lineArtParams.toneShaping} orientation="column" />}
-              {colorLiftExpanded && <RampMeter kind="color" colorLift={lineArtParams.colorLift} orientation="column" />}
+              <RampMeter kind="tone" toneShaping={lineArtParams.toneShaping} orientation="column" />
+              <RampMeter kind="color" colorLift={lineArtParams.colorLift} orientation="column" />
             </div>
           )}
           {hasImage && tab === 'color' && colorCurve.visible && (
@@ -850,10 +861,8 @@ export default function App() {
             params={lineArtParams}
             onChange={handleLineArtChange}
             onReset={handleLineArtReset}
-            toneLiftExpanded={toneLiftExpanded}
-            setToneLiftExpanded={setToneLiftExpanded}
-            colorLiftExpanded={colorLiftExpanded}
-            setColorLiftExpanded={setColorLiftExpanded}
+            subTab={lineArtSubTab}
+            onSubTabChange={setLineArtSubTab}
             onOpenGallery={() => setGalleryOpen(true)}
           />
         )}

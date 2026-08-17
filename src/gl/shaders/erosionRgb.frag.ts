@@ -14,6 +14,11 @@
  * useless for sub-texel control at these small radii), this subdivides
  * [0, uRadius] into a fixed number of samples, so the slider is smooth
  * from 0 up.
+ *
+ * Erodes alpha alongside RGB (full vec4 min, not just .rgb) so a real per-pixel coverage
+ * alpha (see findEdges.frag.ts) survives this pass instead of being clobbered to 1.0. Safe
+ * no-op for every other caller (Path B, Path C, Path D) whose source is always opaque
+ * (alpha=1) going in — min(1,1) stays 1.
  */
 export const erosionRgbFrag = `#version 300 es
 precision highp float;
@@ -27,13 +32,13 @@ out vec4 outColor;
 const int SAMPLES = 32;
 
 void main() {
-  vec3 m = texture(uSource, vUV).rgb;
+  vec4 m = texture(uSource, vUV);
   for (int i = 1; i <= SAMPLES; i++) {
     float t = uRadius * float(i) / float(SAMPLES);
     vec2 offset = uDirection * uTexelSize * t;
-    m = min(m, texture(uSource, vUV + offset).rgb);
-    m = min(m, texture(uSource, vUV - offset).rgb);
+    m = min(m, texture(uSource, vUV + offset));
+    m = min(m, texture(uSource, vUV - offset));
   }
-  outColor = vec4(m, 1.0);
+  outColor = m;
 }
 `

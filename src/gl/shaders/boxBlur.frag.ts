@@ -14,6 +14,12 @@
  * less noise, the same tradeoff a Canny-style detector makes by design.
  * This is the spec's "Tier 1 denoise" pulled forward because Path F needed
  * it, not a general-purpose denoise feature yet.
+ *
+ * Blurs alpha alongside RGB (full vec4 average) so a real per-pixel coverage alpha (see
+ * findEdges.frag.ts) survives this pass instead of being clobbered to 1.0 — relevant when
+ * this program runs inside runSoftHardness on Fumiko's eroded edge map (negative hardness).
+ * Safe no-op for every other caller (this pass's own pre-detection blur, sharpen pre-blur,
+ * Gumi/Hinata/Tsukiko blurs) whose source is always opaque (alpha=1) going in.
  */
 export const boxBlurFrag = `#version 300 es
 precision highp float;
@@ -27,15 +33,15 @@ out vec4 outColor;
 const int SAMPLES = 8;
 
 void main() {
-  vec3 sum = texture(uSource, vUV).rgb;
+  vec4 sum = texture(uSource, vUV);
   float weight = 1.0;
   for (int i = 1; i <= SAMPLES; i++) {
     float t = uRadius * float(i) / float(SAMPLES);
     vec2 offset = uDirection * uTexelSize * t;
-    sum += texture(uSource, vUV + offset).rgb;
-    sum += texture(uSource, vUV - offset).rgb;
+    sum += texture(uSource, vUV + offset);
+    sum += texture(uSource, vUV - offset);
     weight += 2.0;
   }
-  outColor = vec4(sum / weight, 1.0);
+  outColor = sum / weight;
 }
 `

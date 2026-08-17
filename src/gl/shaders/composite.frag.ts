@@ -31,7 +31,12 @@
  * is that Overwrite still respects the mask's own per-pixel alpha (mix(result, layer,
  * opacity*alpha)), letting the base show through wherever alpha is partial/zero, while Normal
  * ignores alpha entirely — a full, unblended pass of the algorithm's own raw output at the given
- * opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer).
+ * opacity. uBlendMode 5 ("Difference") is a standard abs(base-layer). Modes 6-11 (v0.4 blend
+ * expansion) — 6 Add, 7 Color Dodge (epsilon-guarded against the 1-layer==0 singularity), 8 Darker
+ * Color (whole-pixel BT.709 luminance compare, not per-channel min — preserves the winning
+ * pixel's own hue/sat), 9 Linear Burn, 10 Soft Light (W3C/Photoshop formula, not a simple
+ * Overlay-with-roles-swapped lerp — genuinely softer falloff), 11 Hard Light (Overlay's own
+ * formula with the step() discriminant driven by `layer` instead of `base`).
  */
 export const compositeFrag = `#version 300 es
 precision highp float;
@@ -54,6 +59,28 @@ vec3 blendLayer(vec3 base, vec3 layer, int mode) {
     return mix(lo, hi, step(0.5, base));
   }
   if (mode == 5) return abs(base - layer);
+  if (mode == 6) return clamp(base + layer, 0.0, 1.0);
+  if (mode == 7) return clamp(base / max(1.0 - layer, 1e-4), 0.0, 1.0);
+  if (mode == 8) {
+    float lumBase = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    float lumLayer = dot(layer, vec3(0.2126, 0.7152, 0.0722));
+    return lumLayer < lumBase ? layer : base;
+  }
+  if (mode == 9) return clamp(base + layer - 1.0, 0.0, 1.0);
+  if (mode == 10) {
+    vec3 x = base;
+    vec3 dLo = ((16.0 * x - 12.0) * x + 4.0) * x;
+    vec3 dHi = sqrt(x);
+    vec3 D = mix(dLo, dHi, step(0.25, x));
+    vec3 dark = base - (1.0 - 2.0 * layer) * base * (1.0 - base);
+    vec3 light = base + (2.0 * layer - 1.0) * (D - base);
+    return mix(dark, light, step(0.5, layer));
+  }
+  if (mode == 11) {
+    vec3 lo = 2.0 * base * layer;
+    vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - layer);
+    return mix(lo, hi, step(0.5, layer));
+  }
   return layer;
 }
 

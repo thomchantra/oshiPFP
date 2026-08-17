@@ -411,6 +411,7 @@ button, input {
   background: var(--accent-title);
   color: var(--bg-light);
 }
+.pill-toggle-btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 .modified-dot {
   display: inline-block;
   width: 6px;
@@ -420,6 +421,8 @@ button, input {
   margin-right: 5px;
   vertical-align: middle;
 }
+/* Section-header variant — dot follows the title text instead of preceding it (v0.4 UI pass). */
+.modified-dot-after { margin-right: 0; margin-left: 5px; }
 .pill-toggle-btn.active .modified-dot {
   background: var(--bg-light);
 }
@@ -700,6 +703,37 @@ button, input {
   background: var(--accent-title);
   color: var(--bg-light);
 }
+.segmented-button:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+/* Marks whichever category tab actually contains the committed Blend Mode (BlendModeCategoryRow) —
+   independent of .active, which marks whichever category is currently being viewed/browsed. Both
+   can be true on the same button (most of the time) or different ones (browsing another category
+   without picking a pill in it yet), so this stacks as its own visual signal rather than replacing
+   .active's filled-background look. */
+.segmented-button-selected-child { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Blend Mode category+pill selector (GradientFillControls.tsx's BlendModeCategoryRow, v0.4 blend
+   expansion) — plain pill-toggle-btn styling for now, same as every other pill row. */
+.blend-category-row { margin-bottom: 16px; }
+.blend-category-row .segmented-control { margin-bottom: 8px; }
+
+/* Sticky workspace subtab bar (v0.4) — Line Art's Tuning|LineArt|Blending switcher and Grade's
+   LIGHT|COLOR|HSL switcher both pin to the top of .bottom-sheet-content while scrolling, since
+   both are meant to be switched back and forth at any point rather than scrolled away from. Solid
+   background (matching the sheet's own) so content scrolling underneath doesn't show through once
+   pinned; the padding/margin pair keeps its visual position identical to being unstuck. */
+.subtab-sticky-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-light);
+  /* Bleeds to .bottom-sheet-content's true edges (cancelling its 10px inset), same technique as
+     .lineart-preprocessing-header — its own width previously stopped at the 10px inset, so scrolled
+     content could show through right at the scroll container's actual edge (e.g. under a
+     scrollbar gutter). Matching padding keeps the segmented control itself at the same visual
+     position as before. */
+  margin: 0 -10px 4px;
+  padding: 0 10px 5px;
+}
 
 /* 2-icon pill toggle (IconToggle2.tsx) — single tap target, cycles state */
 .icon-toggle-2 {
@@ -789,21 +823,50 @@ button, input {
 /* Line Art panel */
 /* Subtle fill tint (v0.3 polish pass) — reuses --white-50, the same theme-aware overlay tint
    already used everywhere else in this app (pills, tracks), and --radius, the standard card
-   rounding — to set the algo selector and Pre-detection Tuning group apart from the plain
-   parameter bar below them, which stays untinted. */
-.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px; }
+   rounding — to set the algo selector apart from the plain parameter bar below it, which stays
+   untinted (as do the Tuning/Blending subtabs' own content, v0.4 UI pass). */
+.lineart-algoselector { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px 12px 4px 12px; }
 .lineart-algoselector-header { display: flex; align-items: center; justify-content: space-between; }
 .lineart-algoselector-header-label { display: flex; align-items: center; gap: 8px; }
-.lineart-algoselector-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-.lineart-preprocessing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; background: var(--bgalgo); border-radius: var(--radius); padding: 12px; }
-.lineart-preprocessing-header { display: flex; align-items: center; justify-content: space-between; }
-.text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; white-space: nowrap; flex-shrink: 0; }
-.lineart-preprocessing-toggles { display: flex; gap: 5px; }
-.lineart-preprocessing-toggles .pill-toggle-btn { background: var(--white-50); }
-.lineart-preprocessing-toggles .pill-toggle-btn.active {
-  background: var(--accent-title);
-  color: var(--bg-light);
+/* Mobile: single horizontal-scrolling row (7 algorithms don't fit one screen width without
+   shrinking below a comfortable tap target) — desktop has room to just wrap to its natural 2 rows
+   instead, see the min-width:900px override below. Vertical padding widens the actual
+   swipe-to-scroll hit area beyond just the pill buttons' own box (a bare flex row is exactly
+   pill-height tall, leaving no forgiving margin above/below each pill to start a drag from).
+   touch-action: pan-x is explicit (not just relying on overflow-x:auto's implied default) so the
+   browser commits to horizontal panning here rather than potentially deferring to the page. */
+.lineart-algoselector-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  padding: 10px 0;
 }
+.lineart-algoselector-row .icon-button { min-height: 30px; flex: 0 0 auto; }
+@media (min-width: 900px) {
+  .lineart-algoselector-row { flex-wrap: wrap; overflow-x: visible; }
+  .lineart-algoselector-row .icon-button { flex: initial; }
+}
+/* Full-bleed highlighted bar (v0.4 UI pass) — every submodule header/Reset row (Denoise, Tone
+   Lift, Color Lift, Blending Mode, Gumi's Operation Mode) reads as its own section divider now, so
+   the param content below it stays plain/untinted and the dashed .lineart-divider is redundant
+   right after one. No corner rounding (a solid bar, not a card) — negative left/right margin
+   cancels .bottom-sheet-content's own 10px inset so this bleeds to the sheet's true edges, and the
+   matching 10px horizontal padding brings the title/Reset text back to exactly the same x position
+   as the plain slider content above/below it, so everything still lines up vertically. */
+.lineart-preprocessing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bgalgo);
+  padding: 10px;
+  margin: 8px -10px;
+}
+.lineart-preprocessing-header .font-param-label { font-weight: 700; }
+.text-reset-btn { background: none; border: none; color: var(--accent-title); cursor: pointer; touch-action: manipulation; white-space: nowrap; flex-shrink: 0; }
 /* Color tab HSL sub-tab: master + 8-band swatch selector (HslBandSelector.tsx) */
 /* flex:1 + space-between spreads the 9 swatches evenly across whatever
    width the row's Reset button (fixed-width sibling) leaves it — see

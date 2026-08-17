@@ -4,22 +4,29 @@ import IconButton from './IconButton'
 import GradientSlider, { type SliderCurve } from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
 import RampMeter from './RampMeter'
-import { GradientFillControls, BlendModeRow, TintColorRow } from './GradientFillControls'
+import SegmentedControl from './SegmentedControl'
+import { GradientFillControls, BlendModeCategoryRow, TintColorRow } from './GradientFillControls'
 import { ALGO_OPTIONS } from './AlgoGalleryModal'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { pinchToPlateau } from '../tone/pinchRamp'
-import type { BlendMode, FillType, LineArtParams, ToneShapingParams } from '../types'
+import type { BlendMode, FillType, LineArtParams, LineArtSubTab, ToneShapingParams } from '../types'
+
+const SUB_TAB_OPTIONS: { value: LineArtSubTab; label: string }[] = [
+  { value: 'tuning', label: 'TUNING' },
+  { value: 'lineart', label: 'LINEART' },
+  { value: 'blending', label: 'BLENDING' },
+]
 
 interface LineArtPanelProps {
   params: LineArtParams
   onChange: (params: LineArtParams) => void
   /** Resets the currently active algorithm's params to factory defaults and reverts the display mode to Composite — App.tsx owns both (per-mode param cache and the global display-mode toggle), so this is a plain callback rather than something LineArtPanel can derive from params/onChange alone. */
   onReset: () => void
-  /** Lifted to App.tsx (rather than local state) so the mobile vertical meter overlay, a sibling of this panel, can show each meter only while its matching section is expanded here. */
-  toneLiftExpanded: boolean
-  setToneLiftExpanded: (updater: (prev: boolean) => boolean) => void
-  colorLiftExpanded: boolean
-  setColorLiftExpanded: (updater: (prev: boolean) => boolean) => void
+  /** Lifted to App.tsx (rather than local state) so the mobile vertical meter overlay, a sibling of
+   * this panel, can show Tone Lift/Color Lift's meters only while this panel is actually on the
+   * Tuning subtab (their sliders are now always-expanded there, no per-section collapse anymore). */
+  subTab: LineArtSubTab
+  onSubTabChange: (tab: LineArtSubTab) => void
   /** Opens AlgoGalleryModal (App.tsx owns its open state — lifted out so BlankState's own "Browse
    * Gallery" button can open the same modal before any image, and therefore this panel, exists). */
   onOpenGallery: () => void
@@ -62,21 +69,21 @@ function isToneShapingModified(current: ToneShapingParams, identity: ToneShaping
 
 const COLOR_LIFT_SWATCHES = HUE_BAND_SWATCHES
 
-/** Small accent-color dot shown next to a pre-processing submodule's pill label when its params have drifted from identity — lets the user spot which submodules have edits without expanding each one (see App.tsx-adjacent feedback: expand/collapse is tray-appearance-only now, so this is the only at-a-glance signal left). */
-function ModifiedDot({ show }: { show: boolean }) {
+/** Small accent-color dot shown next to a submodule's title label when its params have drifted from
+ * identity — lets the user spot which sections have edits at a glance. `className` lets header rows
+ * pass 'modified-dot-after' (dot follows the title text, not precedes it — see base.css) while the
+ * Color Correct toggle row keeps the default before-text spacing. */
+function ModifiedDot({ show, className }: { show: boolean; className?: string }) {
   if (!show) return null
-  return <span className="modified-dot" aria-hidden="true" />
+  return <span className={`modified-dot${className ? ` ${className}` : ''}`} aria-hidden="true" />
 }
 
 /** Controlled by App.tsx (params live there, not locally) so slider values survive switching away from and back to the Line Art tab. */
 export default function LineArtPanel({
   params, onChange, onReset,
-  toneLiftExpanded, setToneLiftExpanded, colorLiftExpanded, setColorLiftExpanded,
+  subTab, onSubTabChange,
   onOpenGallery,
 }: LineArtPanelProps) {
-  // Expand/collapse is tray-appearance-only — Tone Lift/Denoise/Color Lift
-  // always apply (their identity defaults are no-ops).
-  const [denoiseExpanded, setDenoiseExpanded] = useState(false)
   // Which Dual Line band's controls are showing — UI-only, not a LineArtParams field, since
   // this doesn't need to round-trip through JSON presets.
   const [dualBandTab, setDualBandTab] = useState<'black' | 'white'>('black')
@@ -93,6 +100,240 @@ export default function LineArtPanel({
 
   return (
     <BottomSheet>
+      <div className="subtab-sticky-wrapper">
+        <SegmentedControl options={SUB_TAB_OPTIONS} value={subTab} onChange={onSubTabChange} />
+      </div>
+
+      {subTab === 'tuning' && (
+        params.mode === 'pathC' ? (
+          <p className="font-param-label" style={{ color: 'var(--accent-dark)', padding: '4px 0 12px' }}>
+            Chie erodes the crop directly — pre-detection tuning doesn't apply to this algorithm.
+          </p>
+        ) : (
+          <>
+            <div className="lineart-preprocessing-header">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
+                Denoise
+                <ModifiedDot show={isModified(params.denoise, IDENTITY_DENOISE)} className="modified-dot-after" />
+              </span>
+              <button type="button" className="text-reset-btn font-value" onClick={() => set('denoise', IDENTITY_DENOISE)}>
+                Reset
+              </button>
+            </div>
+            <div className="lineart-slidergroup-stack">
+              <GradientSlider
+                label="Intensity" value={params.denoise.intensity} min={0} max={1} defaultValue={0}
+                onChange={(v) => set('denoise', { ...params.denoise, intensity: v })}
+              />
+              <GradientSlider
+                label="Threshold" value={params.denoise.threshold} min={0} max={1} defaultValue={0}
+                onChange={(v) => set('denoise', { ...params.denoise, threshold: v })}
+              />
+            </div>
+
+            <div className="lineart-preprocessing-header">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
+                Tone Lift
+                <ModifiedDot show={isToneShapingModified(params.toneShaping, IDENTITY_TONE_SHAPING)} className="modified-dot-after" />
+              </span>
+              <button type="button" className="text-reset-btn font-value" onClick={() => set('toneShaping', IDENTITY_TONE_SHAPING)}>
+                Reset
+              </button>
+            </div>
+            <div className="lineart-slidergroup-stack">
+              <div className="rampmeter-desktop-only">
+                <RampMeter kind="tone" toneShaping={params.toneShaping} />
+              </div>
+              <RampModeRow
+                mode={params.toneShaping.mode}
+                onChange={(m) => set('toneShaping', { ...params.toneShaping, mode: m })}
+              />
+              <GradientSlider
+                label="Exposure" value={params.toneShaping.exposure} min={-3} max={3} defaultValue={0}
+                onChange={(v) => set('toneShaping', { ...params.toneShaping, exposure: v })}
+              />
+              <GradientSlider
+                label="Contrast" value={params.toneShaping.contrast} min={-0.8} max={2} defaultValue={0}
+                onChange={(v) => set('toneShaping', { ...params.toneShaping, contrast: v })}
+              />
+              {params.toneShaping.mode === 'clip' ? (
+                <>
+                  <GradientSlider
+                    label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={1} defaultValue={0}
+                    trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: Math.min(v, params.toneShaping.clipMode.whiteClip) } })}
+                  />
+                  <GradientSlider
+                    label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0} max={1} defaultValue={1}
+                    trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: Math.max(v, params.toneShaping.clipMode.blackClip) } })}
+                  />
+                </>
+              ) : (
+                <>
+                  <GradientSlider
+                    label="Pinch Position" value={params.toneShaping.pinchMode.position} min={0} max={1} defaultValue={0.5}
+                    trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
+                    onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, position: v } })}
+                  />
+                  <GradientSlider
+                    label="Pinch Size" value={params.toneShaping.pinchMode.expand} min={0} max={1} defaultValue={0.3}
+                    onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, expand: v } })}
+                  />
+                  <GradientSlider
+                    label="Pinch Feathering" value={params.toneShaping.pinchMode.feathering} min={0} max={1} defaultValue={0.5}
+                    onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, feathering: v } })}
+                  />
+                </>
+              )}
+            </div>
+
+            <div className="lineart-preprocessing-header">
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
+                Color Lift
+                <ModifiedDot show={isModified(params.colorLift, IDENTITY_COLOR_LIFT)} className="modified-dot-after" />
+              </span>
+              <button type="button" className="text-reset-btn font-value" onClick={() => set('colorLift', IDENTITY_COLOR_LIFT)}>
+                Reset
+              </button>
+            </div>
+            <div className="lineart-slidergroup-stack">
+              <div className="rampmeter-desktop-only">
+                <RampMeter kind="color" colorLift={params.colorLift} />
+              </div>
+              {COLOR_LIFT_SWATCHES.map((swatch) => (
+                <GradientSlider
+                  key={swatch.key}
+                  label={`${swatch.label} Lift`}
+                  value={params.colorLift[swatch.key]}
+                  min={-1}
+                  max={1}
+                  defaultValue={0}
+                  trackGradient={`linear-gradient(90deg, #000000, ${swatch.hex}, #FFFFFF)`}
+                  onChange={(v) => set('colorLift', { ...params.colorLift, [swatch.key]: v })}
+                />
+              ))}
+            </div>
+          </>
+        )
+      )}
+
+      {subTab === 'blending' && (
+        <>
+          {/* Pre-Blend Correction — the toggle IS the expand state (no separate enabled+expanded
+              pair): either the user needs correction (on, controls visible) or doesn't (off,
+              nothing rendered). Collapsed by default — a power-user feature most algorithms never
+              need. Runs on the resolved ink layer right before compositing, see pipeline.ts's
+              applyInkCorrect. */}
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => set('colorCorrectEnabled', !params.colorCorrectEnabled)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                set('colorCorrectEnabled', !params.colorCorrectEnabled)
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
+              <ModifiedDot show={params.colorCorrectEnabled} />
+              Color Correct
+            </span>
+            <ToggleSwitch on={params.colorCorrectEnabled} label="Color Correct" />
+          </div>
+          {params.colorCorrectEnabled && (
+            <div className="lineart-slidergroup-stack">
+              <GradientSlider
+                label="Exposure" value={params.colorCorrectExposure} min={-1} max={1} defaultValue={0}
+                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                onChange={(v) => set('colorCorrectExposure', v)}
+              />
+              <GradientSlider
+                label="Contrast" value={params.colorCorrectContrast} min={-1} max={1} defaultValue={0}
+                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                onChange={(v) => set('colorCorrectContrast', v)}
+              />
+              <GradientSlider
+                label="Saturation" value={params.colorCorrectSaturation} min={-1} max={1} defaultValue={0}
+                formatValue={(v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`}
+                onChange={(v) => set('colorCorrectSaturation', v)}
+              />
+              <div
+                className="lineart-toggle-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => set('colorCorrectInvertMatte', !params.colorCorrectInvertMatte)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    set('colorCorrectInvertMatte', !params.colorCorrectInvertMatte)
+                  }
+                }}
+              >
+                <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Matte</span>
+                <ToggleSwitch on={params.colorCorrectInvertMatte} label="Invert Matte" />
+              </div>
+            </div>
+          )}
+
+          {/* Bypasses Blend Mode/Opacity entirely, reusing the exact raw alpha-flattened-on-matteColor
+              computation the Overlay display mode already produces, but for Composite (so it flows
+              downstream through Color/Export). See pipeline.ts's resolveLineArtDisplay and
+              LineArtParams.overlayPassthrough's own doc comment. When on, the Blend Mode
+              selector/Opacity below is entirely irrelevant (passthrough bypasses it), so that whole
+              section — and the divider that would otherwise introduce it — stays hidden rather than
+              showing dead controls. */}
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => set('overlayPassthrough', !params.overlayPassthrough)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                set('overlayPassthrough', !params.overlayPassthrough)
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Overlay Passthrough</span>
+            <ToggleSwitch on={params.overlayPassthrough} label="Overlay Passthrough" />
+          </div>
+          {params.overlayPassthrough ? (
+            <TintColorRow label="Matte Color" tintColor={params.matteColor} onChange={(rgb) => set('matteColor', rgb)} />
+          ) : (
+            <>
+              <div className="lineart-preprocessing-header">
+                <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>
+                  Blending Mode
+                  <ModifiedDot show={params.blendMode !== 'multiply' || params.opacity !== 1} className="modified-dot-after" />
+                </span>
+                <button
+                  type="button"
+                  className="text-reset-btn font-value"
+                  onClick={() => onChange({ ...params, blendMode: 'multiply', opacity: 1 })}
+                >
+                  Reset
+                </button>
+              </div>
+              <BlendModeCategoryRow
+                mode={params.blendMode}
+                allowedModes={params.mode === 'pathF' && params.findEdge ? FIND_EDGE_BLEND_OPTIONS : undefined}
+                onChange={(v) => set('blendMode', v)}
+              />
+              <GradientSlider
+                label="Blend Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
+                formatValue={() => `${opacityPct}%`}
+                onChange={(v) => set('opacity', v)}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {subTab === 'lineart' && (
+      <>
       <div className="lineart-algoselector">
         <div className="lineart-algoselector-header">
           <div className="lineart-algoselector-header-label">
@@ -124,194 +365,6 @@ export default function LineArtPanel({
           ))}
         </div>
       </div>
-
-      {/* Chie (pathC) erodes the raw crop directly (see pipeline.ts's pathC
-          branch) rather than reading colorCorrect/denoise's output like every
-          other mode — Tone Lift/Denoise/Color Lift are real no-ops here, so
-          hide them rather than leave dead controls the user can fiddle with
-          for nothing. */}
-      {params.mode !== 'pathC' && (
-      <div className="lineart-preprocessing">
-        <div className="lineart-preprocessing-header">
-          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Pre-detection Tuning</span>
-          <button
-            type="button"
-            className="text-reset-btn font-value"
-            onClick={() =>
-              onChange({
-                ...params,
-                toneShaping: IDENTITY_TONE_SHAPING,
-                denoise: IDENTITY_DENOISE,
-                colorLift: IDENTITY_COLOR_LIFT,
-              })
-            }
-          >
-            Reset
-          </button>
-        </div>
-        <div className="lineart-preprocessing-toggles">
-          <button
-            type="button"
-            className={`pill-toggle-btn font-button-label${toneLiftExpanded ? ' active' : ''}`}
-            onClick={() => setToneLiftExpanded((v) => !v)}
-          >
-            <ModifiedDot show={isToneShapingModified(params.toneShaping, IDENTITY_TONE_SHAPING)} />
-            Tone Lift
-          </button>
-          <button
-            type="button"
-            className={`pill-toggle-btn font-button-label${colorLiftExpanded ? ' active' : ''}`}
-            onClick={() => setColorLiftExpanded((v) => !v)}
-          >
-            <ModifiedDot show={isModified(params.colorLift, IDENTITY_COLOR_LIFT)} />
-            Color Lift
-          </button>
-          <button
-            type="button"
-            className={`pill-toggle-btn font-button-label${denoiseExpanded ? ' active' : ''}`}
-            onClick={() => setDenoiseExpanded((v) => !v)}
-          >
-            <ModifiedDot show={isModified(params.denoise, IDENTITY_DENOISE)} />
-            Denoise
-          </button>
-        </div>
-
-        {toneLiftExpanded && (
-          <div className="lineart-slidergroup-stack">
-            <div className="rampmeter-desktop-only">
-              <RampMeter kind="tone" toneShaping={params.toneShaping} />
-            </div>
-            <RampModeRow
-              mode={params.toneShaping.mode}
-              onChange={(m) => set('toneShaping', { ...params.toneShaping, mode: m })}
-            />
-            <GradientSlider
-              label="Exposure" value={params.toneShaping.exposure} min={-3} max={3} defaultValue={0}
-              onChange={(v) => set('toneShaping', { ...params.toneShaping, exposure: v })}
-            />
-            <GradientSlider
-              label="Contrast" value={params.toneShaping.contrast} min={-0.8} max={2} defaultValue={0}
-              onChange={(v) => set('toneShaping', { ...params.toneShaping, contrast: v })}
-            />
-            {params.toneShaping.mode === 'clip' ? (
-              <>
-                <GradientSlider
-                  label="Black Clip" value={params.toneShaping.clipMode.blackClip} min={0} max={1} defaultValue={0}
-                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, blackClip: Math.min(v, params.toneShaping.clipMode.whiteClip) } })}
-                />
-                <GradientSlider
-                  label="White Clip" value={params.toneShaping.clipMode.whiteClip} min={0} max={1} defaultValue={1}
-                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, clipMode: { ...params.toneShaping.clipMode, whiteClip: Math.max(v, params.toneShaping.clipMode.blackClip) } })}
-                />
-              </>
-            ) : (
-              <>
-                <GradientSlider
-                  label="Pinch Position" value={params.toneShaping.pinchMode.position} min={0} max={1} defaultValue={0.5}
-                  trackGradient="linear-gradient(90deg, #000000, #FFFFFF)"
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, position: v } })}
-                />
-                <GradientSlider
-                  label="Pinch Size" value={params.toneShaping.pinchMode.expand} min={0} max={1} defaultValue={0.3}
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, expand: v } })}
-                />
-                <GradientSlider
-                  label="Pinch Feathering" value={params.toneShaping.pinchMode.feathering} min={0} max={1} defaultValue={0.5}
-                  onChange={(v) => set('toneShaping', { ...params.toneShaping, pinchMode: { ...params.toneShaping.pinchMode, feathering: v } })}
-                />
-              </>
-            )}
-          </div>
-        )}
-        {toneLiftExpanded && colorLiftExpanded && <div className="lineart-divider" />}
-        {colorLiftExpanded && (
-          <div className="lineart-slidergroup-stack">
-            <div className="rampmeter-desktop-only">
-              <RampMeter kind="color" colorLift={params.colorLift} />
-            </div>
-            {COLOR_LIFT_SWATCHES.map((swatch) => (
-              <GradientSlider
-                key={swatch.key}
-                label={`${swatch.label} Lift`}
-                value={params.colorLift[swatch.key]}
-                min={-1}
-                max={1}
-                defaultValue={0}
-                trackGradient={`linear-gradient(90deg, #000000, ${swatch.hex}, #FFFFFF)`}
-                onChange={(v) => set('colorLift', { ...params.colorLift, [swatch.key]: v })}
-              />
-            ))}
-          </div>
-        )}
-        {(toneLiftExpanded || colorLiftExpanded) && denoiseExpanded && <div className="lineart-divider" />}
-        {denoiseExpanded && (
-          <div className="lineart-slidergroup-stack">
-            <GradientSlider
-              label="Intensity" value={params.denoise.intensity} min={0} max={1} defaultValue={0}
-              onChange={(v) => set('denoise', { ...params.denoise, intensity: v })}
-            />
-            <GradientSlider
-              label="Threshold" value={params.denoise.threshold} min={0} max={1} defaultValue={0}
-              onChange={(v) => set('denoise', { ...params.denoise, threshold: v })}
-            />
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* Blend Mode + Overlay Opacity grouped under one header/Reset — both concern "how the
-          resolved ink combines with the base," unlike everything below which is
-          algorithm-specific detection tuning. Shared across all 7 algorithms. */}
-      <div className="lineart-preprocessing-header">
-        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Blend Mode</span>
-        <button
-          type="button"
-          className="text-reset-btn font-value"
-          onClick={() => onChange({ ...params, blendMode: 'multiply', opacity: 1, overlayPassthrough: false, matteColor: [1, 1, 1] })}
-        >
-          Reset
-        </button>
-      </div>
-      {/* Bypasses Blend Mode/Opacity entirely, reusing the exact raw alpha-flattened-on-matteColor
-          computation the Overlay display mode already produces, but for Composite (so it flows
-          downstream through Color/Export). See pipeline.ts's resolveLineArtDisplay and
-          LineArtParams.overlayPassthrough's own doc comment. */}
-      <div
-        className="lineart-toggle-row"
-        role="button"
-        tabIndex={0}
-        onClick={() => set('overlayPassthrough', !params.overlayPassthrough)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            set('overlayPassthrough', !params.overlayPassthrough)
-          }
-        }}
-      >
-        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Overlay Passthrough</span>
-        <ToggleSwitch on={params.overlayPassthrough} label="Overlay Passthrough" />
-      </div>
-      {params.overlayPassthrough ? (
-        <TintColorRow label="Matte Color" tintColor={params.matteColor} onChange={(rgb) => set('matteColor', rgb)} />
-      ) : (
-        <>
-          <BlendModeRow
-            mode={params.blendMode}
-            options={params.mode === 'pathF' && params.findEdge ? FIND_EDGE_BLEND_OPTIONS : ALL_BLEND_OPTIONS}
-            onChange={(v) => set('blendMode', v)}
-            wrap
-          />
-          <GradientSlider
-            label="Overlay Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
-            formatValue={() => `${opacityPct}%`}
-            onChange={(v) => set('opacity', v)}
-          />
-        </>
-      )}
-      <div className="lineart-divider" />
-
       <div className="lineart-slidergroup-stack">
         {params.mode === 'pathB' && (
           <>
@@ -857,6 +910,8 @@ export default function LineArtPanel({
           </>
         )}
       </div>
+      </>
+      )}
     </BottomSheet>
   )
 }
@@ -1072,8 +1127,7 @@ function EdgePolarityFillRow({
   )
 }
 
-const ALL_BLEND_OPTIONS: BlendMode[] = ['overwrite', 'multiply', 'screen', 'overlay', 'normal', 'difference']
-/** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply, which hard-overrides the blend mode regardless of selection. Overwrite is deliberately excluded here (unlike every other blend-mode row) so this row never shows a selectable option that would silently do nothing. */
+/** Fumiko's "Find Edge" color mode bakes its colored-edge look into a per-channel white-toward-black fade that only reads correctly under Multiply — see pipeline.ts's forcedMultiply, which hard-overrides the blend mode regardless of selection. Passed as BlendModeCategoryRow's `allowedModes` so every other pill/category renders disabled instead of silently doing nothing if picked. */
 const FIND_EDGE_BLEND_OPTIONS: BlendMode[] = ['multiply']
 
 /** Gumi's Line/Fill split reuses the existing gumiFillMode boolean directly (false=Line, true=Fill) rather than a new field. */

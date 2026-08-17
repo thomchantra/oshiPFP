@@ -27,6 +27,13 @@
  *
  * Saturation lives in saturationAdjust.frag.ts now, applied once to the fully-resolved ink
  * layer right before compositing (see pipeline.ts's pathF branch) rather than here.
+ *
+ * Alpha is derived from `value`'s BT.709 luminance (1 - luminance): near-white/no-edge pixels
+ * (value ~= white) get alpha ~= 0 (no ink), strong edges (value darkens toward black) get alpha
+ * ~= 1 (full ink coverage) — the same ".rgb = color, .a = coverage" convention every other
+ * algorithm follows (see composite.frag.ts's header). Previously hardcoded to 1.0, which made
+ * overlay passthrough's matte color unreachable (mix(matte, rgb, alpha) always resolved to rgb)
+ * — see docs/oshiPFP-v0.4-spec.md's Fumiko Find Edge bug entry.
  */
 export const findEdgesFrag = `#version 300 es
 precision highp float;
@@ -56,6 +63,9 @@ void main() {
   vec3 value = vec3(1.0) - smoothstep(knee - feather, knee + feather, mag);
   value = pow(clamp(value, 0.0, 1.0), vec3(uGamma));
 
-  outColor = vec4(value, 1.0);
+  float luminance = dot(value, vec3(0.2126, 0.7152, 0.0722));
+  float alpha = clamp(1.0 - luminance, 0.0, 1.0);
+
+  outColor = vec4(value, alpha);
 }
 `

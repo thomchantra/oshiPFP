@@ -15,10 +15,8 @@ node_modules/.tmp/
 .DS_Store
 *.log
 
-# Internal working docs — dev-session continuity notes, not meant for the public repo. Kept on
-# disk for continued local use (Claude Code still auto-loads CLAUDE.md from the project root),
-# just no longer git-tracked. src/lab/README.md is NOT covered by this — it's source-adjacent
-# documentation meant to ship publicly.
+# Internal working docs
+.claude/
 /CLAUDE.md
 /changelog/
 /docs/

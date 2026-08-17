@@ -16,6 +16,12 @@ export interface CurvePoint {
 /** Color tab's 3 sub-panels (docs/oshiPFP-v0.2.1-UIspecs.md's Color Tab section). */
 export type ColorSubTab = 'light' | 'color' | 'hsl'
 
+/** Line Art tab's 3 sub-panels — Tuning (denoise/tone lift/color lift), LineArt (algo selector +
+ * per-algorithm params), Blending (Compositor group: Pre-Blend Correction + Blend Mode + Opacity).
+ * The algo selector itself stays visible above this subtab bar regardless of which is active, since
+ * switching algorithms is a cross-cutting concern relevant in all 3. */
+export type LineArtSubTab = 'tuning' | 'lineart' | 'blending'
+
 /** Light sub-tab — basic tonal correction, all -1..1 except exposure (-3..3 EV stops) and contrast (-0.8..2, same pivot-multiplier convention as ToneShapingParams). Runs first in the color pipeline, before Invert/Curve/HSL — a photo's basic exposure/contrast correction is meant to apply to the source, not to a creative grade already layered on top. 0 = identity for every field. */
 export interface LightParams {
   exposure: number
@@ -57,10 +63,15 @@ export interface InvertParams {
 /** How each algorithm's resolved "ink" color composites onto the base image — see
  * composite.frag.ts's blendLayer. 'normal' is a full, alpha-ignoring pass of the algorithm's own
  * output — unlike 'overwrite', which still lets the base show through wherever the mask's own
- * alpha is partial/zero. 'difference' is a standard abs(base-layer) blend. Only Line Art's own
- * main compositing selector offers both today — Grade tab's Gradient Map blend selector only
- * offers the original 4, see ColorPanel.tsx's own ALL_BLEND_OPTIONS. */
-export type BlendMode = 'overwrite' | 'multiply' | 'screen' | 'overlay' | 'normal' | 'difference'
+ * alpha is partial/zero. 'difference' is a standard abs(base-layer) blend. 12 modes total, grouped
+ * into 4 UI categories (GradientFillControls.tsx's BLEND_CATEGORIES) by composite behavior:
+ * Comp (overwrite/normal/difference), Light (screen/add/dodge), Dark (darken/multiply/burn), Punch
+ * (softLight/overlay/hardLight) — each non-Comp trio ordered least→most intense. Line Art's own
+ * main compositing selector offers all 12; Grade tab's Gradient Map blend selector only offers the
+ * original 4 (overwrite/multiply/screen/overlay), see ColorPanel.tsx's own ALL_BLEND_OPTIONS. */
+export type BlendMode =
+  | 'overwrite' | 'multiply' | 'screen' | 'overlay' | 'normal' | 'difference'
+  | 'add' | 'dodge' | 'darken' | 'burn' | 'softLight' | 'hardLight'
 
 /** Grade tab's Gradient Map processor — a general post-grade 3-stop (or 2-stop, with Duo Tone)
  * color remap applied to the whole graded image, distinct from Line Art's per-algorithm Gradient
@@ -188,10 +199,20 @@ export interface LineArtParams {
    * while this is on, since neither has any effect once compositing is bypassed. */
   overlayPassthrough: boolean
   /** Backdrop color for the raw alpha-flatten both Overlay display mode and overlayPassthrough
-   * use (alphaOverWhite.frag.ts) — defaults to white. Shared by both consumers (same shader call
-   * site), so changing it while overlayPassthrough is on also affects the plain Overlay tab's own
-   * preview — that's intentional single-source-of-truth behavior, not a bug. */
+   * use (alphaOverWhite.frag.ts) — defaults to white. Only actually applied while overlayPassthrough
+   * is on; pipeline.ts's resolveLineArtDisplay falls back to white for the Overlay-preview-only
+   * case (overlayPassthrough off) so a stale/hidden custom color set earlier doesn't leak into a
+   * plain preview peek. */
   matteColor: [number, number, number]
+  /** Pre-Blend Correction ("Color Correct") — a single gated toggle (also the section's own
+   * expand/collapse state, no separate flag) exposing Exposure/Contrast/Saturation/Invert Matte,
+   * applied to the resolved ink layer right before it composites onto the base — see
+   * pipeline.ts's inkCorrect pass. All identity/off at defaults. */
+  colorCorrectEnabled: boolean
+  colorCorrectExposure: number
+  colorCorrectContrast: number
+  colorCorrectSaturation: number
+  colorCorrectInvertMatte: boolean
   threshold: number
   radius: number
   /** Botan/Chie: piecewise-linear feather macro (see pipeline.ts's hardnessToFeather). Gumi

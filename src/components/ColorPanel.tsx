@@ -137,7 +137,7 @@ export default function ColorPanel({
 
   return (
     <BottomSheet maxHeightFraction={0.5}>
-      <div style={{ marginBottom: 24 }}>
+      <div className="subtab-sticky-wrapper">
         <SegmentedControl options={SUB_TAB_OPTIONS} value={subTab} onChange={onSubTabChange} />
       </div>
 
