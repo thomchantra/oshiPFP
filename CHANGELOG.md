@@ -4,6 +4,20 @@ All notable changes to oshiPFP are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this file starts at v0.3.0, oshiPFP's first
 public release — earlier (v0.1/v0.2) history predates the public repo.
 
+## [0.4.1] - 2026-08-19
+
+### Added
+- Header shortcut icon to open the algorithm gallery directly, without needing to be on the Line
+  Art tab first.
+- Hover tooltips on the header's icon buttons (Reset, Help, Gallery, theme toggle).
+
+### Fixed
+- Grade tab's "Original" toggle (and its Dual Pane left pane) now shows the true, ungraded Line
+  Art module output instead of the pre-Line-Art image — matching the app's actual pipeline order
+  (Crop → Line Art → Grade → Export), where "before Grade" means "after Line Art."
+- Restored Gumi's Fill mode Threshold slider, which had gone missing from the UI in the v0.4
+  Line Art tab restructure despite the underlying detection mask still depending on it.
+
 ## [0.4.0] - 2026-08-17
 
 ### Added

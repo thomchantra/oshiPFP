@@ -155,7 +155,7 @@
       0
     ],
     "laplacianStrength": 5.1000000000000005,
-    "laplacianPreBlur": 0.4,
+    "laplacianPreBlur": 1.0,
     "laplacianSharpenAmount": 0.9,
     "laplacianGrow": 0
   },

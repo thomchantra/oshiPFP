@@ -49,6 +49,9 @@ interface HeaderBarProps {
    * page reload. The confirm modal (open state owned here, same pattern as `aboutOpen` below)
    * calls this only once the user actually confirms. */
   onReset: () => void
+  /** Opens AlgoGalleryModal (App.tsx owns its open state, same instance BlankState's own "Browse
+   * Gallery" button opens) — works whether or not an image is loaded yet. */
+  onOpenGallery: () => void
 }
 
 export default function HeaderBar({
@@ -69,6 +72,7 @@ export default function HeaderBar({
   onReset,
   devMode,
   onUnlockDevMode,
+  onOpenGallery,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const stateFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -115,18 +119,21 @@ export default function HeaderBar({
           <button
             type="button"
             className="text-reset-btn font-param-label"
-            style={{ color: 'var(--accent-dark)', fontSize: 16 }}
+            style={{ color: 'var(--accent-dark)', fontSize: 15 }}
             onClick={() => openAbout('changelog')}
           >
             {OSHIPFP_VERSION}
           </button>
-          <button type="button" className="reset-btn" aria-label="Reset oshiPFP" onClick={() => setResetConfirmOpen(true)}>
+          <button type="button" className="reset-btn" aria-label="Reset oshiPFP" title="Reset oshiPFP" onClick={() => setResetConfirmOpen(true)}>
             <Icon name="refresh" size={14} />
           </button>
-          <button type="button" className="theme-btn" aria-label="Help" onClick={() => openAbout('help')}>
+          <button type="button" className="theme-btn" aria-label="Help" title="Help" onClick={() => openAbout('help')}>
             <Icon name="question" size={18} color="var(--accent-title)" />
           </button>
-          <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" onClick={onToggleTheme}>
+          <button type="button" className="theme-btn" aria-label="Browse algorithm gallery" title="Browse algorithm gallery" onClick={onOpenGallery}>
+            <Icon name="slider" size={18} color="var(--accent-title)" />
+          </button>
+          <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" title="Toggle light/dark mode" onClick={onToggleTheme}>
             <Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} color="var(--accent-title)" />
           </button>
           {devMode && (

@@ -480,10 +480,11 @@ export class Pipeline {
    * own preview strip (Original/Overlay buttons), and Export tab's own group peek at an earlier
    * pipeline stage (or Export's own independent resolve) on the live canvas, same idea as
    * previewMode above but for later stage boundaries previewMode was never built to express.
-   * 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm), shared by
-   * Grade's "Original" toggle and Line Art's own "Original" preview button (literal same texture);
-   * deliberately NOT lineArtOutputTarget, which always holds the true composite result, never a
-   * stand-in for "original." 'exportPreview' -> exportPreviewResult, see renderExportPreview —
+   * 'enhance' -> enhanceTarget (post-crop+resize+Enhancement, pre-Line-Art-algorithm), used by
+   * Line Art's own "Original" preview button. 'lineArtComposite' -> lineArtOutputTarget (the true,
+   * ungraded Line Art module output), used by Grade's "Original" toggle — workflow runs
+   * crop -> line art -> grade -> export, so Grade's "Original" means "before Grade," i.e. what
+   * Line Art produced, not further back at pre-Line-Art. 'exportPreview' -> exportPreviewResult, see renderExportPreview —
    * Export tab is the sole WYSIWYG authority for its own (displayMode, colorGrade) selection, fully
    * decoupled from Line Art's/Grade's own live tab state. 'lineArtOverlay' -> lineArtPeekOverlayTarget,
    * computed on-demand right here at blit time via a dedicated 'previewA' resolveLineArtDisplay call
@@ -494,7 +495,7 @@ export class Pipeline {
    * it can't leak into Crop/deselected views or Grade's own "Graded" mode. Dual Pane bypasses this
    * mechanism entirely (its own blit branch has its own previewA/previewB peek resolves, since two
    * panes can each want a different mode simultaneously). */
-  private tabPreviewBypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOverlay' = 'none'
+  private tabPreviewBypass: 'none' | 'enhance' | 'lineArtComposite' | 'exportPreview' | 'lineArtOverlay' = 'none'
   /** Export tab's own (displayMode, colorGrade) selection — see setExportPreviewParams/
    * renderExportPreview. Independent of this.lineArt.displayMode; that's the whole point. */
   private exportDisplayMode: ExportDisplayMode = 'composite'
@@ -988,7 +989,7 @@ export class Pipeline {
   }
 
   /** See tabPreviewBypass's doc comment. */
-  setTabPreviewBypass(bypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOverlay'): void {
+  setTabPreviewBypass(bypass: 'none' | 'enhance' | 'lineArtComposite' | 'exportPreview' | 'lineArtOverlay'): void {
     if (this.tabPreviewBypass === bypass) return
     this.tabPreviewBypass = bypass
     this.scheduleRender()
@@ -3442,11 +3443,12 @@ export class Pipeline {
     // Dual Pane, either kind: bypasses previewMode/tabPreviewBypass entirely (a fullscreen A/B
     // toggle and a split-pane view never coexist in the UI) — see blitSplitPane for the shared
     // sizing/viewport mechanics.
-    if (this.gradeDualPaneEnabled && this.enhanceTarget && this.colorTarget) {
-      // Grade's Dual Pane compares a fixed pair — enhanceTarget (pre-grade) vs colorTarget
-      // (post-grade) — both already computed every frame regardless of dual-pane state, unlike
-      // Line Art's pair below (which needs an explicit per-mode resolve). No "modes" tuple needed.
-      this.blitSplitPane(this.enhanceTarget.texture, this.colorTarget.texture, this.enhanceTarget.width, this.enhanceTarget.height)
+    if (this.gradeDualPaneEnabled && this.lineArtOutputTarget && this.colorTarget) {
+      // Grade's Dual Pane compares a fixed pair — lineArtOutputTarget (pre-grade, the true
+      // ungraded Line Art module output) vs colorTarget (post-grade) — both already computed
+      // every frame regardless of dual-pane state, unlike Line Art's pair below (which needs an
+      // explicit per-mode resolve). No "modes" tuple needed.
+      this.blitSplitPane(this.lineArtOutputTarget.texture, this.colorTarget.texture, this.lineArtOutputTarget.width, this.lineArtOutputTarget.height)
       return
     }
 
@@ -3486,6 +3488,7 @@ export class Pipeline {
     }
 
     const tabBypassTarget = this.tabPreviewBypass === 'enhance' ? this.enhanceTarget
+      : this.tabPreviewBypass === 'lineArtComposite' ? this.lineArtOutputTarget
       : this.tabPreviewBypass === 'exportPreview' ? (this.exportPreviewResult ?? this.colorTarget)
       : this.tabPreviewBypass === 'lineArtOverlay' ? this.lineArtPeekOverlayTarget
       : null
@@ -3498,6 +3501,7 @@ export class Pipeline {
       previewMode: this.previewMode,
       tabPreviewBypass: this.tabPreviewBypass,
       selected: this.tabPreviewBypass === 'enhance' ? 'enhanceTarget'
+        : this.tabPreviewBypass === 'lineArtComposite' ? 'lineArtOutputTarget'
         : this.tabPreviewBypass === 'exportPreview' ? 'exportPreviewResult'
         : this.tabPreviewBypass === 'lineArtOverlay' ? 'lineArtPeekOverlayTarget'
         : this.previewMode === 'original' ? 'cropTarget' : 'colorTarget',

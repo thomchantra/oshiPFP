@@ -29,7 +29,7 @@ button, input {
 
 .font-title {
   font-family: 'Dela Gothic One', sans-serif;
-  font-size: 24px;
+  font-size: 20px;
 }
 .font-param-label {
   font-family: 'Fredoka', sans-serif;
@@ -1165,7 +1165,7 @@ button, input {
   background: #E31212;
   color: #fff;
 }
-.confirm-modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.confirm-modal-actions { display: flex; gap: 10px; }
 .confirm-modal-actions button {
   flex: 1;
   padding: 10px;
@@ -1173,6 +1173,7 @@ button, input {
   cursor: pointer;
   touch-action: manipulation;
   font-family: inherit;
+  font-size: 16px;
 }
 .confirm-reset-btn { background: #E31212; color: #fff; border: none; }
 .confirm-cancel-btn { background: var(--white-50); color: var(--accent-title); border: none; }

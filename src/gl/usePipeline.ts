@@ -94,7 +94,7 @@ export function usePipeline() {
     pipelineRef.current?.setPreviewMode(mode)
   }, [])
 
-  const setTabPreviewBypass = useCallback((bypass: 'none' | 'enhance' | 'exportPreview' | 'lineArtOverlay') => {
+  const setTabPreviewBypass = useCallback((bypass: 'none' | 'enhance' | 'lineArtComposite' | 'exportPreview' | 'lineArtOverlay') => {
     pipelineRef.current?.setTabPreviewBypass(bypass)
   }, [])
 

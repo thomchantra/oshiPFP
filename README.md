@@ -41,62 +41,63 @@ how each one detects and regrows linework. Two presets per algorithm below; the 
 each, plus every tunable parameter) is in the app itself via "Load Demo".
 
 <table>
-<tr><th>Algorithm</th><th>Before</th><th>After</th></tr>
+<tr><th width="33%">Original</th><th width="33%">Composite</th><th width="34%">Overlay</th></tr>
 
-<tr><td rowspan="2"><strong>Botan</strong><br>
-Grows line art evenly outward in every direction, inflating it — the further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.
-</td>
-<td><img src="public/presets/pathB/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathB/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathB/03/before.webp" width="500"></td>
-<td><img src="public/presets/pathB/03/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Botan</strong> — Grows line art evenly outward in every direction, inflating it — the further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.</th></tr>
+<tr><td><img src="public/presets/pathB/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathB/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathB/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathB/03/before.webp" width="100%"></td>
+<td><img src="public/presets/pathB/03/after.webp" width="100%"></td>
+<td><img src="public/presets/pathB/03/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Chie</strong><br>
-Softly blends color inward from the edges of line art, reads more gently with a gradual transition instead of a crisp added border.
-</td>
-<td><img src="public/presets/pathC/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathC/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathC/02/before.webp" width="500"></td>
-<td><img src="public/presets/pathC/02/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Chie</strong> — Softly blends color inward from the edges of line art, reads more gently with a gradual transition instead of a crisp added border.</th></tr>
+<tr><td><img src="public/presets/pathC/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathC/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathC/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathC/02/before.webp" width="100%"></td>
+<td><img src="public/presets/pathC/02/after.webp" width="100%"></td>
+<td><img src="public/presets/pathC/02/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Daiya</strong><br>
-Grows lines using the same true distance-transform math as Botan, smooth and round by default. Switch to Octagon mode for a faceted, chisel marker look.
-</td>
-<td><img src="public/presets/pathD/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathD/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathD/05/before.webp" width="500"></td>
-<td><img src="public/presets/pathD/05/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Daiya</strong> — Grows lines using the same true distance-transform math as Botan, smooth and round by default. Switch to Octagon mode for a faceted, chisel marker look.</th></tr>
+<tr><td><img src="public/presets/pathD/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathD/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathD/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathD/05/before.webp" width="100%"></td>
+<td><img src="public/presets/pathD/05/after.webp" width="100%"></td>
+<td><img src="public/presets/pathD/05/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Fumiko</strong><br>
-Detects edges directly instead of thickening existing lines. Produces crisp, naturally colorful edge-lines with real graduated transparency along each line.
-</td>
-<td><img src="public/presets/pathF/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathF/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathF/05/before.webp" width="500"></td>
-<td><img src="public/presets/pathF/05/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Fumiko</strong> — Detects edges directly instead of thickening existing lines. Produces crisp, naturally colorful edge-lines with real graduated transparency along each line.</th></tr>
+<tr><td><img src="public/presets/pathF/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathF/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathF/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathF/05/before.webp" width="100%"></td>
+<td><img src="public/presets/pathF/05/after.webp" width="100%"></td>
+<td><img src="public/presets/pathF/05/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Gumi</strong><br>
-Isolates a single luminance band via gradient-map,
-then regrows it — good at pulling line work out of painterly, non-flat source art.
-</td>
-<td><img src="public/presets/pathG/02/before.webp" width="500"></td>
-<td><img src="public/presets/pathG/02/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathG/05/before.webp" width="500"></td>
-<td><img src="public/presets/pathG/05/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Gumi</strong> — Isolates a single luminance band via gradient-map, then regrows it — good at pulling line work out of painterly, non-flat source art.</th></tr>
+<tr><td><img src="public/presets/pathG/02/before.webp" width="100%"></td>
+<td><img src="public/presets/pathG/02/after.webp" width="100%"></td>
+<td><img src="public/presets/pathG/02/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathG/05/before.webp" width="100%"></td>
+<td><img src="public/presets/pathG/05/after.webp" width="100%"></td>
+<td><img src="public/presets/pathG/05/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Hinata</strong><br>High-pass detection — box-blur subtracted from
-source — for crisp linework pulled out of photographic detail.</td>
-<td><img src="public/presets/pathH/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathH/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathH/02/before.webp" width="500"></td>
-<td><img src="public/presets/pathH/02/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Hinata</strong> — High-pass detection — box-blur subtracted from source — for crisp linework pulled out of photographic detail.</th></tr>
+<tr><td><img src="public/presets/pathH/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathH/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathH/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathH/02/before.webp" width="100%"></td>
+<td><img src="public/presets/pathH/02/after.webp" width="100%"></td>
+<td><img src="public/presets/pathH/02/overlay.webp" width="100%"></td></tr>
 
-<tr><td rowspan="2"><strong>Tsukiko</strong><br>Laplacian edge detection with optional pre-blur —
-finer, more textured line work than the high-pass path.</td>
-<td><img src="public/presets/pathI/01/before.webp" width="500"></td>
-<td><img src="public/presets/pathI/01/after.webp" width="500"></td></tr>
-<tr><td><img src="public/presets/pathI/04/before.webp" width="500"></td>
-<td><img src="public/presets/pathI/04/after.webp" width="500"></td></tr>
+<tr><th colspan="3" align="left"><strong>Tsukiko</strong> — Laplacian edge detection with optional pre-blur — finer, more textured line work than the high-pass path.</th></tr>
+<tr><td><img src="public/presets/pathI/01/before.webp" width="100%"></td>
+<td><img src="public/presets/pathI/01/after.webp" width="100%"></td>
+<td><img src="public/presets/pathI/01/overlay.webp" width="100%"></td></tr>
+<tr><td><img src="public/presets/pathI/04/before.webp" width="100%"></td>
+<td><img src="public/presets/pathI/04/after.webp" width="100%"></td>
+<td><img src="public/presets/pathI/04/overlay.webp" width="100%"></td></tr>
 
 </table>
 

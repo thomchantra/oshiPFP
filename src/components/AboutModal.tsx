@@ -143,11 +143,15 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
           </p>
           <p className="algo-info-entry-body" style={{ marginTop: 10 }}>
             <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="about-modal-link">
-              View on GitHub
+              GitHub
             </a>
             {' · '}
             <a href={`${GITHUB_REPO_URL}/issues/new`} target="_blank" rel="noopener noreferrer" className="about-modal-link">
               Report a Bug
+            </a>
+            {' · '}
+            <a href={'https://ko-fi.com/thomchantra'} target="_blank" rel="noopener noreferrer" className="about-modal-link">
+              Ko-fi ☕️
             </a>
           </p>
         </>
@@ -155,6 +159,31 @@ export default function AboutModal({ open, onClose, initialTab = 'about', theme 
 
       {tab === 'changelog' && (
         <>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">v0.4.1 - 19 Aug 2026</p>
+          </div>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">Improvements</p>
+            <ul className="algo-info-entry-body">
+              <li className="changelogbullet">
+                A new header shortcut opens the algorithm gallery directly, without needing to be on the Line Art tab first.
+              </li>
+              <li className="changelogbullet">
+                Header icon buttons now show a hover tooltip naming what they do.
+              </li>
+            </ul>
+          </div>
+          <div className="algo-info-entry">
+            <p className="algo-info-entry-title font-param-label">Bug Fixes</p>
+            <ul className="algo-info-entry-body">
+              <li className="changelogbullet">
+                Fixed Grade's "Original" toggle showing the photo from before Line Art processing instead of Line Art's own (ungraded) result.
+              </li>
+              <li className="changelogbullet">
+                Restored Gumi's Fill mode Threshold slider, which had gone missing from the UI despite still driving the underlying detection.
+              </li>
+            </ul>
+          </div>
           <div className="algo-info-entry">
             <p className="algo-info-entry-title font-param-label">v0.4.0 - 17 Aug 2026</p>
           </div>

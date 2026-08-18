@@ -515,9 +515,12 @@ export default function App() {
 
   // Grade tab's Original/Graded toggle and Line Art tab's own preview-strip buttons (Original/
   // Overlay) both peek at an earlier/alternate pipeline stage on the live canvas — see
-  // tabPreviewBypass's doc comment in pipeline.ts. 'original' reuses the same 'enhance' bypass Grade
-  // uses (literal same texture, enhanceTarget); 'overlay' gets its own dedicated 'lineArtOverlay'
-  // bypass, computed on demand by the pipeline only while active. Neither ever touches the real,
+  // tabPreviewBypass's doc comment in pipeline.ts. Grade's "Original" means "before Grade" (the
+  // true, ungraded Line Art module output, 'lineArtComposite' -> lineArtOutputTarget) — workflow
+  // runs crop -> line art -> grade -> export, so this is one stage back, not all the way to
+  // pre-Line-Art. Line Art's own "Original" preview button means "before Line Art" instead
+  // ('enhance' -> enhanceTarget); 'overlay' gets its own dedicated 'lineArtOverlay' bypass,
+  // computed on demand by the pipeline only while active. None of these ever touch the real,
   // always-composite lineArtOutputTarget/colorTarget — this is purely a live-canvas substitution.
   // Guarded by !dualPaneActive since Dual Pane resolves
   // its own per-pane peeks directly in its blit branch instead (two panes can independently want
@@ -530,7 +533,7 @@ export default function App() {
   // happens to show).
   useEffect(() => {
     const bypass =
-      tab === 'color' && colorDisplayMode === 'original' ? 'enhance' :
+      tab === 'color' && colorDisplayMode === 'original' ? 'lineArtComposite' :
       tab === 'export' ? 'exportPreview' :
       tab === 'maximizer' && !dualPaneActive && lineArtDisplayMode === 'original' ? 'enhance' :
       tab === 'maximizer' && !dualPaneActive && lineArtDisplayMode === 'overlay' ? 'lineArtOverlay' :
@@ -656,6 +659,7 @@ export default function App() {
         onReset={resetApp}
         devMode={devMode}
         onUnlockDevMode={() => setDevMode(true)}
+        onOpenGallery={() => setGalleryOpen(true)}
       />
 
       {/* Rendered unconditionally — needs to work whether or not hasImage, since BlankState's

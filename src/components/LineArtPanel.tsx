@@ -844,6 +844,10 @@ export default function LineArtPanel({
               </>
             ) : (
               <>
+                {/* Same detection mask as Line mode's own Threshold slider (shared thresholdProgram
+                    call upstream of the Line/Fill split) — Fill mode reads the identical mask, so
+                    needs the same control even though the two modes render it separately. */}
+                <GradientSlider label="Threshold" value={params.threshold} min={0} max={1} defaultValue={0.5} onChange={(v) => set('threshold', v)} />
                 {/* Global for Fill mode — governs all 3 Fill Types below uniformly, so it sits
                     above the type selector rather than nested under one of them. Bypasses the
                     distance-transform/blobMaxDt margin entirely, a raw per-pixel candidate test. */}
