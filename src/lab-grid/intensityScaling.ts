@@ -12,8 +12,14 @@ function clamp(value: number, min: number, max: number): number {
  * controls rather than magnitude (feather, laplacianPreBlur) are held
  * fixed at the baseline value — matches the project's own framing that
  * feather et al aren't "how much", they're "how soft the edge is".
+ *
+ * `baseline` must already be fully resolved against DEFAULT_LAB_PARAMS
+ * (every field defined, not a sparse per-image override) — a caller
+ * passing the raw sparse override object directly would silently zero out
+ * any Tier-1 knob the user hadn't touched yet (the common case), since
+ * factor=1.0 on an undefined field is still undefined, not "unchanged".
  */
-export function scaleParams(algo: AlgoId, baseline: Partial<LabParams>, factor: number): Partial<LabParams> {
+export function scaleParams(algo: AlgoId, baseline: LabParams, factor: number): Partial<LabParams> {
   switch (algo) {
     case 'pathA':
       return {
@@ -58,8 +64,8 @@ export function scaleParams(algo: AlgoId, baseline: Partial<LabParams>, factor: 
   }
 }
 
-function scaleField(value: number | undefined, factor: number, min: number, max: number): number {
-  return clamp((value ?? 0) * factor, min, max)
+function scaleField(value: number, factor: number, min: number, max: number): number {
+  return clamp(value * factor, min, max)
 }
 
 // Gumi's ramp is a band, not a single magnitude — scaling it means
@@ -67,13 +73,13 @@ function scaleField(value: number | undefined, factor: number, min: number, max:
 // margins around a fixed center, rather than multiplying each bound
 // directly (which would just shift the whole band toward 0).
 function scaleRampBand(
-  baseline: Partial<LabParams>,
+  baseline: LabParams,
   factor: number,
 ): Pick<LabParams, 'rampFloor' | 'rampInnerLow' | 'rampInnerHigh' | 'rampCeiling'> {
-  const floor = baseline.rampFloor ?? 0
-  const innerLow = baseline.rampInnerLow ?? 0.3
-  const innerHigh = baseline.rampInnerHigh ?? 0.7
-  const ceiling = baseline.rampCeiling ?? 1
+  const floor = baseline.rampFloor
+  const innerLow = baseline.rampInnerLow
+  const innerHigh = baseline.rampInnerHigh
+  const ceiling = baseline.rampCeiling
 
   const center = (innerLow + innerHigh) / 2
   const halfSpread = ((innerHigh - innerLow) / 2) * factor

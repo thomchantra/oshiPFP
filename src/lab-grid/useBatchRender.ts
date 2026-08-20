@@ -53,10 +53,14 @@ export function useBatchRender(pipeline: ReturnType<typeof useLabPipeline>) {
       const next: GridCell[] = []
       let done = 0
       for (const algo of algos) {
-        const baseline = baselines[image.id]?.[algo] ?? {}
+        // Resolved against DEFAULT_LAB_PARAMS before scaling — scaleParams
+        // requires every field defined (see its own doc comment), since a
+        // sparse per-image override only has the knobs the user actually
+        // touched.
+        const resolvedBaseline: LabParams = { ...DEFAULT_LAB_PARAMS, ...(baselines[image.id]?.[algo] ?? {}) }
         for (const intensity of intensities) {
-          const scaled = scaleParams(algo, baseline, intensity)
-          const fullParams: LabParams = { ...DEFAULT_LAB_PARAMS, ...baseline, ...scaled }
+          const scaled = scaleParams(algo, resolvedBaseline, intensity)
+          const fullParams: LabParams = { ...resolvedBaseline, ...scaled }
 
           // setModeParamsSync, not setMode+setParams+render — the plain
           // combo leaves a stray scheduled render pending (from setMode/

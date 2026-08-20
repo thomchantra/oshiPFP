@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { LabParams } from '../lab/labPipeline'
 import { useLabPipeline } from '../lab/useLabPipeline'
 import { ALGOS, DEFAULT_LAB_PARAMS, INTENSITY_PRESETS, TIER1_KNOBS, toLabMode } from './labGridTypes'
@@ -15,6 +15,16 @@ import { scaleParams } from './intensityScaling'
 // is 3 full renders + 3 toBlob captures, too heavy to run on every tick.
 // Collapse rapid changes into one refresh after the user pauses.
 const PREVIEW_DEBOUNCE_MS = 150
+
+// Stable reference for "no baseline set yet" — a fresh `{}` literal on
+// every render would give the baseline-tuning effect below a new object
+// identity every time, even when the underlying value hasn't changed,
+// re-firing it (and its un-synced pipeline.setMode/setParams, which
+// schedule a render via requestAnimationFrame) on every re-render of this
+// component — including the ones useBatchRender's own setProgress() calls
+// trigger mid-grid-render, racing with and occasionally overwriting
+// whatever a specific intensity cell's capture is trying to read.
+const EMPTY_BASELINE: Partial<LabParams> = {}
 
 const TAG_BUTTONS: { value: TagValue; label: string; color: string }[] = [
   { value: 'good', label: '✓ Good', color: '#2a7a3c' },
@@ -59,6 +69,28 @@ export default function LabGridApp() {
   const triplePreview = useTriplePreview(pipeline)
   const previewDebounceRef = useRef<number | null>(null)
 
+  // Drag-to-resize the tuning-viewport/grid split — session-only (not
+  // persisted), a pure layout preference rather than tagging data.
+  const [previewHeight, setPreviewHeight] = useState(240)
+  const resizeDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+
+  function handleResizeStart(e: ReactPointerEvent<HTMLDivElement>) {
+    resizeDragRef.current = { startY: e.clientY, startHeight: previewHeight }
+    const handleMove = (moveEvent: PointerEvent) => {
+      if (!resizeDragRef.current) return
+      const delta = moveEvent.clientY - resizeDragRef.current.startY
+      const next = Math.min(600, Math.max(120, resizeDragRef.current.startHeight + delta))
+      setPreviewHeight(next)
+    }
+    const handleUp = () => {
+      resizeDragRef.current = null
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+  }
+
   const [state, setState] = useState<LabGridState>(() => loadLabGridState())
   const [selectedImageId, setSelectedImageId] = useState<string | null>(TEST_IMAGES[0]?.id ?? null)
   const [selectedAlgo, setSelectedAlgo] = useState<AlgoId>('pathA')
@@ -89,7 +121,7 @@ export default function LabGridApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImageId])
 
-  const baseline = (selectedImageId && state.baselines[selectedImageId]?.[selectedAlgo]) || {}
+  const baseline = (selectedImageId && state.baselines[selectedImageId]?.[selectedAlgo]) || EMPTY_BASELINE
 
   // Baseline live preview: re-render (debounced) on algo/knob changes,
   // refreshing all 3 view-mode snapshots (original/raw/composited).
@@ -197,7 +229,8 @@ export default function LabGridApp() {
   function applyCellAsBaseline(algo: AlgoId, intensity: Intensity) {
     if (!selectedImageId) return
     const existingBaseline = state.baselines[selectedImageId]?.[algo] ?? {}
-    const scaled = scaleParams(algo, existingBaseline, intensity)
+    const resolvedBaseline: LabParams = { ...DEFAULT_LAB_PARAMS, ...existingBaseline }
+    const scaled = scaleParams(algo, resolvedBaseline, intensity)
     setState((prev) => ({
       ...prev,
       baselines: {
@@ -403,7 +436,7 @@ export default function LabGridApp() {
             a display:none canvas isn't painted by the browser, so
             toBlob() captures went stale/blank when this was display:none. */}
         <canvas ref={pipeline.canvasRef} style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
-        <div style={{ padding: 12, borderBottom: '1px solid #333', display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <div style={{ height: previewHeight, flexShrink: 0, padding: 12, display: 'flex', gap: 12, overflow: 'auto' }}>
           {(
             [
               ['original', 'Original'],
@@ -411,14 +444,14 @@ export default function LabGridApp() {
               ['raw', 'Overlay (raw)'],
             ] as const
           ).map(([key, label]) => (
-            <div key={key} style={{ flex: 1, maxWidth: 320, textAlign: 'center' }}>
+            <div key={key} style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
               <p style={{ margin: '0 0 4px', color: '#888', fontSize: 11, textTransform: 'uppercase' }}>{label}</p>
-              <div style={{ background: '#111', border: '1px solid #333', minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ background: '#111', border: '1px solid #333', height: previewHeight - 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {triplePreview.preview[key] ? (
                   <img
                     src={triplePreview.preview[key]!}
                     alt={label}
-                    style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain' }}
+                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                   />
                 ) : (
                   <span style={{ color: '#555', fontSize: 12 }}>—</span>
@@ -426,6 +459,24 @@ export default function LabGridApp() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Drag-to-resize handle for the tuning-viewport/grid split. */}
+        <div
+          onPointerDown={handleResizeStart}
+          style={{
+            height: 8,
+            flexShrink: 0,
+            cursor: 'row-resize',
+            background: '#222',
+            borderTop: '1px solid #333',
+            borderBottom: '1px solid #333',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ width: 40, height: 3, borderRadius: 2, background: '#555' }} />
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
