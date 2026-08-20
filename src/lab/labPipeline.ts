@@ -98,6 +98,13 @@ export interface LabParams {
   // where the concept is identical (gamma, colorContrast, colorExpansion).
   gumiContrastBoost: number
   blobMaxDt: number
+  // blobMask.frag.ts/fillMask.frag.ts's antialiasing-falloff sharpness
+  // (pow(t, uGamma) on the accept/reject transition near uBlobMaxDt).
+  // Must be set explicitly at every call site — an unset uniform defaults
+  // to 0, and pow(t, 0) collapses to ~1 for any t>0, jumping the falloff
+  // straight to "fully reject" the instant a pixel is past uBlobMaxDt's
+  // edge instead of ramping smoothly.
+  gumiBlobGamma: number
   gumiColorBleed: boolean
   gumiBleedFeather: number
   // Taper/antialiasing fix (softThreshold.frag.ts + blobMask.frag.ts's
@@ -184,14 +191,22 @@ const FULL_RECT: [number, number, number, number] = [0, 0, 1, 1]
  * reusing composite.frag.ts's exact blend math, the same formula the real
  * product's Maximizer stage uses — so mask-style candidates are judged by
  * how they'd actually look as darkened linework over real art, not a flat
- * gray crossfade. Path A/C instead output a complete replacement color
- * image (not a separate mask layer), so they keep a linear original<->
+ * gray crossfade. Path A instead outputs a complete replacement color
+ * image (not a separate mask layer), so it keeps a linear original<->
  * result crossfade — multiplying two full color images together isn't the
- * right operation for those. Per user direction, only multiply (darken
- * black outlines) is wired up for now; screen (lighten white outlines,
- * blend mode 2 in composite.frag.ts) is deferred until product needs it.
+ * right operation there. Per user direction, only multiply (darken black
+ * outlines) is wired up for now; screen (lighten white outlines, blend
+ * mode 2 in composite.frag.ts) is deferred until product needs it.
+ *
+ * Path C belongs here too, not with Path A: erosionGate.frag.ts's own doc
+ * comment is explicit that its alpha (.a = gate strength) is meant for
+ * composite.frag.ts to consume — "rather than pre-mixing toward the
+ * original at low gate", so gate=0 pixels fall back to the untouched base
+ * regardless of blend mode — matching composite.frag.ts's own doc
+ * comment, which lists erosionGate.frag.ts by name as one of its
+ * intended alpha sources.
  */
-const MASK_MODES = new Set<LabMode>(['v1-reference', 'pathB', 'pathF', 'pathD', 'pathE', 'pathG'])
+const MASK_MODES = new Set<LabMode>(['v1-reference', 'pathB', 'pathC', 'pathF', 'pathD', 'pathE', 'pathG'])
 
 /** Number of stacked layers Path F's "alpha overdrive" opacity macro
  * cycles through — see the isMaskMode composite branch in render(). */
@@ -273,6 +288,12 @@ export class LabPipeline {
   private gumiSeedTargetA: TargetTexture | null = null
   private gumiSeedTargetB: TargetTexture | null = null
   private gumiBlobTarget: TargetTexture | null = null
+  private gumiInkTarget: TargetTexture | null = null
+  // Aliases gumiBlobTarget for one frame — never owns a texture itself, so
+  // deliberately not in the ensureTarget-managed field list or destroy()'s
+  // disposal list (gumiBlobTarget already owns and disposes that texture).
+  // See rawTarget's doc comment in render().
+  private gumiRawOverride: TargetTexture | null = null
   private gumiBleedTarget: TargetTexture | null = null
   private highPassTarget: TargetTexture | null = null
   private laplacianTarget: TargetTexture | null = null
@@ -318,6 +339,7 @@ export class LabPipeline {
     rampFeather: 0,
     gumiContrastBoost: 1,
     blobMaxDt: 8,
+    gumiBlobGamma: 1,
     gumiColorBleed: false,
     gumiBleedFeather: 1.5,
     gumiSoftDetection: false,
@@ -422,6 +444,7 @@ export class LabPipeline {
       'gumiSeedTargetA',
       'gumiSeedTargetB',
       'gumiBlobTarget',
+      'gumiInkTarget',
       'gumiBleedTarget',
       'highPassTarget',
       'laplacianTarget',
@@ -502,6 +525,37 @@ export class LabPipeline {
     this.scheduleRender()
   }
 
+  /**
+   * Sets viewMode and renders synchronously, with no scheduleRender() call
+   * queued at all — setViewMode()+render() back to back still leaves a
+   * stale rAF-scheduled render pending (from setViewMode's own
+   * scheduleRender), which reads whatever this.viewMode is WHEN IT FIRES,
+   * not when it was queued. A caller doing several setViewMode+render
+   * calls in a row with an await between them (e.g. capturing multiple
+   * viewMode snapshots via canvas.toBlob) can have that stale callback
+   * fire mid-sequence and silently overwrite the canvas with a later
+   * viewMode's output before the earlier capture's toBlob() actually reads
+   * pixels — this method exists specifically to avoid that race.
+   */
+  renderViewModeSync(viewMode: ViewMode): void {
+    this.viewMode = viewMode
+    this.render()
+  }
+
+  /**
+   * Same rationale as renderViewModeSync, for mode+params instead of
+   * viewMode — a batch loop doing setMode/setParams/render/await-toBlob
+   * per cell leaves a stray scheduled render pending from setMode/
+   * setParams's own scheduleRender() calls, which can fire mid-await and
+   * silently repaint the canvas with a later cell's mode/params before an
+   * earlier cell's toBlob() capture actually reads pixels.
+   */
+  setModeParamsSync(mode: LabMode, params: LabParams): void {
+    this.mode = mode
+    this.params = params
+    this.render()
+  }
+
   setSplitMode(splitMode: boolean): void {
     this.splitMode = splitMode
     this.scheduleRender()
@@ -554,6 +608,10 @@ export class LabPipeline {
       gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
       gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
       gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), threshold)
+      // uInvert is a shared-program uniform (see CLAUDE.md's "Recurring
+      // Gotchas") — must be set explicitly every call, never left to
+      // whatever a previous mode (e.g. Gumi) last set it to.
+      gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
     })
 
     // gl.readPixels returns rows bottom-up (OpenGL convention); ImageData
@@ -768,6 +826,10 @@ export class LabPipeline {
   render(): void {
     const gl = this.gl
     if (!this.sourceTexture || !this.sourceBitmap) return
+    // Only Gumi's own branch sets this, each render — must reset here so a
+    // stale override from a prior Gumi render doesn't leak into some other
+    // mode's raw view after switching away from pathG.
+    this.gumiRawOverride = null
 
     const { width, height } = this.sourceBitmap
     const texelSize: [number, number] = [1 / width, 1 / height]
@@ -822,6 +884,10 @@ export class LabPipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource!.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), this.params.threshold)
+        // uInvert is a shared-program uniform (see CLAUDE.md's "Recurring
+        // Gotchas") — must be set explicitly every call, never left to
+        // whatever a previous mode (e.g. Gumi) last set it to.
+        gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
       })
 
       const intRadius = Math.round(this.params.radius)
@@ -856,6 +922,10 @@ export class LabPipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource!.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), this.params.threshold)
+        // uInvert is a shared-program uniform (see CLAUDE.md's "Recurring
+        // Gotchas") — must be set explicitly every call, never left to
+        // whatever a previous mode (e.g. Gumi) last set it to.
+        gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
       })
 
       this.runPass(this.distanceSeedProgram, this.seedTargetA, width, height, () => {
@@ -1007,6 +1077,10 @@ export class LabPipeline {
         gl.bindTexture(gl.TEXTURE_2D, detectionSource!.texture)
         gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
         gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), this.params.threshold)
+        // uInvert is a shared-program uniform (see CLAUDE.md's "Recurring
+        // Gotchas") — must be set explicitly every call, never left to
+        // whatever a previous mode (e.g. Gumi) last set it to.
+        gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
       })
 
       const intRadius = Math.max(0, Math.round(this.params.radius * (Math.SQRT2 - 1)))
@@ -1190,6 +1264,12 @@ export class LabPipeline {
             gl.bindTexture(gl.TEXTURE_2D, this.normalizedTarget!.texture)
             gl.uniform1i(gl.getUniformLocation(this.fillMaskProgram, 'uOriginal'), 2)
             gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uBlobMaxDt'), this.params.blobMaxDt)
+            // uInvert/uPixelThreshold and the fillTypeColor uniforms
+            // fillMaskFrag also declares are still unset here (gumiFillMode
+            // isn't wired up with lab UI controls for those yet) — a known
+            // gap, not an oversight equivalent to uGamma's (see
+            // gumiBlobGamma's doc comment).
+            gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uGamma'), this.params.gumiBlobGamma)
           })
         } else {
           this.runPass(this.blobMaskProgram, this.gumiBlobTarget, width, height, () => {
@@ -1201,9 +1281,45 @@ export class LabPipeline {
             gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uMask'), 1)
             gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uBlobMaxDt'), this.params.blobMaxDt)
             gl.uniform1i(gl.getUniformLocation(this.blobMaskProgram, 'uSoftOutput'), this.params.gumiSoftDetection ? 1 : 0)
+            gl.uniform1f(gl.getUniformLocation(this.blobMaskProgram, 'uGamma'), this.params.gumiBlobGamma)
+          })
+          // See rawTarget's doc comment near render()'s tail — the "raw"
+          // view should show this grayscale detection mask, not the
+          // flat-tinted result the ink-color pass below produces.
+          this.gumiRawOverride = this.gumiBlobTarget
+
+          // Ink color resolution — reuses Path D/F's own tintColor/
+          // vividMode/vividDeadzone/vividBoost fields rather than adding
+          // new ones: vividMode=true samples the real per-pixel source
+          // color ("Image"), vividMode=false + tintColor=black/white gives
+          // a flat solid-ink look. tintMaskFrag derives its own alpha from
+          // uSource's luminance (1.0-m), which for blobMaskTarget's
+          // grayscale 0=ink/1=background convention lands on exactly the
+          // same alpha blobMaskFrag itself now emits — no mismatch.
+          this.gumiInkTarget = this.ensureTarget(this.gumiInkTarget, width, height)
+          this.runPass(this.tintMaskProgram, this.gumiInkTarget, width, height, () => {
+            gl.activeTexture(gl.TEXTURE0)
+            gl.bindTexture(gl.TEXTURE_2D, this.gumiBlobTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uSource'), 0)
+            gl.activeTexture(gl.TEXTURE1)
+            gl.bindTexture(gl.TEXTURE_2D, this.normalizedTarget!.texture)
+            gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uOriginal'), 1)
+            gl.uniform3fv(gl.getUniformLocation(this.tintMaskProgram, 'uTintColor'), this.params.tintColor)
+            gl.uniform1i(gl.getUniformLocation(this.tintMaskProgram, 'uVividMode'), this.params.vividMode ? 1 : 0)
+            gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uDeadzone'), this.params.vividDeadzone)
+            gl.uniform1f(gl.getUniformLocation(this.tintMaskProgram, 'uVividBoost'), this.params.vividBoost)
           })
         }
-        outputTarget = this.gumiBlobTarget
+        // gumiInkTarget stays its own field, never aliased onto
+        // gumiBlobTarget — repointing an ensureTarget-managed field to a
+        // texture it doesn't own is exactly the bug class CLAUDE.md's
+        // "Recurring Gotchas" already warns about: the next render's own
+        // `ensureTarget(gumiBlobTarget, ...)` would silently reuse
+        // whatever gumiInkTarget last was (same dimensions), and
+        // blobMaskProgram would render into it while this same pass reads
+        // from it moments earlier in the same frame — a same-texture
+        // read/write feedback loop on every render after the first.
+        outputTarget = this.params.gumiFillMode ? this.gumiBlobTarget : this.gumiInkTarget!
       }
     } else if (this.mode === 'pathH' && this.params.highPassResponsiveColor) {
       // Dual-polarity line art litmus test (see responsiveEdgeColor.frag.ts):
@@ -1497,7 +1613,17 @@ export class LabPipeline {
     // resolved color, depending on mode), for the "raw" view-mode toggle —
     // lets the user see exactly what each stage of the chain is producing
     // before the multiply/crossfade composite is applied on top.
-    const rawTarget = outputTarget
+    //
+    // gumiRawOverride exists because Gumi's own outputTarget (like Path
+    // D/F) is the *tinted* ink-color result by the time this line runs —
+    // tintMaskFrag's RGB is a flat, unconditional tint color regardless of
+    // ink-vs-background, varying only by alpha. Since blitFrag forces
+    // alpha to 1.0 for on-screen display, the "raw" view for any tinted
+    // mode would otherwise blit as a flat solid color, losing all the
+    // actual detection-mask structure the raw toggle exists to show.
+    // Overriding with the pre-tint grayscale mask restores that for Gumi;
+    // Path D/F have the same underlying limitation, unaddressed here.
+    const rawTarget = this.gumiRawOverride ?? outputTarget
 
     // Path B in color-expansion mode and Path G's gradient-map prototype
     // both output a resolved replacement color image (not a mask), so
@@ -1648,6 +1774,7 @@ export class LabPipeline {
       this.gumiSeedTargetA,
       this.gumiSeedTargetB,
       this.gumiBlobTarget,
+      this.gumiInkTarget,
       this.gumiBleedTarget,
       this.highPassTarget,
       this.laplacianTarget,

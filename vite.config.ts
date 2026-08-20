@@ -12,7 +12,10 @@ export default defineConfig(({ mode }) => {
   // needed for an empirical-testing round.
   const includeLab = mode !== 'production' || process.env.INCLUDE_LAB === 'true'
   const input: Record<string, string> = { main: 'index.html' }
-  if (includeLab) input.lab = 'lab.html'
+  if (includeLab) {
+    input.lab = 'lab.html'
+    input.labGrid = 'lab-grid.html'
+  }
   return {
     plugins: [react()],
     build: {

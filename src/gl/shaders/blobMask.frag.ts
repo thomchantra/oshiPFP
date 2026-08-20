@@ -23,10 +23,16 @@
  * keep, above it a hard reject, matching the original cutoff everywhere
  * except this sliver; >1 sharpens further within the band, <1 softens it.
  *
- * Output stays in the same 0=ink/1=background polarity as the input mask
- * — a rejected blob-interior pixel resolves to 1 (falls back to
- * untouched base through composite.frag.ts's multiply, same as if it had
- * never been detected), not to some separate "reject" signal.
+ * Output stays in the same 0=ink/1=background polarity in .rgb as the
+ * input mask, but .a carries the real "how much ink here" weight
+ * (1.0 - result) — same convention erosionGate.frag.ts/tintMask.frag.ts
+ * use, the general contract composite.frag.ts's own doc comment
+ * documents: alpha is what lets a background pixel fall all the way back
+ * to the untouched base *regardless of which blend mode is picked*. Ink
+ * pixels only darken under Multiply — this shader's ink value is
+ * Screen's own identity color, so Screen is a no-op on ink here. A
+ * meaningful Screen effect on black ink stays the deferred,
+ * not-yet-needed feature MASK_MODES's own doc comment describes.
  *
  * uSoftOutput (default 0, every existing call site unaffected) is the
  * other half of the taper/antialiasing fix started in softThreshold.
@@ -34,10 +40,9 @@
  * for the hard-threshold path, but it would re-flatten the continuous
  * gradient softThreshold produces right back to binary at this stage. At
  * 1, a kept pixel keeps whatever continuous value `uMask` already had
- * instead of flattening it — since composite.frag.ts's multiply blend
- * already treats intermediate values as partial ink (partial darkening),
- * this is enough on its own to make faint taper tips fade out instead of
- * being cut off, no separate alpha channel needed.
+ * instead of flattening it, and (now that alpha is graduated too) the
+ * same continuous value also softens the alpha falloff — together enough
+ * to make faint taper tips fade out instead of being cut off.
  *
  * uSoftOutput also loosens the line-candidate gate itself, not just the
  * output value — `mask < 0.5` is the right split for a binary mask (a
@@ -72,6 +77,6 @@ void main() {
   float kept = uSoftOutput == 1 ? mask : 0.0;
   float acceptedColor = isLineCandidate ? kept : 1.0;
   float result = mix(acceptedColor, 1.0, rejectWeight);
-  outColor = vec4(result, result, result, 1.0);
+  outColor = vec4(result, result, result, 1.0 - result);
 }
 `

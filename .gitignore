@@ -3,6 +3,12 @@ referencecode/
 # consumes and archives these into presetsprep/_imported/; the real shipped artifacts are
 # public/presets/ (webp) + src/presets/data/ (trimmed JSON), both tracked normally.
 presetsprep/
+
+# v0.5 Instagram-mode baseline-discovery lab (lab-grid.html) test corpus —
+# curated illustrations saved from the web for empirical tuning, not
+# redistributable assets. Drop images here locally; never committed.
+lab-test-images/
+
 node_modules/
 dist/
 dist-ssr/

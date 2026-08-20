@@ -63,5 +63,38 @@ export function useLabPipeline() {
     }
   }, [])
 
-  return { canvasRef, error, sourceSize, loadFile, setMode, setParams, setViewMode, setSplitMode, pickPixel, runPathE }
+  // Direct, synchronous render — bypasses scheduleRender's rAF debounce.
+  // Needed by callers (e.g. the grid batch-render loop) that must capture
+  // the canvas immediately after a param change, not on the next frame.
+  const render = useCallback(() => {
+    pipelineRef.current?.render()
+  }, [])
+
+  // See LabPipeline.renderViewModeSync/setModeParamsSync's doc comments —
+  // the plain setX()+render() combo still leaves a stale scheduled rAF
+  // render pending that can fire between multiple back-to-back captures
+  // (each with an await gap for toBlob) and clobber an earlier one.
+  const renderViewModeSync = useCallback((viewMode: ViewMode) => {
+    pipelineRef.current?.renderViewModeSync(viewMode)
+  }, [])
+
+  const setModeParamsSync = useCallback((mode: LabMode, params: LabParams) => {
+    pipelineRef.current?.setModeParamsSync(mode, params)
+  }, [])
+
+  return {
+    canvasRef,
+    error,
+    sourceSize,
+    loadFile,
+    setMode,
+    setParams,
+    setViewMode,
+    setSplitMode,
+    pickPixel,
+    runPathE,
+    render,
+    renderViewModeSync,
+    setModeParamsSync,
+  }
 }

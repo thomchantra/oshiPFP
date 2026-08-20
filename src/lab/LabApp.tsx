@@ -131,6 +131,7 @@ export default function LabApp() {
   const [rampFeather, setRampFeather] = useState(0)
   const [gumiContrastBoost, setGumiContrastBoost] = useState(1)
   const [blobMaxDt, setBlobMaxDt] = useState(8)
+  const [gumiBlobGamma, setGumiBlobGamma] = useState(1)
   const [thresholdEnabled, setThresholdEnabled] = useState(false)
   const [highPassStrength, setHighPassStrength] = useState(1)
   const [laplacianStrength, setLaplacianStrength] = useState(1)
@@ -261,6 +262,7 @@ export default function LabApp() {
       rampFeather,
       gumiContrastBoost,
       blobMaxDt,
+      gumiBlobGamma,
       gumiColorBleed,
       gumiBleedFeather,
       gumiSoftDetection,
@@ -318,6 +320,7 @@ export default function LabApp() {
     rampFeather,
     gumiContrastBoost,
     blobMaxDt,
+    gumiBlobGamma,
     gumiColorBleed,
     gumiBleedFeather,
     gumiSoftDetection,
@@ -810,6 +813,19 @@ export default function LabApp() {
               interiors while keeping thin strokes. Also doubles as the color-bleed style's falloff radius below.
             </p>
           </div>
+        )}
+
+        {showBlobMaxDt && (
+          <Slider
+            label="Blob suppression falloff gamma"
+            value={gumiBlobGamma}
+            onChange={setGumiBlobGamma}
+            min={0.1}
+            max={4}
+            step={0.05}
+            decimals={2}
+            testId="slider-gumi-blob-gamma"
+          />
         )}
 
         {showGumiSoftDetection && (
