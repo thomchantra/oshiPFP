@@ -453,8 +453,12 @@ export interface LineArtParams {
    * edgeFillColor.frag.ts. */
   edgeInkOverDarkFillType: 'image' | 'solid'
   edgeInkOverDarkSolidColor: [number, number, number]
+  edgeInkOverDarkColorContrast: number
+  edgeInkOverDarkExposure: number
   edgeInkOverLightFillType: 'image' | 'solid'
   edgeInkOverLightSolidColor: [number, number, number]
+  edgeInkOverLightColorContrast: number
+  edgeInkOverLightExposure: number
   // Path I only.
   laplacianStrength: number
   laplacianPreBlur: number

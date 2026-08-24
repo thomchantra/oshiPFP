@@ -1,15 +1,26 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { LabParams } from '../lab/labPipeline'
 import { useLabPipeline } from '../lab/useLabPipeline'
-import { ALGOS, DEFAULT_LAB_PARAMS, INTENSITY_PRESETS, TIER1_KNOBS, toLabMode } from './labGridTypes'
-import type { AlgoId, Intensity, TagRecord, TagValue } from './labGridTypes'
+import {
+  ALGOS,
+  DEFAULT_LAB_PARAMS,
+  INTENSITY_PRESETS,
+  TIER1_KNOBS,
+  VALUE_GRID_SIZE,
+  primaryKnobSweeps,
+  toLabMode,
+} from './labGridTypes'
+import type { AlgoId, Intensity, NumericLabParamKey, TagRecord, TagValue, ValueTagRecord } from './labGridTypes'
 import { TEST_IMAGES, fetchTestImageFile } from './testImages'
 import { loadLabGridState, saveLabGridState } from './labGridStorage'
 import type { Baselines, LabGridState } from './labGridStorage'
 import { useBatchRender } from './useBatchRender'
+import { useValueGridRender } from './useValueGridRender'
 import { useTriplePreview } from './useTriplePreview'
-import { exportGridJson } from './exportGridJson'
+import { exportGridJson, exportValueGridJson } from './exportGridJson'
 import { scaleParams } from './intensityScaling'
+
+type GridMode = 'intensity' | 'absolute'
 
 // Slider drags fire many rapid 'input' events; each triple-preview refresh
 // is 3 full renders + 3 toBlob captures, too heavy to run on every tick.
@@ -66,7 +77,9 @@ function gumiInkMode(baseline: Partial<LabParams>): GumiInkMode {
 export default function LabGridApp() {
   const pipeline = useLabPipeline()
   const batch = useBatchRender(pipeline)
+  const valueBatch = useValueGridRender(pipeline)
   const triplePreview = useTriplePreview(pipeline)
+  const [gridMode, setGridMode] = useState<GridMode>('intensity')
   const previewDebounceRef = useRef<number | null>(null)
 
   // Drag-to-resize the tuning-viewport/grid split — session-only (not
@@ -191,6 +204,11 @@ export default function LabGridApp() {
     await batch.renderGrid(selectedImage, gridAlgos, sortedIntensities, state.baselines)
   }
 
+  async function handleRenderValueGrid() {
+    if (!selectedImage) return
+    await valueBatch.renderGrid(selectedImage, gridAlgos)
+  }
+
   function currentRecord(algo: AlgoId, intensity: Intensity): TagRecord | undefined {
     if (!selectedImageId) return undefined
     return state.tags.find((t) => t.imageId === selectedImageId && t.algo === algo && t.intensity === intensity)
@@ -226,6 +244,53 @@ export default function LabGridApp() {
     upsertTag(algo, intensity, { tag })
   }
 
+  function currentValueRecord(algo: AlgoId, stepIndex: number): ValueTagRecord | undefined {
+    if (!selectedImageId) return undefined
+    return state.valueTags.find((t) => t.imageId === selectedImageId && t.algo === algo && t.stepIndex === stepIndex)
+  }
+
+  function upsertValueTag(
+    algo: AlgoId,
+    stepIndex: number,
+    values: Partial<Record<NumericLabParamKey, number>>,
+    patch: Partial<Pick<ValueTagRecord, 'tag' | 'remark'>>,
+  ) {
+    if (!selectedImageId) return
+    setState((prev) => {
+      const existing = prev.valueTags.find((t) => t.imageId === selectedImageId && t.algo === algo && t.stepIndex === stepIndex)
+      const next: ValueTagRecord = {
+        imageId: selectedImageId,
+        algo,
+        stepIndex,
+        values,
+        tag: patch.tag ?? existing?.tag ?? 'maybe',
+        remark: patch.remark ?? existing?.remark,
+        timestamp: Date.now(),
+      }
+      return {
+        ...prev,
+        valueTags: [
+          ...prev.valueTags.filter((t) => !(t.imageId === selectedImageId && t.algo === algo && t.stepIndex === stepIndex)),
+          next,
+        ],
+      }
+    })
+  }
+
+  // Sets this cell's swept field(s) to their step value(s), leaving every
+  // other Tier-1 knob at whatever the baseline already has — unlike the
+  // intensity grid's applyCellAsBaseline, there's no secondary-knob scaling
+  // to apply since the absolute-value sweep only ever varies its own fixed
+  // field set.
+  function applyValueCellAsBaseline(algo: AlgoId, values: Partial<Record<NumericLabParamKey, number>>) {
+    if (!selectedImageId) return
+    setState((prev) => ({
+      ...prev,
+      baselines: setBaselineFields(prev.baselines, selectedImageId, algo, values),
+    }))
+    setSelectedAlgo(algo)
+  }
+
   function applyCellAsBaseline(algo: AlgoId, intensity: Intensity) {
     if (!selectedImageId) return
     const existingBaseline = state.baselines[selectedImageId]?.[algo] ?? {}
@@ -247,6 +312,10 @@ export default function LabGridApp() {
   const taggedCount = useMemo(
     () => state.tags.filter((t) => t.imageId === selectedImageId).length,
     [state.tags, selectedImageId],
+  )
+  const valueTaggedCount = useMemo(
+    () => state.valueTags.filter((t) => t.imageId === selectedImageId).length,
+    [state.valueTags, selectedImageId],
   )
 
   return (
@@ -270,7 +339,9 @@ export default function LabGridApp() {
               ))}
             </select>
           )}
-          <p style={{ color: '#888', margin: '4px 0 0' }}>{taggedCount} tags on this image</p>
+          <p style={{ color: '#888', margin: '4px 0 0' }}>
+            {taggedCount} intensity tags / {valueTaggedCount} absolute-value tags on this image
+          </p>
         </section>
 
         <section>
@@ -403,27 +474,73 @@ export default function LabGridApp() {
         </section>
 
         <section>
-          <h2 style={sectionTitleStyle}>Grid: intensities</h2>
-          {INTENSITY_PRESETS.map((intensity) => (
-            <label key={intensity} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={gridIntensities.includes(intensity)} onChange={() => toggleGridIntensity(intensity)} />
-              {Math.round(intensity * 100)}%
-            </label>
-          ))}
+          <h2 style={sectionTitleStyle}>Grid: sweep type</h2>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setGridMode('intensity')}
+              style={{ ...buttonStyle, flex: 1, background: gridMode === 'intensity' ? '#3a5a3a' : '#2a2a2a' }}
+            >
+              Intensity ×
+            </button>
+            <button
+              onClick={() => setGridMode('absolute')}
+              style={{ ...buttonStyle, flex: 1, background: gridMode === 'absolute' ? '#3a5a3a' : '#2a2a2a' }}
+            >
+              Absolute value
+            </button>
+          </div>
+          <p style={{ margin: '6px 0 0', color: '#888', fontSize: 11 }}>
+            {gridMode === 'intensity'
+              ? 'Scales each algo’s tuned baseline by a multiplier — tests how hard to push a baseline you already picked.'
+              : 'Sweeps each algo’s primary sensitivity/threshold knob across 5 fixed values from DEFAULT_LAB_PARAMS, ignoring your manual baseline — tests what raw value the image itself calls for.'}
+          </p>
         </section>
 
-        <p style={{ margin: 0, color: '#888', fontSize: 11 }}>
-          Render Grid takes the current image and, for each checked algorithm below, renders it at each checked
-          intensity (50/100/150/200% — each algo's own Tier-1 knobs above scaled from its baseline) as a contact
-          sheet you can tag ✓/✗/?/N/A per cell.
-        </p>
-        <button onClick={handleRenderGrid} disabled={!selectedImage || batch.isRendering} style={{ ...buttonStyle, padding: '10px 14px' }}>
-          {batch.isRendering ? `Rendering ${batch.progress?.done ?? 0}/${batch.progress?.total ?? 0}…` : 'Render Grid'}
-        </button>
+        {gridMode === 'intensity' ? (
+          <section>
+            <h2 style={sectionTitleStyle}>Grid: intensities</h2>
+            {INTENSITY_PRESETS.map((intensity) => (
+              <label key={intensity} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={gridIntensities.includes(intensity)} onChange={() => toggleGridIntensity(intensity)} />
+                {Math.round(intensity * 100)}%
+              </label>
+            ))}
+          </section>
+        ) : (
+          <section>
+            <h2 style={sectionTitleStyle}>Grid: primary-knob values</h2>
+            <p style={{ margin: 0, color: '#888', fontSize: 11 }}>5 steps per algo, own field/range each — see column headers in the grid.</p>
+          </section>
+        )}
 
-        <button onClick={() => exportGridJson(state.tags)} style={buttonStyle}>
-          Export JSON ({state.tags.length} tags total)
-        </button>
+        {gridMode === 'intensity' ? (
+          <>
+            <p style={{ margin: 0, color: '#888', fontSize: 11 }}>
+              Render Grid takes the current image and, for each checked algorithm below, renders it at each checked
+              intensity (50/100/150/200% — each algo's own Tier-1 knobs above scaled from its baseline) as a contact
+              sheet you can tag ✓/✗/?/N/A per cell.
+            </p>
+            <button onClick={handleRenderGrid} disabled={!selectedImage || batch.isRendering} style={{ ...buttonStyle, padding: '10px 14px' }}>
+              {batch.isRendering ? `Rendering ${batch.progress?.done ?? 0}/${batch.progress?.total ?? 0}…` : 'Render Grid'}
+            </button>
+            <button onClick={() => exportGridJson(state.tags)} style={buttonStyle}>
+              Export JSON ({state.tags.length} tags total)
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ margin: 0, color: '#888', fontSize: 11 }}>
+              Render Grid takes the current image and, for each checked algorithm below, renders it at 5 fixed
+              absolute values of that algo's primary knob (defaults elsewhere) as a contact sheet you can tag.
+            </p>
+            <button onClick={handleRenderValueGrid} disabled={!selectedImage || valueBatch.isRendering} style={{ ...buttonStyle, padding: '10px 14px' }}>
+              {valueBatch.isRendering ? `Rendering ${valueBatch.progress?.done ?? 0}/${valueBatch.progress?.total ?? 0}…` : 'Render Grid'}
+            </button>
+            <button onClick={() => exportValueGridJson(state.valueTags)} style={buttonStyle}>
+              Export JSON ({state.valueTags.length} tags total)
+            </button>
+          </>
+        )}
 
         {pipeline.error && <p style={{ color: '#e66' }}>{pipeline.error}</p>}
       </div>
@@ -480,37 +597,102 @@ export default function LabGridApp() {
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-          {batch.cells.length === 0 ? (
-            <p style={{ color: '#888' }}>Tune a baseline per algorithm above, then click Render Grid.</p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${gridIntensities.length}, 1fr)`, gap: 8 }}>
-              <div />
-              {[...gridIntensities]
-                .sort((a, b) => a - b)
-                .map((intensity) => (
-                  <div key={intensity} style={{ textAlign: 'center', color: '#888' }}>
-                    {Math.round(intensity * 100)}%
-                  </div>
+          {gridMode === 'intensity' ? (
+            batch.cells.length === 0 ? (
+              <p style={{ color: '#888' }}>Tune a baseline per algorithm above, then click Render Grid.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${gridIntensities.length}, 1fr)`, gap: 8 }}>
+                <div />
+                {[...gridIntensities]
+                  .sort((a, b) => a - b)
+                  .map((intensity) => (
+                    <div key={intensity} style={{ textAlign: 'center', color: '#888' }}>
+                      {Math.round(intensity * 100)}%
+                    </div>
+                  ))}
+                {gridAlgos.map((algo) => (
+                  <Fragment key={algo}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      {ALGOS.find((a) => a.id === algo)?.label}
+                    </div>
+                    {[...gridIntensities]
+                      .sort((a, b) => a - b)
+                      .map((intensity) => {
+                        const cell = batch.cells.find((c) => c.algo === algo && c.intensity === intensity)
+                        const record = currentRecord(algo, intensity)
+                        const tag = record?.tag ?? null
+                        return (
+                          <div key={`${algo}-${intensity}`} style={cellStyle}>
+                            {cell ? <img src={cell.url} alt={`${algo} ${intensity}`} style={{ width: '100%', display: 'block' }} /> : <div style={{ color: '#555' }}>—</div>}
+                            <div style={{ display: 'flex', gap: 2, marginTop: 4, flexWrap: 'wrap' }}>
+                              {TAG_BUTTONS.map((tb) => (
+                                <button
+                                  key={tb.value}
+                                  onClick={() => setTag(algo, intensity, tb.value)}
+                                  style={{
+                                    ...tagButtonStyle,
+                                    background: tag === tb.value ? tb.color : '#2a2a2a',
+                                  }}
+                                >
+                                  {tb.label}
+                                </button>
+                              ))}
+                            </div>
+                            {tag && (
+                              <input
+                                type="text"
+                                placeholder="remark, e.g. too thick…"
+                                value={record?.remark ?? ''}
+                                onChange={(e) => upsertTag(algo, intensity, { remark: e.target.value })}
+                                style={{ ...tagButtonStyle, marginTop: 2, width: '100%', boxSizing: 'border-box' }}
+                              />
+                            )}
+                            {cell && (
+                              <button onClick={() => applyCellAsBaseline(algo, intensity)} style={{ ...tagButtonStyle, marginTop: 2, width: '100%' }}>
+                                Use as baseline
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </Fragment>
                 ))}
-              {gridAlgos.map((algo) => (
-                <Fragment key={algo}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    {ALGOS.find((a) => a.id === algo)?.label}
-                  </div>
-                  {[...gridIntensities]
-                    .sort((a, b) => a - b)
-                    .map((intensity) => {
-                      const cell = batch.cells.find((c) => c.algo === algo && c.intensity === intensity)
-                      const record = currentRecord(algo, intensity)
+              </div>
+            )
+          ) : valueBatch.cells.length === 0 ? (
+            <p style={{ color: '#888' }}>Check algorithms below, then click Render Grid.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${VALUE_GRID_SIZE}, 1fr)`, gap: 8 }}>
+              <div />
+              {Array.from({ length: VALUE_GRID_SIZE }, (_, i) => (
+                <div key={i} style={{ textAlign: 'center', color: '#888' }}>
+                  step {i + 1}/{VALUE_GRID_SIZE}
+                </div>
+              ))}
+              {gridAlgos.map((algo) => {
+                const sweeps = primaryKnobSweeps(algo)
+                return (
+                  <Fragment key={algo}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <span>{ALGOS.find((a) => a.id === algo)?.label}</span>
+                      <span style={{ color: '#666', fontSize: 10 }}>{sweeps.map((s) => s.field).join(' + ')}</span>
+                    </div>
+                    {Array.from({ length: VALUE_GRID_SIZE }, (_, stepIndex) => {
+                      const stepValues: Partial<Record<NumericLabParamKey, number>> = {}
+                      for (const sweep of sweeps) stepValues[sweep.field] = sweep.values[stepIndex]
+                      const cell = valueBatch.cells.find((c) => c.algo === algo && c.stepIndex === stepIndex)
+                      const record = currentValueRecord(algo, stepIndex)
                       const tag = record?.tag ?? null
+                      const valueLabel = sweeps.map((s) => (stepValues[s.field] as number).toFixed(2)).join(' / ')
                       return (
-                        <div key={`${algo}-${intensity}`} style={cellStyle}>
-                          {cell ? <img src={cell.url} alt={`${algo} ${intensity}`} style={{ width: '100%', display: 'block' }} /> : <div style={{ color: '#555' }}>—</div>}
+                        <div key={`${algo}-${stepIndex}`} style={cellStyle}>
+                          <div style={{ color: '#888', fontSize: 10, marginBottom: 2 }}>{valueLabel}</div>
+                          {cell ? <img src={cell.url} alt={`${algo} step ${stepIndex}`} style={{ width: '100%', display: 'block' }} /> : <div style={{ color: '#555' }}>—</div>}
                           <div style={{ display: 'flex', gap: 2, marginTop: 4, flexWrap: 'wrap' }}>
                             {TAG_BUTTONS.map((tb) => (
                               <button
                                 key={tb.value}
-                                onClick={() => setTag(algo, intensity, tb.value)}
+                                onClick={() => upsertValueTag(algo, stepIndex, stepValues, { tag: tb.value })}
                                 style={{
                                   ...tagButtonStyle,
                                   background: tag === tb.value ? tb.color : '#2a2a2a',
@@ -525,20 +707,21 @@ export default function LabGridApp() {
                               type="text"
                               placeholder="remark, e.g. too thick…"
                               value={record?.remark ?? ''}
-                              onChange={(e) => upsertTag(algo, intensity, { remark: e.target.value })}
+                              onChange={(e) => upsertValueTag(algo, stepIndex, stepValues, { remark: e.target.value })}
                               style={{ ...tagButtonStyle, marginTop: 2, width: '100%', boxSizing: 'border-box' }}
                             />
                           )}
                           {cell && (
-                            <button onClick={() => applyCellAsBaseline(algo, intensity)} style={{ ...tagButtonStyle, marginTop: 2, width: '100%' }}>
+                            <button onClick={() => applyValueCellAsBaseline(algo, stepValues)} style={{ ...tagButtonStyle, marginTop: 2, width: '100%' }}>
                               Use as baseline
                             </button>
                           )}
                         </div>
                       )
                     })}
-                </Fragment>
-              ))}
+                  </Fragment>
+                )
+              })}
             </div>
           )}
         </div>

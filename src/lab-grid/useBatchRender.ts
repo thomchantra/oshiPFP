@@ -14,7 +14,7 @@ export interface GridCell {
   url: string
 }
 
-function captureCanvasBlob(canvas: HTMLCanvasElement | null): Promise<string | null> {
+export function captureCanvasBlob(canvas: HTMLCanvasElement | null): Promise<string | null> {
   return new Promise((resolve) => {
     if (!canvas) {
       resolve(null)

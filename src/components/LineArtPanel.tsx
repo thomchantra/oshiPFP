@@ -9,6 +9,7 @@ import { GradientFillControls, BlendModeCategoryRow, TintColorRow } from './Grad
 import { ALGO_OPTIONS } from './AlgoGalleryModal'
 import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import { pinchToPlateau } from '../tone/pinchRamp'
+import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import type { BlendMode, FillType, LineArtParams, LineArtSubTab, ToneShapingParams } from '../types'
 
 const SUB_TAB_OPTIONS: { value: LineArtSubTab; label: string }[] = [
@@ -343,6 +344,16 @@ export default function LineArtPanel({
                 label="Blend Opacity" value={params.opacity} min={0} max={3} defaultValue={1}
                 formatValue={() => `${opacityPct}%`}
                 onChange={(v) => set('opacity', v)}
+              />
+              {/* Drives the same blendMode/opacity fields as the two controls above (see
+                  lineBrightness.ts) — only faithfully represents Multiply/Add; any other blend mode
+                  set via the selector above shows pinned at +magnitude here. */}
+              <GradientSlider
+                label="Line Brightness (WIP)"
+                value={opacityBlendToBrightness(params.opacity, params.blendMode)}
+                min={-100} max={100} defaultValue={0}
+                formatValue={(v) => `${Math.round(v)}%`}
+                onChange={(v) => onChange({ ...params, ...brightnessToOpacityBlend(v) })}
               />
             </>
           )}
@@ -1012,15 +1023,23 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
             label="Ink Over Dark Areas"
             fillType={params.edgeInkOverDarkFillType}
             solidColor={params.edgeInkOverDarkSolidColor}
+            colorContrast={params.edgeInkOverDarkColorContrast}
+            exposure={params.edgeInkOverDarkExposure}
             onFillTypeChange={(v) => onChange({ ...params, edgeInkOverDarkFillType: v })}
             onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverDarkSolidColor: rgb })}
+            onColorContrastChange={(v) => onChange({ ...params, edgeInkOverDarkColorContrast: v })}
+            onExposureChange={(v) => onChange({ ...params, edgeInkOverDarkExposure: v })}
           />
           <EdgePolarityFillRow
             label="Ink Over Light Areas"
             fillType={params.edgeInkOverLightFillType}
             solidColor={params.edgeInkOverLightSolidColor}
+            colorContrast={params.edgeInkOverLightColorContrast}
+            exposure={params.edgeInkOverLightExposure}
             onFillTypeChange={(v) => onChange({ ...params, edgeInkOverLightFillType: v })}
             onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverLightSolidColor: rgb })}
+            onColorContrastChange={(v) => onChange({ ...params, edgeInkOverLightColorContrast: v })}
+            onExposureChange={(v) => onChange({ ...params, edgeInkOverLightExposure: v })}
           />
         </>
       )}
@@ -1116,13 +1135,18 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
  * edgeFillColor.frag.ts's doc comment for why), so this is a plain local 2-pill row rather than
  * the shared 3-option FillTypeRow. */
 function EdgePolarityFillRow({
-  label, fillType, solidColor, onFillTypeChange, onSolidColorChange,
+  label, fillType, solidColor, colorContrast, exposure,
+  onFillTypeChange, onSolidColorChange, onColorContrastChange, onExposureChange,
 }: {
   label: string
   fillType: 'image' | 'solid'
   solidColor: [number, number, number]
+  colorContrast?: number
+  exposure?: number
   onFillTypeChange: (v: 'image' | 'solid') => void
   onSolidColorChange: (rgb: [number, number, number]) => void
+  onColorContrastChange?: (v: number) => void
+  onExposureChange?: (v: number) => void
 }) {
   return (
     <>
@@ -1144,6 +1168,12 @@ function EdgePolarityFillRow({
         </div>
       </div>
       {fillType === 'solid' && <TintColorRow tintColor={solidColor} onChange={onSolidColorChange} />}
+      {fillType === 'image' && colorContrast !== undefined && onColorContrastChange && (
+        <GradientSlider label="Color Contrast" value={colorContrast} min={0.2} max={3} defaultValue={1} onChange={onColorContrastChange} />
+      )}
+      {fillType === 'image' && exposure !== undefined && onExposureChange && (
+        <GradientSlider label="Exposure" value={exposure} min={-1} max={1} defaultValue={0} onChange={onExposureChange} />
+      )}
     </>
   )
 }

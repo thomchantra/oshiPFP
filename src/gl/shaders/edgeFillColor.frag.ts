@@ -21,16 +21,24 @@ uniform sampler2D uInk;
 uniform sampler2D uOriginal;
 uniform int uDarkFillType;
 uniform vec3 uDarkSolidColor;
+uniform float uDarkColorContrast;
+uniform float uDarkExposure;
 uniform int uLightFillType;
 uniform vec3 uLightSolidColor;
+uniform float uLightColorContrast;
+uniform float uLightExposure;
 out vec4 outColor;
+
+vec3 adjustImage(vec3 c, float contrast, float exposure) {
+  return clamp((c - 0.5) * contrast + 0.5 + exposure, 0.0, 1.0);
+}
 
 void main() {
   vec4 ink = texture(uInk, vUV);
   bool isDarkRegion = ink.r > 0.5;
   vec3 imageColor = texture(uOriginal, vUV).rgb;
-  vec3 darkColor = uDarkFillType == 1 ? uDarkSolidColor : imageColor;
-  vec3 lightColor = uLightFillType == 1 ? uLightSolidColor : imageColor;
+  vec3 darkColor = uDarkFillType == 1 ? uDarkSolidColor : adjustImage(imageColor, uDarkColorContrast, uDarkExposure);
+  vec3 lightColor = uLightFillType == 1 ? uLightSolidColor : adjustImage(imageColor, uLightColorContrast, uLightExposure);
   vec3 color = isDarkRegion ? darkColor : lightColor;
   outColor = vec4(color, ink.a);
 }

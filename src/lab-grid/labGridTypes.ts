@@ -163,3 +163,89 @@ export interface TagRecord {
   remark?: string
   timestamp: number
 }
+
+// The knob(s) per algorithm that most directly act as its detection
+// "sensitivity"/threshold — driving the absolute-value sweep (as opposed to
+// the intensity-multiplier sweep above), which tests raw parameter values
+// against image content independent of any manually-tuned baseline. Usually
+// one field; Hinata co-varies `highPassStrength` with `radius` (blur) since
+// the sweep needs both moving together to read clearly. Not always
+// literally named "threshold": Botan has none at all (radius is its only
+// magnitude knob), Chie sweeps `radius` rather than the fine-tune-only
+// `gateThreshold`, and Hinata's own `threshold` field is inert unless
+// `thresholdEnabled` is set (default false, see DEFAULT_LAB_PARAMS).
+// Only the number-valued LabParams fields can be knob-swept (Tier1Knob's
+// min/max/step are numeric ranges) — narrowing to this subset, rather than
+// the full `keyof LabParams`, lets a Partial<Record<NumericLabParamKey,
+// number>> spread safely into a full LabParams without TypeScript worrying
+// about a boolean/string/tuple field (colorExpansion, tintColor, etc.)
+// getting a stray number assigned.
+export type NumericLabParamKey = { [K in keyof LabParams]: LabParams[K] extends number ? K : never }[keyof LabParams]
+
+export const PRIMARY_KNOB_FIELDS: Record<AlgoId, NumericLabParamKey[]> = {
+  pathA: ['radius'],
+  pathC: ['radius'],
+  pathD: ['threshold'],
+  pathF: ['sensitivity'],
+  // Gumi always runs its own plateau ramp regardless of rampEnabled (see
+  // labPipeline.ts's pathG branch), so rampInnerHigh is live under default
+  // settings; radius/blobMaxDt also affect detected line size/appearance,
+  // same category as the ramp band. rampFloor/rampInnerLow held fixed at 0
+  // (forced in useValueGridRender.ts, not swept).
+  pathG: ['rampInnerHigh', 'radius', 'blobMaxDt'],
+  pathH: ['highPassStrength', 'radius'],
+  pathI: ['laplacianStrength'],
+}
+
+export interface PrimaryKnobSweep {
+  field: NumericLabParamKey
+  label: string
+  values: number[]
+}
+
+export const VALUE_GRID_SIZE = 5
+
+// Per-(algo, field) override of the sweep's own min/max, distinct from
+// TIER1_KNOBS' min/max (which stay the wide manual-slider bounds — a user
+// hand-tuning a baseline should still be able to drag a slider to an
+// extreme). Only needed where the full slider range produces a degenerate
+// sweep — see changelog/oshipfp-v0.5-instagram-mode-saga.md for the
+// Gumi radius/blobMaxDt double-collapse this was added to fix.
+const SWEEP_RANGE_OVERRIDES: Partial<Record<AlgoId, Partial<Record<NumericLabParamKey, { min: number; max: number }>>>> = {
+  pathG: {
+    radius: { min: 0.5, max: 4 },
+    blobMaxDt: { min: 2, max: 20 },
+  },
+}
+
+// One sweep per field in PRIMARY_KNOB_FIELDS[algo], each with its own 5
+// values evenly spaced across that field's own working range (TIER1_KNOBS'
+// min/max, unless SWEEP_RANGE_OVERRIDES narrows it), endpoints included
+// (min, +25%, mid, +75%, max). Multiple fields for one algo are co-varied
+// by step index (step i uses each field's i-th value together), not
+// combined combinatorially — keeps the grid to VALUE_GRID_SIZE columns
+// regardless of how many fields an algo sweeps. Not aligned across
+// algorithms (each has its own min/max), so grid columns are addressed by
+// step index, not by value.
+export function primaryKnobSweeps(algo: AlgoId): PrimaryKnobSweep[] {
+  return PRIMARY_KNOB_FIELDS[algo].map((field) => {
+    const knob = TIER1_KNOBS[algo].find((k) => k.field === field)
+    if (!knob) throw new Error(`primaryKnobSweeps: ${field} missing from TIER1_KNOBS[${algo}]`)
+    const override = SWEEP_RANGE_OVERRIDES[algo]?.[field]
+    const { min, max, label } = override ? { ...knob, ...override } : knob
+    const values = Array.from({ length: VALUE_GRID_SIZE }, (_, i) => min + ((max - min) * i) / (VALUE_GRID_SIZE - 1))
+    return { field, label, values }
+  })
+}
+
+export interface ValueTagRecord {
+  imageId: string
+  algo: AlgoId
+  stepIndex: number
+  // One entry per swept field at this step — e.g. Hinata's step 2 might be
+  // { highPassStrength: 0.9, radius: 2.4 }.
+  values: Partial<Record<NumericLabParamKey, number>>
+  tag: TagValue
+  remark?: string
+  timestamp: number
+}

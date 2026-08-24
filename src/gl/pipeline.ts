@@ -191,8 +191,12 @@ const IDENTITY_LINE_ART: LineArtParams = {
   responsiveGrowBias: 0,
   edgeInkOverDarkFillType: 'solid',
   edgeInkOverDarkSolidColor: [1, 1, 1],
+  edgeInkOverDarkColorContrast: 1,
+  edgeInkOverDarkExposure: 0,
   edgeInkOverLightFillType: 'solid',
   edgeInkOverLightSolidColor: [0, 0, 0],
+  edgeInkOverLightColorContrast: 1,
+  edgeInkOverLightExposure: 0,
   laplacianStrength: 1,
   laplacianPreBlur: 0,
   laplacianSharpenAmount: 0,
@@ -1713,8 +1717,12 @@ export class Pipeline {
       gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uOriginal'), 1)
       gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkFillType'), p.edgeInkOverDarkFillType === 'solid' ? 1 : 0)
       gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkSolidColor'), p.edgeInkOverDarkSolidColor)
+      gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkColorContrast'), p.edgeInkOverDarkColorContrast)
+      gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkExposure'), p.edgeInkOverDarkExposure)
       gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightFillType'), p.edgeInkOverLightFillType === 'solid' ? 1 : 0)
       gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightSolidColor'), p.edgeInkOverLightSolidColor)
+      gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightColorContrast'), p.edgeInkOverLightColorContrast)
+      gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightExposure'), p.edgeInkOverLightExposure)
     })
     return this.edgeFillColorTarget
   }
@@ -2939,7 +2947,7 @@ export class Pipeline {
     const forcedMultiply = p.mode === 'pathF' && p.findEdge
     const blendModeInt = forcedMultiply ? BLEND_MODE_INT.multiply : BLEND_MODE_INT[p.blendMode]
 
-    const isAlphaOverdrive = p.mode === 'pathF'
+    const isAlphaOverdrive = p.mode === 'pathF' || p.opacity > 1
     const layerCount = isAlphaOverdrive ? ALPHA_OVERDRIVE_LAYERS : 1
     const opacities = new Float32Array(4)
     if (isAlphaOverdrive) {
