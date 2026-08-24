@@ -11,8 +11,7 @@
  * area, 0=ink drawn over a locally-light area; see their own doc comments), .a is ink strength.
  * This pass reinterprets that marker as a polarity selector instead of a literal final color, and
  * resolves the real output color from it — solid or sampled straight from the original image,
- * independently for each side. Defaults (dark-side solid white, light-side solid black) reproduce
- * the original hardcoded output exactly.
+ * independently for each side.
  */
 export const edgeFillColorFrag = `#version 300 es
 precision highp float;
@@ -27,6 +26,7 @@ uniform int uLightFillType;
 uniform vec3 uLightSolidColor;
 uniform float uLightColorContrast;
 uniform float uLightExposure;
+uniform int uInvertFill;
 out vec4 outColor;
 
 vec3 adjustImage(vec3 c, float contrast, float exposure) {
@@ -40,6 +40,7 @@ void main() {
   vec3 darkColor = uDarkFillType == 1 ? uDarkSolidColor : adjustImage(imageColor, uDarkColorContrast, uDarkExposure);
   vec3 lightColor = uLightFillType == 1 ? uLightSolidColor : adjustImage(imageColor, uLightColorContrast, uLightExposure);
   vec3 color = isDarkRegion ? darkColor : lightColor;
-  outColor = vec4(color, ink.a);
+  float coverage = uInvertFill == 1 ? 1.0 - ink.a : ink.a;
+  outColor = vec4(color, coverage);
 }
 `

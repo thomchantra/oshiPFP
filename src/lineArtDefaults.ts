@@ -155,7 +155,7 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     responsiveGrow: 0,
     responsiveGrowBias: 0,
     edgeInkOverDarkFillType: 'solid',
-    edgeInkOverDarkSolidColor: [1, 1, 1],
+    edgeInkOverDarkSolidColor: [0, 0, 0],
     edgeInkOverLightFillType: 'solid',
     edgeInkOverLightSolidColor: [0, 0, 0],
     laplacianStrength: 3,

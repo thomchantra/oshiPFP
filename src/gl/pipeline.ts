@@ -190,13 +190,15 @@ const IDENTITY_LINE_ART: LineArtParams = {
   responsiveGrow: 0,
   responsiveGrowBias: 0,
   edgeInkOverDarkFillType: 'solid',
-  edgeInkOverDarkSolidColor: [1, 1, 1],
+  edgeInkOverDarkSolidColor: [0, 0, 0],
   edgeInkOverDarkColorContrast: 1,
   edgeInkOverDarkExposure: 0,
   edgeInkOverLightFillType: 'solid',
   edgeInkOverLightSolidColor: [0, 0, 0],
   edgeInkOverLightColorContrast: 1,
   edgeInkOverLightExposure: 0,
+  edgeDuoTone: false,
+  edgeInvertFill: false,
   laplacianStrength: 1,
   laplacianPreBlur: 0,
   laplacianSharpenAmount: 0,
@@ -1703,7 +1705,7 @@ export class Pipeline {
    * Edge's independent per-polarity fill-type resolution, a
    * separate final pass after responsiveEdgeColor.frag.ts's (and Grow's, if active) shape
    * decision — see edgeFillColor.frag.ts's doc comment for why no upstream shader changes were
-   * needed. Defaults (dark-side solid white, light-side solid black).
+   * needed.
    */
   private runEdgeFillColor(source: TargetTexture, p: LineArtParams, base: TargetTexture, width: number, height: number): TargetTexture {
     const gl = this.gl
@@ -1715,14 +1717,20 @@ export class Pipeline {
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, base.texture)
       gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uOriginal'), 1)
-      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkFillType'), p.edgeInkOverDarkFillType === 'solid' ? 1 : 0)
+      // Duo-tone off forces dark=solid/light=image regardless of the stored per-side fillType
+      // fields, so Crossover keeps a visible effect with a single ink color — the solid color
+      // itself still comes from the real, user-adjustable edgeInkOverDarkSolidColor field.
+      const darkFillTypeInt = p.edgeDuoTone ? (p.edgeInkOverDarkFillType === 'solid' ? 1 : 0) : 1
+      const lightFillTypeInt = p.edgeDuoTone ? (p.edgeInkOverLightFillType === 'solid' ? 1 : 0) : 0
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkFillType'), darkFillTypeInt)
       gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkSolidColor'), p.edgeInkOverDarkSolidColor)
       gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkColorContrast'), p.edgeInkOverDarkColorContrast)
       gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uDarkExposure'), p.edgeInkOverDarkExposure)
-      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightFillType'), p.edgeInkOverLightFillType === 'solid' ? 1 : 0)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightFillType'), lightFillTypeInt)
       gl.uniform3fv(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightSolidColor'), p.edgeInkOverLightSolidColor)
       gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightColorContrast'), p.edgeInkOverLightColorContrast)
       gl.uniform1f(gl.getUniformLocation(this.edgeFillColorProgram, 'uLightExposure'), p.edgeInkOverLightExposure)
+      gl.uniform1i(gl.getUniformLocation(this.edgeFillColorProgram, 'uInvertFill'), p.edgeInvertFill ? 1 : 0)
     })
     return this.edgeFillColorTarget
   }

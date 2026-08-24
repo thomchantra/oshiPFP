@@ -459,6 +459,12 @@ export interface LineArtParams {
   edgeInkOverLightSolidColor: [number, number, number]
   edgeInkOverLightColorContrast: number
   edgeInkOverLightExposure: number
+  /** Off (default): single dark-ink color (edgeInkOverDarkSolidColor) over an always-image light
+   * side. On: today's full independent per-side fill-type UI. */
+  edgeDuoTone: boolean
+  /** Inverts ink coverage itself (draws over undetected areas, not detected edges) — distinct from
+   * the fillInvert family, which flips solid/image polarity on an already-computed mask. */
+  edgeInvertFill: boolean
   // Path I only.
   laplacianStrength: number
   laplacianPreBlur: number

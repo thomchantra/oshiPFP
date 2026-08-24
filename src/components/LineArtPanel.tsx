@@ -1019,28 +1019,69 @@ function OutputTreatmentRow({ params, onChange }: { params: LineArtParams; onCha
             <GradientSlider label="Grow Bias" value={params.responsiveGrowBias} min={-1} max={1} defaultValue={0} onChange={(v) => onChange({ ...params, responsiveGrowBias: v })} />
           )}
           <div className="lineart-divider" />
-          <EdgePolarityFillRow
-            label="Ink Over Dark Areas"
-            fillType={params.edgeInkOverDarkFillType}
-            solidColor={params.edgeInkOverDarkSolidColor}
-            colorContrast={params.edgeInkOverDarkColorContrast}
-            exposure={params.edgeInkOverDarkExposure}
-            onFillTypeChange={(v) => onChange({ ...params, edgeInkOverDarkFillType: v })}
-            onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverDarkSolidColor: rgb })}
-            onColorContrastChange={(v) => onChange({ ...params, edgeInkOverDarkColorContrast: v })}
-            onExposureChange={(v) => onChange({ ...params, edgeInkOverDarkExposure: v })}
-          />
-          <EdgePolarityFillRow
-            label="Ink Over Light Areas"
-            fillType={params.edgeInkOverLightFillType}
-            solidColor={params.edgeInkOverLightSolidColor}
-            colorContrast={params.edgeInkOverLightColorContrast}
-            exposure={params.edgeInkOverLightExposure}
-            onFillTypeChange={(v) => onChange({ ...params, edgeInkOverLightFillType: v })}
-            onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverLightSolidColor: rgb })}
-            onColorContrastChange={(v) => onChange({ ...params, edgeInkOverLightColorContrast: v })}
-            onExposureChange={(v) => onChange({ ...params, edgeInkOverLightExposure: v })}
-          />
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onChange({ ...params, edgeDuoTone: !params.edgeDuoTone })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onChange({ ...params, edgeDuoTone: !params.edgeDuoTone })
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Duo Tone</span>
+            <ToggleSwitch on={params.edgeDuoTone} label="Duo Tone" />
+          </div>
+          <div
+            className="lineart-toggle-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onChange({ ...params, edgeInvertFill: !params.edgeInvertFill })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onChange({ ...params, edgeInvertFill: !params.edgeInvertFill })
+              }
+            }}
+          >
+            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Fill Gaps Instead</span>
+            <ToggleSwitch on={params.edgeInvertFill} label="Fill Gaps Instead" />
+          </div>
+          <div className="lineart-divider" />
+          {params.edgeDuoTone ? (
+            <>
+              <EdgePolarityFillRow
+                label="Ink Over Dark Areas"
+                fillType={params.edgeInkOverDarkFillType}
+                solidColor={params.edgeInkOverDarkSolidColor}
+                colorContrast={params.edgeInkOverDarkColorContrast}
+                exposure={params.edgeInkOverDarkExposure}
+                onFillTypeChange={(v) => onChange({ ...params, edgeInkOverDarkFillType: v })}
+                onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverDarkSolidColor: rgb })}
+                onColorContrastChange={(v) => onChange({ ...params, edgeInkOverDarkColorContrast: v })}
+                onExposureChange={(v) => onChange({ ...params, edgeInkOverDarkExposure: v })}
+              />
+              <EdgePolarityFillRow
+                label="Ink Over Light Areas"
+                fillType={params.edgeInkOverLightFillType}
+                solidColor={params.edgeInkOverLightSolidColor}
+                colorContrast={params.edgeInkOverLightColorContrast}
+                exposure={params.edgeInkOverLightExposure}
+                onFillTypeChange={(v) => onChange({ ...params, edgeInkOverLightFillType: v })}
+                onSolidColorChange={(rgb) => onChange({ ...params, edgeInkOverLightSolidColor: rgb })}
+                onColorContrastChange={(v) => onChange({ ...params, edgeInkOverLightColorContrast: v })}
+                onExposureChange={(v) => onChange({ ...params, edgeInkOverLightExposure: v })}
+              />
+            </>
+          ) : (
+            <>
+              <TintColorRow label="Ink Color" tintColor={params.edgeInkOverDarkSolidColor} onChange={(rgb) => onChange({ ...params, edgeInkOverDarkSolidColor: rgb })} />
+              <GradientSlider label="Color Contrast" value={params.edgeInkOverLightColorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => onChange({ ...params, edgeInkOverLightColorContrast: v })} />
+              <GradientSlider label="Exposure" value={params.edgeInkOverLightExposure} min={-1} max={1} defaultValue={0} onChange={(v) => onChange({ ...params, edgeInkOverLightExposure: v })} />
+            </>
+          )}
         </>
       )}
 
