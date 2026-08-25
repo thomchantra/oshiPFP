@@ -27,6 +27,7 @@ import { PRESET_MANIFEST } from './presets/presetManifest'
 import { applyPreset } from './presets/applyPreset'
 import { FILTER_MANIFEST } from './filters/filterManifest'
 import { applyFilter } from './filters/applyFilter'
+import { useFilterThumbnails } from './filters/useFilterThumbnails'
 import { trace } from './debug/renderTrace'
 import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
@@ -53,6 +54,9 @@ declare global {
         editSnapshot: Partial<LineArtParams> | null
         currentParams: LineArtParams
       }
+      thumbnails: () => Record<string, string>
+      thumbnailsGenerating: () => boolean
+      regenerateThumbnails: () => void
     }
   }
 }
@@ -534,6 +538,15 @@ export default function App() {
     onRectChange: pipeline.setCropRect,
   })
 
+  const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails } = useFilterThumbnails({
+    hasImage,
+    paramsByMode,
+    filterOverrides,
+    liveLineArtParams: lineArtParams,
+    cropSignal: crop.transform,
+    pipeline,
+  })
+
   // Line Art's algorithm chain (JFA etc.) is frozen/reactivated by
   // Pipeline's own settle timer (armed from setCropRect) rather than tab
   // identity — see armLineArtSettle in pipeline.ts.
@@ -696,9 +709,12 @@ export default function App() {
       commitEdit: handleCommitFilterEdit,
       setField: (field, value) => handleLineArtChange({ ...paramsByMode[lineArtMode], mode: lineArtMode, [field]: value }),
       state: () => ({ activeFilterId, filterOverrides, editSnapshot, currentParams: paramsByMode[lineArtMode] }),
+      thumbnails: () => filterThumbnails,
+      thumbnailsGenerating: () => thumbnailsGenerating,
+      regenerateThumbnails,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilterId, filterOverrides, editSnapshot, paramsByMode, lineArtMode])
+  }, [activeFilterId, filterOverrides, editSnapshot, paramsByMode, lineArtMode, filterThumbnails, thumbnailsGenerating, regenerateThumbnails])
 
   const handleLineArtReset = () => {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: buildDefaultParams(lineArtMode) }))
