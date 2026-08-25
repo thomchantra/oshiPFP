@@ -1247,7 +1247,7 @@ function OperationModeRow({ fillMode, onChange }: { fillMode: boolean; onChange:
 const FILL_TYPE_LABELS: Record<FillType, string> = { image: 'Image', solid: 'Solid Color', gradient: 'Gradient Map' }
 const FILL_TYPE_OPTIONS: FillType[] = ['image', 'solid', 'gradient']
 
-function FillTypeRow({ value, onChange }: { value: FillType; onChange: (v: FillType) => void }) {
+export function FillTypeRow({ value, onChange }: { value: FillType; onChange: (v: FillType) => void }) {
   return (
     <div className="field-row">
       <div className="field-row-label">

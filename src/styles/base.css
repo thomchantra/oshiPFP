@@ -849,6 +849,49 @@ button, input {
   .lineart-algoselector-row { flex-wrap: wrap; overflow-x: visible; }
   .lineart-algoselector-row .icon-button { flex: initial; }
 }
+
+/* Simplified mode's filter carousel chip (SimplifiedLineArtPanel.tsx) — reuses
+   .lineart-algoselector-row as its scroll strip, same as the Advanced algo selector. */
+.filter-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  padding: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.filter-chip.active { border-color: var(--accent-title); }
+.filter-chip-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--white-50);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.filter-chip-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.filter-chip-edit-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--accent-title); }
+.filter-chip-placeholder { width: 60%; height: 60%; border-radius: 50%; background: var(--accent-lighter); }
+.filter-chip-label {
+  color: var(--accent-dark);
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-chip.active .filter-chip-label {
+  color: var(--bg-light);
+  background: var(--accent-title);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
 /* Full-bleed highlighted bar — every submodule header/Reset row (Denoise, Tone
    Lift, Color Lift, Blending Mode, Gumi's Operation Mode) reads as its own section divider, so
    the param content below it stays plain/untinted and the dashed .lineart-divider is redundant

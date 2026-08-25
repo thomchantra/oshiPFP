@@ -28,6 +28,7 @@ import { applyPreset } from './presets/applyPreset'
 import { FILTER_MANIFEST } from './filters/filterManifest'
 import { applyFilter } from './filters/applyFilter'
 import { useFilterThumbnails } from './filters/useFilterThumbnails'
+import SimplifiedLineArtPanel from './components/SimplifiedLineArtPanel'
 import { trace } from './debug/renderTrace'
 import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
@@ -279,6 +280,12 @@ export default function App() {
   const [filterOverrides, setFilterOverrides] = useState<Record<string, Partial<LineArtParams>>>({})
   const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
   const [editSnapshot, setEditSnapshot] = useState<Partial<LineArtParams> | null>(null)
+  // "Lab" is the front-facing name for the Advanced/Simplified Line Art toggle (HeaderBar's new
+  // button) — true shows today's full LineArtPanel, false shows SimplifiedLineArtPanel's filter
+  // carousel. Deliberately not reset by resetApp(), same precedent as `theme` (a display
+  // preference, not app data).
+  const [labMode, setLabMode] = useState(true)
+  const [filterEditSheetOpen, setFilterEditSheetOpen] = useState(false)
   // Desktop-only Dual Pane toggle — off by default, only meaningful at the 900px breakpoint
   // (isDesktop below); see the tab === 'maximizer' block for how this and dualPaneMode swap out
   // the single-mode SegmentedControl for a 3-way pane-pair one.
@@ -686,15 +693,19 @@ export default function App() {
   const handleOpenFilterEdit = () => {
     if (!activeFilterId) return
     setEditSnapshot(filterOverrides[activeFilterId] ?? {})
+    setFilterEditSheetOpen(true)
   }
   const handleDiscardFilterEdit = () => {
     const filter = activeFilterId ? FILTER_MANIFEST.find((f) => f.id === activeFilterId) : undefined
-    if (!filter || editSnapshot === null) return
-    setParamsByMode((prev) => ({ ...prev, [filter.algo]: { ...prev[filter.algo], ...filter.params, ...editSnapshot } }))
+    if (filter && editSnapshot !== null) {
+      setParamsByMode((prev) => ({ ...prev, [filter.algo]: { ...prev[filter.algo], ...filter.params, ...editSnapshot } }))
+    }
     setEditSnapshot(null)
+    setFilterEditSheetOpen(false)
   }
   const handleCommitFilterEdit = () => {
     setEditSnapshot(null)
+    setFilterEditSheetOpen(false)
   }
 
   // Dev-only console hook for exercising the filter data layer before Stage D/E build its UI —
@@ -740,6 +751,7 @@ export default function App() {
     setFilterOverrides({})
     setActiveFilterId(null)
     setEditSnapshot(null)
+    setFilterEditSheetOpen(false)
     setDualPaneEnabled(false)
     setDualPaneMode('original-composite')
     setViewportDragOver(false)
@@ -778,6 +790,8 @@ export default function App() {
         devMode={devMode}
         onUnlockDevMode={() => setDevMode(true)}
         onOpenGallery={() => setGalleryOpen(true)}
+        labMode={labMode}
+        onToggleLabMode={() => setLabMode((v) => !v)}
       />
 
       {/* Rendered unconditionally — needs to work whether or not hasImage, since BlankState's
@@ -979,14 +993,29 @@ export default function App() {
           />
         )}
         {hasImage && tab === 'maximizer' && (
-          <LineArtPanel
-            params={lineArtParams}
-            onChange={handleLineArtChange}
-            onReset={handleLineArtReset}
-            subTab={lineArtSubTab}
-            onSubTabChange={setLineArtSubTab}
-            onOpenGallery={() => setGalleryOpen(true)}
-          />
+          labMode ? (
+            <LineArtPanel
+              params={lineArtParams}
+              onChange={handleLineArtChange}
+              onReset={handleLineArtReset}
+              subTab={lineArtSubTab}
+              onSubTabChange={setLineArtSubTab}
+              onOpenGallery={() => setGalleryOpen(true)}
+            />
+          ) : (
+            <SimplifiedLineArtPanel
+              params={lineArtParams}
+              onChange={handleLineArtChange}
+              activeFilterId={activeFilterId}
+              filterThumbnails={filterThumbnails}
+              thumbnailsGenerating={thumbnailsGenerating}
+              editSheetOpen={filterEditSheetOpen}
+              onSelectFilter={handleSelectFilter}
+              onOpenEditSheet={handleOpenFilterEdit}
+              onDiscardEdit={handleDiscardFilterEdit}
+              onCommitEdit={handleCommitFilterEdit}
+            />
+          )
         )}
         {hasImage && tab === 'export' && (
           <ExportPanel

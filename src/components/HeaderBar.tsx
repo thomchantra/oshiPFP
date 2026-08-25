@@ -52,6 +52,13 @@ interface HeaderBarProps {
   /** Opens AlgoGalleryModal (App.tsx owns its open state, same instance BlankState's own "Browse
    * Gallery" button opens) — works whether or not an image is loaded yet. */
   onOpenGallery: () => void
+  /** Front-facing name for the Advanced/Simplified Line Art toggle — true shows today's full
+   * LineArtPanel ("Lab"), false shows the new filter-carousel SimplifiedLineArtPanel. Named "Lab"
+   * per user direction despite the clash with the separate standalone src/lab/LabApp.tsx harness
+   * (noted, not resolved here). While Simplified, the gallery button above is hidden — that static
+   * demo-preset system and the new live-photo filter carousel would otherwise coexist confusingly. */
+  labMode: boolean
+  onToggleLabMode: () => void
 }
 
 export default function HeaderBar({
@@ -73,6 +80,8 @@ export default function HeaderBar({
   devMode,
   onUnlockDevMode,
   onOpenGallery,
+  labMode,
+  onToggleLabMode,
 }: HeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const stateFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -130,9 +139,11 @@ export default function HeaderBar({
           <button type="button" className="theme-btn" aria-label="Help" title="Help" onClick={() => openAbout('help')}>
             <Icon name="question" size={18} color="var(--accent-title)" />
           </button>
-          <button type="button" className="theme-btn" aria-label="Browse algorithm gallery" title="Browse algorithm gallery" onClick={onOpenGallery}>
-            <Icon name="slider" size={18} color="var(--accent-title)" />
-          </button>
+          {labMode && (
+            <button type="button" className="theme-btn" aria-label="Browse algorithm gallery" title="Browse algorithm gallery" onClick={onOpenGallery}>
+              <Icon name="slider" size={18} color="var(--accent-title)" />
+            </button>
+          )}
           <button type="button" className="theme-btn" aria-label="Toggle light/dark mode" title="Toggle light/dark mode" onClick={onToggleTheme}>
             <Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} color="var(--accent-title)" />
           </button>
@@ -169,6 +180,9 @@ export default function HeaderBar({
               Dual Pane View
             </IconButton>
           )}
+          <IconButton active={labMode} onClick={onToggleLabMode}>
+            🧪 Lab
+          </IconButton>
           <IconToggle2
             value={pfpMode}
             onChange={onPfpModeChange}
