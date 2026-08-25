@@ -551,7 +551,6 @@ export default function App() {
 
   const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails } = useFilterThumbnails({
     hasImage,
-    activeFilterId,
     paramsByMode,
     filterOverrides,
     liveLineArtParams: lineArtParams,

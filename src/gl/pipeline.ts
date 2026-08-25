@@ -403,6 +403,28 @@ export class Pipeline {
   private exportGradeGradientMapTarget: TargetTexture | null = null
   private exportGradeGradientMapCompositeTarget: TargetTexture | null = null
 
+  // Isolated 'thumb' slot fields — see renderThumbnail()'s own doc comment and CLAUDE.md's
+  // RenderSlot convention note. Every field here is a dedicated, small-resolution counterpart of
+  // a live field above; never read or written by anything outside renderThumbnail() and the
+  // 'thumb' branches resolveLineArtDisplay()/runColorChain() already carry.
+  private thumbCorrectedTarget: TargetTexture | null = null
+  private thumbToneExposureTarget: TargetTexture | null = null
+  private thumbColorLiftTarget: TargetTexture | null = null
+  private thumbDenoisedTarget: TargetTexture | null = null
+  private thumbDistanceMaskTarget: TargetTexture | null = null
+  private thumbMaskTarget: TargetTexture | null = null
+  private thumbSeedTargetA: TargetTexture | null = null
+  private thumbSeedTargetB: TargetTexture | null = null
+  private thumbBotanSeedTarget: TargetTexture | null = null
+  private thumbBotanFillColorTarget: TargetTexture | null = null
+  private thumbLineArtBlendTarget: TargetTexture | null = null
+  private thumbLineArtOverlayTarget: TargetTexture | null = null
+  private thumbGradeGradientMapTarget: TargetTexture | null = null
+  private thumbGradeGradientMapCompositeTarget: TargetTexture | null = null
+  private thumbLightColorTarget: TargetTexture | null = null
+  private thumbColorTarget: TargetTexture | null = null
+  private thumbNoneTarget: TargetTexture | null = null
+
   // On-screen-only "peek" slots ('previewA'/'previewB' in resolveLineArtDisplay) — used exclusively
   // to substitute an alternate view (currently only 'overlay') into the live canvas at blit time,
   // for either the single-pane preview strip (previewA) or Dual Pane's per-pane mode selector
@@ -2899,7 +2921,7 @@ export class Pipeline {
     mode: LineArtDisplayMode,
     width: number,
     height: number,
-    slot: 'primary' | 'secondary' | 'export' | 'previewA' | 'previewB',
+    slot: 'primary' | 'secondary' | 'export' | 'previewA' | 'previewB' | 'thumb',
   ): TargetTexture {
     const gl = this.gl
     const p = this.lineArt
@@ -2928,6 +2950,8 @@ export class Pipeline {
         this.lineArtPeekOverlayTarget = this.ensureTarget(this.lineArtPeekOverlayTarget, width, height)
       } else if (slot === 'previewB') {
         this.lineArtPeekOverlayTargetB = this.ensureTarget(this.lineArtPeekOverlayTargetB, width, height)
+      } else if (slot === 'thumb') {
+        this.thumbLineArtOverlayTarget = this.ensureTarget(this.thumbLineArtOverlayTarget, width, height)
       } else {
         this.lineArtOverlayPreviewTarget = this.ensureTarget(this.lineArtOverlayPreviewTarget, width, height)
       }
@@ -2935,6 +2959,7 @@ export class Pipeline {
         : slot === 'export' ? this.exportLineArtOverlayTarget!
         : slot === 'previewA' ? this.lineArtPeekOverlayTarget!
         : slot === 'previewB' ? this.lineArtPeekOverlayTargetB!
+        : slot === 'thumb' ? this.thumbLineArtOverlayTarget!
         : this.lineArtOverlayPreviewTarget!
       this.runPass(this.alphaOverWhiteProgram, target, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
@@ -2972,11 +2997,14 @@ export class Pipeline {
       this.lineArtBlendTargetB = this.ensureTarget(this.lineArtBlendTargetB, width, height)
     } else if (slot === 'export') {
       this.exportLineArtBlendTarget = this.ensureTarget(this.exportLineArtBlendTarget, width, height)
+    } else if (slot === 'thumb') {
+      this.thumbLineArtBlendTarget = this.ensureTarget(this.thumbLineArtBlendTarget, width, height)
     } else {
       this.lineArtBlendTarget = this.ensureTarget(this.lineArtBlendTarget, width, height)
     }
     const target = slot === 'secondary' ? this.lineArtBlendTargetB!
       : slot === 'export' ? this.exportLineArtBlendTarget!
+      : slot === 'thumb' ? this.thumbLineArtBlendTarget!
       : this.lineArtBlendTarget!
     this.runPass(this.compositeProgram, target, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
@@ -3041,7 +3069,7 @@ export class Pipeline {
    * lutTexture, identical for every slot — only `source` (and thus the
    * output) differs.
    */
-  private runColorChain(source: TargetTexture, width: number, height: number, slot: 'primary' | 'secondary' | 'export'): TargetTexture {
+  private runColorChain(source: TargetTexture, width: number, height: number, slot: 'primary' | 'secondary' | 'export' | 'thumb'): TargetTexture {
     const gl = this.gl
 
     // Gradient Map runs FIRST in the Grade chain, ahead of Light/Temperature/Tint/Curve/HSL —
@@ -3060,11 +3088,14 @@ export class Pipeline {
         this.gradeGradientMapTargetB = this.ensureTarget(this.gradeGradientMapTargetB, width, height)
       } else if (slot === 'export') {
         this.exportGradeGradientMapTarget = this.ensureTarget(this.exportGradeGradientMapTarget, width, height)
+      } else if (slot === 'thumb') {
+        this.thumbGradeGradientMapTarget = this.ensureTarget(this.thumbGradeGradientMapTarget, width, height)
       } else {
         this.gradeGradientMapTarget = this.ensureTarget(this.gradeGradientMapTarget, width, height)
       }
       const gradientMapped = slot === 'secondary' ? this.gradeGradientMapTargetB!
         : slot === 'export' ? this.exportGradeGradientMapTarget!
+        : slot === 'thumb' ? this.thumbGradeGradientMapTarget!
         : this.gradeGradientMapTarget!
       // Every uniform gradientMapProgram declares is set explicitly here, every call — this
       // program's sibling uniforms (fillTypeColor.frag.ts's pivot/duoTone) have leaked stale state
@@ -3084,11 +3115,14 @@ export class Pipeline {
         this.gradeGradientMapCompositeTargetB = this.ensureTarget(this.gradeGradientMapCompositeTargetB, width, height)
       } else if (slot === 'export') {
         this.exportGradeGradientMapCompositeTarget = this.ensureTarget(this.exportGradeGradientMapCompositeTarget, width, height)
+      } else if (slot === 'thumb') {
+        this.thumbGradeGradientMapCompositeTarget = this.ensureTarget(this.thumbGradeGradientMapCompositeTarget, width, height)
       } else {
         this.gradeGradientMapCompositeTarget = this.ensureTarget(this.gradeGradientMapCompositeTarget, width, height)
       }
       const composited = slot === 'secondary' ? this.gradeGradientMapCompositeTargetB!
         : slot === 'export' ? this.exportGradeGradientMapCompositeTarget!
+        : slot === 'thumb' ? this.thumbGradeGradientMapCompositeTarget!
         : this.gradeGradientMapCompositeTarget!
       // compositeProgram reused as a plain 2-input blend (uLayerCount=1) — "Blending Mode" reuses
       // blendLayer()'s existing multiply/screen/overlay math instead of a new shader, "Intensity"
@@ -3112,11 +3146,14 @@ export class Pipeline {
       this.lightColorTargetB = this.ensureTarget(this.lightColorTargetB, width, height)
     } else if (slot === 'export') {
       this.exportLightColorTarget = this.ensureTarget(this.exportLightColorTarget, width, height)
+    } else if (slot === 'thumb') {
+      this.thumbLightColorTarget = this.ensureTarget(this.thumbLightColorTarget, width, height)
     } else {
       this.lightColorTarget = this.ensureTarget(this.lightColorTarget, width, height)
     }
     const lightColor = slot === 'secondary' ? this.lightColorTargetB!
       : slot === 'export' ? this.exportLightColorTarget!
+      : slot === 'thumb' ? this.thumbLightColorTarget!
       : this.lightColorTarget!
     this.runPass(this.lightColorProgram, lightColor, width, height, () => {
       gl.activeTexture(gl.TEXTURE0)
@@ -3138,11 +3175,14 @@ export class Pipeline {
       this.colorTargetB = this.ensureTarget(this.colorTargetB, width, height)
     } else if (slot === 'export') {
       this.exportColorTarget = this.ensureTarget(this.exportColorTarget, width, height)
+    } else if (slot === 'thumb') {
+      this.thumbColorTarget = this.ensureTarget(this.thumbColorTarget, width, height)
     } else {
       this.colorTarget = this.ensureTarget(this.colorTarget, width, height)
     }
     const colorOut = slot === 'secondary' ? this.colorTargetB!
       : slot === 'export' ? this.exportColorTarget!
+      : slot === 'thumb' ? this.thumbColorTarget!
       : this.colorTarget!
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, colorOut.framebuffer)
@@ -3583,6 +3623,239 @@ export class Pipeline {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
     return { data: buffer, width, height }
+  }
+
+  /**
+   * Isolated small-resolution render for the Simplified-mode filter carousel — renders `p`
+   * (a filter's fully-resolved LineArtParams, independent of whatever mode/params are currently
+   * live) at `width`x`height` into the dedicated `thumb*` fields declared above, and reads them
+   * back directly. Never touches the on-screen canvas, `scheduleRender()`, any dirty flag
+   * (`lineArtDirty`/`colorDirty`/`botanSeedDirty`), or any non-`thumb`-prefixed target field.
+   *
+   * Deliberately does NOT reuse `computeLineArtRaw`/`runDenoise`/`runColorLift` — those methods
+   * read `this.lineArt` internally (not a parameter) and write to the single shared live fields,
+   * so calling them here would either render the wrong algorithm's tuning params (if some other
+   * mode happens to be live — e.g. Advanced mode actively tuning Chie while this runs in the
+   * background) or clobber the live view's own cached textures. This method takes `p` as its only
+   * parameter and writes only to `thumb*` fields, so it's correct regardless of what else the
+   * pipeline is doing concurrently. Every uniform on every shared program touched (`thresholdProgram`
+   * /`distanceSeedProgram`/`distanceToEdgeProgram`/`maskFillColorProgram` in particular — all four
+   * carry the `uInvert` uniform CLAUDE.md's Recurring Gotchas section documents leaking across call
+   * sites 4 times already) is set explicitly, every call.
+   *
+   * Only `mode === 'pathB'` (Botan) is implemented — this is the reference implementation for the
+   * `thumb`-slot convention `resolveLineArtDisplay`/`runColorChain` now carry; extending to another
+   * algorithm means writing this same shape (tuning prefix → that algo's own detection chain →
+   * the existing `thumb`-slot tail, unchanged) against its own field set. Returns `null` for any
+   * other mode so callers can fall back to the slower full-canvas render for algorithms that don't
+   * have this treatment yet.
+   */
+  renderThumbnail(p: LineArtParams, width: number, height: number): { data: Uint8ClampedArray; width: number; height: number } | null {
+    if (p.mode !== 'pathB') return null
+    if (!this.enhanceTarget) return null
+    const gl = this.gl
+    const base = this.enhanceTarget
+    const texelSize: [number, number] = [1 / width, 1 / height]
+
+    // --- Tuning prefix (isolated counterpart of computeLineArtRaw's own mode-agnostic prefix) ---
+    this.thumbCorrectedTarget = this.ensureTarget(this.thumbCorrectedTarget, width, height)
+    const ts = p.toneShaping
+    if (ts.mode === 'pinch') {
+      this.thumbToneExposureTarget = this.ensureTarget(this.thumbToneExposureTarget, width, height)
+      this.runPass(this.colorCorrectProgram, this.thumbToneExposureTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), 1)
+      })
+      const plateau = pinchToPlateau(ts.pinchMode)
+      this.runPass(this.plateauRampProgram, this.thumbCorrectedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.thumbToneExposureTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.plateauRampProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFloor'), plateau.floor)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerLow'), plateau.innerLow)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerHigh'), plateau.innerHigh)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uCeiling'), plateau.ceiling)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFeather'), plateau.feather)
+      })
+    } else {
+      this.runPass(this.colorCorrectProgram, this.thumbCorrectedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), ts.clipMode.blackClip)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), ts.clipMode.whiteClip)
+      })
+    }
+
+    const cl = p.colorLift
+    let liftedTarget: TargetTexture = this.thumbCorrectedTarget
+    if (cl.red !== 0 || cl.orange !== 0 || cl.yellow !== 0 || cl.green !== 0 || cl.teal !== 0 || cl.blue !== 0 || cl.purple !== 0 || cl.magenta !== 0) {
+      this.thumbColorLiftTarget = this.ensureTarget(this.thumbColorLiftTarget, width, height)
+      this.runPass(this.colorLiftProgram, this.thumbColorLiftTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, liftedTarget.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorLiftProgram, 'uSource'), 0)
+        gl.uniform1fv(
+          gl.getUniformLocation(this.colorLiftProgram, 'uLift'),
+          new Float32Array([cl.red, cl.orange, cl.yellow, cl.green, cl.teal, cl.blue, cl.purple, cl.magenta]),
+        )
+      })
+      liftedTarget = this.thumbColorLiftTarget
+    }
+
+    let detectionSource: TargetTexture = liftedTarget
+    if (p.denoise.intensity > 0) {
+      this.thumbDenoisedTarget = this.ensureTarget(this.thumbDenoisedTarget, width, height)
+      const kernelSize = Math.min(5, Math.max(1, Math.floor(p.denoise.intensity * 5)))
+      this.runPass(this.denoiseProgram, this.thumbDenoisedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, liftedTarget.texture)
+        gl.uniform1i(gl.getUniformLocation(this.denoiseProgram, 'uSource'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.denoiseProgram, 'uTexelSize'), [1 / width, 1 / height])
+        gl.uniform1i(gl.getUniformLocation(this.denoiseProgram, 'uKernelSize'), kernelSize)
+        gl.uniform1f(gl.getUniformLocation(this.denoiseProgram, 'uThreshold'), p.denoise.threshold)
+      })
+      detectionSource = this.thumbDenoisedTarget
+    }
+
+    // --- Botan detection chain (isolated counterpart of computeLineArtRaw's pathB branch) ---
+    // No seed-dirty caching here (that's live-only state, botanSeedDirty) — every thumb call does
+    // a fresh JFA pass. Cheap at thumbnail resolution regardless.
+    this.thumbDistanceMaskTarget = this.ensureTarget(this.thumbDistanceMaskTarget, width, height)
+    this.thumbMaskTarget = this.ensureTarget(this.thumbMaskTarget, width, height)
+    this.thumbSeedTargetA = this.ensureFloatTarget(this.thumbSeedTargetA, width, height)
+    this.thumbSeedTargetB = this.ensureFloatTarget(this.thumbSeedTargetB, width, height)
+
+    this.runPass(this.thresholdProgram, this.thumbMaskTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+      gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uSource'), 0)
+      gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'uThreshold'), p.threshold)
+      gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'uInvert'), 0)
+    })
+    this.runPass(this.distanceSeedProgram, this.thumbSeedTargetA, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.thumbMaskTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uMask'), 0)
+      gl.uniform1i(gl.getUniformLocation(this.distanceSeedProgram, 'uInvert'), 0)
+    })
+
+    const numPasses = Math.max(1, Math.ceil(Math.log2(Math.max(width, height))))
+    let src = this.thumbSeedTargetA
+    let dst = this.thumbSeedTargetB
+    for (let i = 0; i < numPasses; i++) {
+      const step = Math.pow(2, numPasses - 1 - i)
+      this.runPass(this.jfaStepProgram, dst, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, src.texture)
+        gl.uniform1i(gl.getUniformLocation(this.jfaStepProgram, 'uSeed'), 0)
+        gl.uniform2fv(gl.getUniformLocation(this.jfaStepProgram, 'uTexelSize'), texelSize)
+        gl.uniform1f(gl.getUniformLocation(this.jfaStepProgram, 'uStep'), step)
+      })
+      ;[src, dst] = [dst, src]
+    }
+    this.thumbSeedTargetA = src
+    this.thumbSeedTargetB = dst
+    this.thumbBotanSeedTarget = src
+
+    const feather = hardnessToFeather(p.hardness, HARDNESS_BASE_MAX_FEATHER.pathB!)
+    const botanFused = p.fillType === 'image'
+    this.runPass(this.distanceToEdgeProgram, this.thumbDistanceMaskTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.thumbBotanSeedTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uSeed'), 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, base.texture)
+      gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uOriginal'), 1)
+      gl.uniform2fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uTexSize'), [width, height])
+      gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uRadius'), p.radius)
+      gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), feather)
+      gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
+      gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
+      gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), botanFused ? 1 : 0)
+      gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
+      gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), botanFused && p.fillInvert ? 1 : 0)
+    })
+
+    let outputTarget: TargetTexture
+    if (botanFused) {
+      outputTarget = this.thumbDistanceMaskTarget
+    } else {
+      this.thumbBotanFillColorTarget = this.ensureTarget(this.thumbBotanFillColorTarget, width, height)
+      this.runPass(this.maskFillColorProgram, this.thumbBotanFillColorTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.thumbDistanceMaskTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMask'), 0)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uMaskChannel'), 1)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uOriginal'), 1)
+        gl.activeTexture(gl.TEXTURE2)
+        gl.bindTexture(gl.TEXTURE_2D, detectionSource.texture)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uDetectionSource'), 2)
+        gl.uniform1i(gl.getUniformLocation(this.maskFillColorProgram, 'uInvert'), p.fillInvert ? 1 : 0)
+        this.setFillTypeColorUniforms(this.maskFillColorProgram, {
+          fillType: p.fillType,
+          solidColor: p.tintColor,
+          shadowColor: p.gradientShadow,
+          midColor: p.gradientMid,
+          highlightColor: p.gradientHighlight,
+          pivot: p.gradientPivot,
+          duoTone: p.gradientDuoTone,
+          vividBoost: 1,
+          vividDeadzone: 1,
+          colorContrast: 1,
+        })
+      })
+      outputTarget = this.thumbBotanFillColorTarget
+    }
+
+    // --- Tail: reuse the existing 'thumb'-slot composite/grade chain unchanged ---
+    // resolveLineArtDisplay/runColorChain read blend/opacity/matte state off `this.lineArt`
+    // internally rather than taking it as a parameter (same as every other slot — they were built
+    // to share one live params object across primary/secondary/export, which are all different
+    // *views* of the same live algorithm, never a genuinely different param set). Filter thumbnails
+    // ARE a genuinely different param set, so `this.lineArt` is swapped to `p` for the duration of
+    // this synchronous call and restored immediately after — safe because JS is single-threaded and
+    // no other code can observe the swap mid-flight; every other piece of state these methods read
+    // (`this.light`/`this.colorAdjust`/`this.hslByBand`/`this.invert`/`this.gradeGradientMap`, all
+    // Grade-tab settings) is intentionally NOT swapped, since those are genuinely global and a
+    // filter's thumbnail should reflect the user's current Grade tab regardless of which filter.
+    const savedLineArt = this.lineArt
+    this.lineArt = p
+    let colorOut: TargetTexture
+    try {
+      const composited = this.resolveLineArtDisplay(base, outputTarget, 'composite', width, height, 'thumb')
+      colorOut = this.runColorChain(composited, width, height, 'thumb')
+    } finally {
+      this.lineArt = savedLineArt
+    }
+
+    return this.readTargetPixels(colorOut)
+  }
+
+  /** "None" chip's own thumbnail — the plain unprocessed photo, matching LineArtDisplayMode
+   * 'original' (see resolveLineArtDisplay's `if (mode === 'original') return base`). No shader
+   * chain needed, just a downsampling copy of `enhanceTarget` via the existing blitProgram — same
+   * isolation rules as renderThumbnail() above (dedicated `thumbNoneTarget`, never touches canvas
+   * or live/dirty state). */
+  renderNoneThumbnail(width: number, height: number): { data: Uint8ClampedArray; width: number; height: number } | null {
+    if (!this.enhanceTarget) return null
+    const gl = this.gl
+    this.thumbNoneTarget = this.ensureTarget(this.thumbNoneTarget, width, height)
+    this.runPass(this.blitProgram, this.thumbNoneTarget, width, height, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.enhanceTarget!.texture)
+      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
+    })
+    return this.readTargetPixels(this.thumbNoneTarget)
   }
 
   /**

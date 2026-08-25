@@ -18,7 +18,7 @@ function getPica() {
  * expects top-down. This flip is a one-shot cost on Export click, not a
  * per-frame path, so a simple CPU row-reverse here is fine.
  */
-function toImageData({ data, width, height }: FinalPixels): ImageData {
+export function toImageData({ data, width, height }: FinalPixels): ImageData {
   const flipped = new Uint8ClampedArray(data.length)
   const rowBytes = width * 4
   for (let y = 0; y < height; y++) {

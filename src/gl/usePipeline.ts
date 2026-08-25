@@ -122,6 +122,14 @@ export function usePipeline() {
     return pipelineRef.current?.sampleEnhancePixel(u, v) ?? null
   }, [])
 
+  const renderThumbnail = useCallback((params: LineArtParams, width: number, height: number) => {
+    return pipelineRef.current?.renderThumbnail(params, width, height) ?? null
+  }, [])
+
+  const renderNoneThumbnail = useCallback((width: number, height: number) => {
+    return pipelineRef.current?.renderNoneThumbnail(width, height) ?? null
+  }, [])
+
   return {
     canvasRef,
     error,
@@ -149,5 +157,7 @@ export function usePipeline() {
     readFinalPixels,
     readExportPixels,
     sampleEnhancePixel,
+    renderThumbnail,
+    renderNoneThumbnail,
   }
 }
