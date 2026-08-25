@@ -1,13 +1,16 @@
 import bear from '../assets/icons/bear.svg'
+import check from '../assets/icons/check.svg'
 import circle from '../assets/icons/circle.svg'
 import circlefill from '../assets/icons/circlefill.svg'
 import color from '../assets/icons/color.svg'
 import crop from '../assets/icons/crop.svg'
+import cross from '../assets/icons/cross.svg'
 import curve from '../assets/icons/curve.svg'
 import diamond from '../assets/icons/diamond.svg'
 import download from '../assets/icons/download.svg'
 import dualpane from '../assets/icons/dualpane.svg'
 import eyedropper from '../assets/icons/eyedropper.svg'
+import flask from '../assets/icons/flask.svg'
 import lineart from '../assets/icons/lineart.svg'
 import moon from '../assets/icons/moon.svg'
 import nerd from '../assets/icons/nerd.svg'
@@ -26,15 +29,18 @@ import upload from '../assets/icons/upload.svg'
 
 const ICONS = {
   bear,
+  check,
   circle,
   circlefill,
   color,
   crop,
+  cross,
   curve,
   diamond,
   download,
   dualpane,
   eyedropper,
+  flask,
   lineart,
   moon,
   nerd,

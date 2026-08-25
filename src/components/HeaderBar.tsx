@@ -50,7 +50,10 @@ interface HeaderBarProps {
    * calls this only once the user actually confirms. */
   onReset: () => void
   /** Opens AlgoGalleryModal (App.tsx owns its open state, same instance BlankState's own "Browse
-   * Gallery" button opens) — works whether or not an image is loaded yet. */
+   * Gallery" button opens) — works whether or not an image is loaded yet. Lab-mode only; hidden
+   * (not replaced) in Simplified mode for now — an earlier "Load Sample Image" replacement here
+   * collided visually with the devMode Dump State button's icon, retired pending a real design
+   * pass (LoadSampleModal.tsx stub still exists, just not wired to a header trigger yet). */
   onOpenGallery: () => void
   /** Front-facing name for the Advanced/Simplified Line Art toggle — true shows today's full
    * LineArtPanel ("Lab"), false shows the new filter-carousel SimplifiedLineArtPanel. Named "Lab"
@@ -180,8 +183,8 @@ export default function HeaderBar({
               Dual Pane View
             </IconButton>
           )}
-          <IconButton active={labMode} onClick={onToggleLabMode}>
-            🧪 Lab
+          <IconButton icon="flask" active={labMode} onClick={onToggleLabMode}>
+            Lab
           </IconButton>
           <IconToggle2
             value={pfpMode}

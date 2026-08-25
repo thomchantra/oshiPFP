@@ -26,6 +26,7 @@ import { formatStateDump, parseStateDump } from './debug/dumpState'
 import { PRESET_MANIFEST } from './presets/presetManifest'
 import { applyPreset } from './presets/applyPreset'
 import { FILTER_MANIFEST } from './filters/filterManifest'
+import { getEditableFields } from './filters/macroFields'
 import { applyFilter } from './filters/applyFilter'
 import { useFilterThumbnails } from './filters/useFilterThumbnails'
 import SimplifiedLineArtPanel from './components/SimplifiedLineArtPanel'
@@ -281,10 +282,10 @@ export default function App() {
   const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
   const [editSnapshot, setEditSnapshot] = useState<Partial<LineArtParams> | null>(null)
   // "Lab" is the front-facing name for the Advanced/Simplified Line Art toggle (HeaderBar's new
-  // button) — true shows today's full LineArtPanel, false shows SimplifiedLineArtPanel's filter
-  // carousel. Deliberately not reset by resetApp(), same precedent as `theme` (a display
-  // preference, not app data).
-  const [labMode, setLabMode] = useState(true)
+  // button) — true shows today's full LineArtPanel, false (default — Simplified is the intended
+  // front-facing experience) shows SimplifiedLineArtPanel's filter carousel. Deliberately not
+  // reset by resetApp(), same precedent as `theme` (a display preference, not app data).
+  const [labMode, setLabMode] = useState(false)
   const [filterEditSheetOpen, setFilterEditSheetOpen] = useState(false)
   // Desktop-only Dual Pane toggle — off by default, only meaningful at the 900px breakpoint
   // (isDesktop below); see the tab === 'maximizer' block for how this and dualPaneMode swap out
@@ -367,6 +368,9 @@ export default function App() {
   }
 
   const lineArtParams: LineArtParams = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
+  // Filter edit sheet is a modal-like takeover of the bottom bar's spot (see the panel-col render
+  // below) — only reachable via Simplified mode's carousel, so gated on !labMode defensively too.
+  const filterEditActive = !labMode && filterEditSheetOpen
 
   // Dev-only debug aid (see HeaderBar's dev-only Dump State button, gated on import.meta.env.DEV)
   // — a JSON snapshot of every tab's current config, for reproducing/comparing algo-tuning
@@ -547,6 +551,7 @@ export default function App() {
 
   const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails } = useFilterThumbnails({
     hasImage,
+    activeFilterId,
     paramsByMode,
     filterOverrides,
     liveLineArtParams: lineArtParams,
@@ -657,19 +662,24 @@ export default function App() {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
   }
 
-  // Keeps filterOverrides in sync with whatever the active filter's own whitelisted fields
-  // currently read in paramsByMode — every edit path (quick sliders, the future edit sheet,
-  // double-tap reset) already flows through handleLineArtChange above, so this one effect covers
-  // all of them instead of each site writing to filterOverrides itself. Only fields the active
-  // filter's own JSON declares are ever captured, so an unrelated Advanced-panel edit made while a
-  // filter happens to be active can't leak into that filter's session state.
+  // Keeps filterOverrides in sync with whatever the active filter's own editable fields currently
+  // read in paramsByMode — every edit path (quick sliders, the edit sheet, double-tap reset)
+  // already flows through handleLineArtChange above, so this one effect covers all of them instead
+  // of each site writing to filterOverrides itself. Whitelisted against getEditableFields(algo) —
+  // the FULL macro surface the Simplified panel can touch for this algo — not just the keys the
+  // filter's own JSON happens to declare: whitelisting against the JSON's own (possibly sparse)
+  // keys let an edit to a field the JSON omitted (e.g. Fill Type on a filter that only declared
+  // threshold/radius/hardness) go uncaptured and leak straight into the shared per-algo
+  // paramsByMode base, permanently bleeding into every other filter on that algo. Every filter's
+  // JSON must supply a value for every field getEditableFields returns for it to actually behave
+  // as advertised — see macroFields.ts's own doc comment.
   useEffect(() => {
     if (!activeFilterId) return
     const filter = FILTER_MANIFEST.find((f) => f.id === activeFilterId)
     if (!filter || filter.algo !== lineArtMode) return
     const current = paramsByMode[lineArtMode]
     const snapshot: Partial<LineArtParams> = {}
-    for (const key of Object.keys(filter.params) as (keyof LineArtParams)[]) {
+    for (const key of getEditableFields(filter.algo)) {
       ;(snapshot as Record<string, unknown>)[key] = current[key]
     }
     setFilterOverrides((prev) => ({ ...prev, [activeFilterId]: snapshot }))
@@ -681,10 +691,17 @@ export default function App() {
   const handleSelectFilter = (filterId: string | null) => {
     setEditSnapshot(null)
     setActiveFilterId(filterId)
-    if (!filterId) return
+    if (!filterId) {
+      // "None" — matches its own carousel thumbnail (useFilterThumbnails.ts's displayMode:
+      // 'original' render): the live canvas must actually switch to the unprocessed photo too,
+      // not just leave whatever line art was last showing.
+      setLineArtDisplayMode('original')
+      return
+    }
     const filter = FILTER_MANIFEST.find((f) => f.id === filterId)
     if (!filter) return
     applyFilter(filter, filterOverrides[filterId] ?? {}, { setLineArtMode, setParamsByMode })
+    setLineArtDisplayMode('composite')
   }
 
   // Edit-sheet reset tier (sheet UI itself is Stage E) — Discard reverts to whatever was live the
@@ -719,13 +736,13 @@ export default function App() {
       discardEdit: handleDiscardFilterEdit,
       commitEdit: handleCommitFilterEdit,
       setField: (field, value) => handleLineArtChange({ ...paramsByMode[lineArtMode], mode: lineArtMode, [field]: value }),
-      state: () => ({ activeFilterId, filterOverrides, editSnapshot, currentParams: paramsByMode[lineArtMode] }),
+      state: () => ({ activeFilterId, filterOverrides, editSnapshot, currentParams: lineArtParams }),
       thumbnails: () => filterThumbnails,
       thumbnailsGenerating: () => thumbnailsGenerating,
       regenerateThumbnails,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilterId, filterOverrides, editSnapshot, paramsByMode, lineArtMode, filterThumbnails, thumbnailsGenerating, regenerateThumbnails])
+  }, [activeFilterId, filterOverrides, editSnapshot, lineArtParams, filterThumbnails, thumbnailsGenerating, regenerateThumbnails])
 
   const handleLineArtReset = () => {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: buildDefaultParams(lineArtMode) }))
@@ -951,7 +968,11 @@ export default function App() {
           row above the drawer content instead. DOM order here doesn't need to match either —
           `order` handles both. */}
       <div className="panel-col">
-        <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />
+        {/* Filter edit sheet takes over the bottom bar's spot with its own sticky Discard/name/
+            Commit row (SimplifiedLineArtPanel.tsx) while active — no tab switching until the user
+            explicitly exits the edit flow, so the underlying tab bar is hidden rather than left
+            clickable underneath. */}
+        {!filterEditActive && <TabNav tabs={TABS} activeId={tab} disabled={!hasImage} onSelect={selectTab} />}
 
         {hasImage && tab === 'crop' && (
           <CropPanel

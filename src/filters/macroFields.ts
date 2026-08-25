@@ -1,4 +1,9 @@
+import { QUICK_MACRO_FIELDS } from './quickMacros'
 import type { LineArtMode, LineArtParams } from '../types'
+
+/** Universal Brightness macro's own fields (lineBrightness.ts + the Matte pill's
+ * overlayPassthrough/matteColor) — algo-independent, so not part of AlgoMacroFields/ColorMacroFields. */
+const BRIGHTNESS_FIELDS: (keyof LineArtParams)[] = ['opacity', 'blendMode', 'overlayPassthrough', 'matteColor']
 
 /** Extends quickMacros.ts's Threshold/Thickness pair with the remaining Invert/Hardness macros,
  * per docs/0.5-simplified-mode-mvp-plan.md's mapping table. `hardness` is omitted for Gumi
@@ -46,4 +51,25 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
     gradientMid: 'gradientMid',
     gradientHighlight: 'gradientHighlight',
   },
+}
+
+/** The complete set of LineArtParams fields the Simplified panel can edit for a given algo —
+ * quick Threshold/Thickness + Invert/Hardness + universal Brightness + Color group (if present).
+ * This, not each filter's own `params` keys, is what App.tsx's session-override capture effect
+ * whitelists: a filter JSON that only lists a subset of these (e.g. omits fillType/tintColor) would
+ * otherwise let an edit to an unlisted field leak straight into the shared per-algo paramsByMode
+ * base — permanently mutating it for every filter on that algo, not just the one being edited.
+ * Every filter's JSON must declare a value for every field this returns, so each filter stays
+ * genuinely self-contained (selecting it always resets every editable field, never inherits
+ * whatever an earlier session touched). */
+export function getEditableFields(algo: LineArtMode): (keyof LineArtParams)[] {
+  const quick = QUICK_MACRO_FIELDS[algo]
+  const macro = MACRO_FIELDS[algo]
+  const color = COLOR_MACRO_FIELDS[algo]
+  const fields: (keyof LineArtParams)[] = [quick.threshold, quick.thickness, macro.invert, ...BRIGHTNESS_FIELDS]
+  if (macro.hardness) fields.push(macro.hardness)
+  if (color) {
+    fields.push(color.fillType, color.solidColor, color.colorContrast, color.gradientPivot, color.gradientDuoTone, color.gradientShadow, color.gradientMid, color.gradientHighlight)
+  }
+  return fields
 }

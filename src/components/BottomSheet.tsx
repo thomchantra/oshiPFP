@@ -21,6 +21,19 @@ interface BottomSheetProps {
    * ceiling for when content is tall enough to hit it.
    */
   maxHeightFraction?: number
+  /** Skips the drag handle and JS-driven height entirely, even on mobile — same fixed
+   * content-height behavior the desktop branch below already uses. SimplifiedLineArtPanel uses
+   * this so the filter carousel/edit sheet always sits pinned to its natural height, with no
+   * resize handle to hide/disable separately. */
+  noDrag?: boolean
+  /** Rendered as a fixed-height sibling *below* the scrollable .bottom-sheet-content, not inside
+   * it — SimplifiedLineArtPanel's edit-sheet Discard/name/Commit row uses this instead of
+   * `position: sticky` inside the scroll area, which is unreliable in Safari when the sticky
+   * element's containing block is itself a flex column (it can render mid-content instead of
+   * pinned to the scrollport's true bottom edge). A real flex sibling has no such ambiguity: it
+   * always gets exactly its own content height, and .bottom-sheet-content (flex: 1) fills
+   * whatever's left and scrolls internally. */
+  footer?: ReactNode
 }
 
 /**
@@ -37,7 +50,7 @@ interface BottomSheetProps {
  * never shows a dead-space gap below its last row — "all rows visible, no
  * more" is the hard ceiling.
  */
-export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_FRACTION }: BottomSheetProps) {
+export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_FRACTION, noDrag = false, footer }: BottomSheetProps) {
   // The drag-to-resize sheet only makes sense in the mobile layout, where it
   // shares screen space with the viewport above it — desktop's two-column
   // layout gives the panel its own full-height column instead (see
@@ -84,10 +97,11 @@ export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_F
     setDragging(false)
   }
 
-  if (isDesktop) {
+  if (isDesktop || noDrag) {
     return (
       <div className="bottom-sheet bottom-sheet-desktop">
         <div className="bottom-sheet-content">{children}</div>
+        {footer && <div className="bottom-sheet-footer">{footer}</div>}
       </div>
     )
   }
@@ -106,6 +120,7 @@ export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_F
       <div className="bottom-sheet-content">
         <div ref={contentRef}>{children}</div>
       </div>
+      {footer && <div className="bottom-sheet-footer">{footer}</div>}
     </div>
   )
 }

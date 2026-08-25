@@ -54,9 +54,22 @@ export default function SimplifiedLineArtPanel({
     const quick = QUICK_MACRO_FIELDS[activeFilter.algo]
     const hardnessField = macroFields.hardness
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
+    const matteOn = params.blendMode === 'overwrite'
 
     return (
-      <BottomSheet>
+      <BottomSheet
+        footer={
+          <div className="crop-bottomcontent" style={{ justifyContent: 'space-between' }}>
+            <button type="button" className="filter-edit-discard-btn" aria-label="Discard changes" onClick={onDiscardEdit}>
+              <Icon name="cross" size={16} color="var(--accent-title)" />
+            </button>
+            <span className="font-button-label" style={{ color: 'var(--accent-title)' }}>{activeFilter.label}</span>
+            <button type="button" className="filter-edit-commit-btn" aria-label="Commit changes" onClick={onCommitEdit}>
+              <Icon name="check" size={16} color="var(--bg-light)" />
+            </button>
+          </div>
+        }
+      >
         <div className="lineart-slidergroup-stack">
           <GradientSlider
             label="Threshold" value={getNum(quick.threshold)} min={0} max={1}
@@ -93,23 +106,35 @@ export default function SimplifiedLineArtPanel({
           )}
           <div className="lineart-divider" />
           <GradientSlider
-            label="Brightness"
+            label={matteOn ? 'Opacity' : 'Brightness'}
             rightAccessory={
               <button
                 type="button"
-                className={`pill-toggle-btn font-button-label${params.overlayPassthrough ? ' active' : ''}`}
-                onClick={() => setField('overlayPassthrough', !params.overlayPassthrough)}
+                className={`pill-toggle-btn font-button-label${matteOn ? ' active' : ''}`}
+                onClick={() => {
+                  // Matte: single 'overwrite' blend mode (standard alpha compositing — ink where
+                  // detected, base photo shows through elsewhere) with a plain 0-100% opacity
+                  // slider, instead of the bipolar Multiply/Add "Brightness" scheme. Deliberately
+                  // NOT the same thing as Advanced mode's overlayPassthrough/matteColor toggle
+                  // (that one flattens onto a solid backing color, bypassing composite entirely,
+                  // which is why Brightness read as a no-op there) — this reuses the exact same
+                  // single-layer compositeProgram call site every other blend mode already goes
+                  // through, just with blendMode fixed to 'overwrite' and opacity capped at 1
+                  // (never entering the >1 overdrive-stacking range), so no new GL call site.
+                  if (matteOn) { onChange({ ...params, blendMode: 'multiply', opacity: 1 }); return }
+                  onChange({ ...params, blendMode: 'overwrite', opacity: 1 })
+                }}
               >
                 Matte
               </button>
             }
-            value={params.overlayPassthrough ? params.opacity * 100 : opacityBlendToBrightness(params.opacity, params.blendMode)}
-            min={params.overlayPassthrough ? 0 : -100}
+            value={matteOn ? params.opacity * 100 : opacityBlendToBrightness(params.opacity, params.blendMode)}
+            min={matteOn ? 0 : -100}
             max={100}
-            defaultValue={0}
+            defaultValue={matteOn ? 100 : 0}
             formatValue={(v) => `${Math.round(v)}%`}
             onChange={(v) => {
-              if (params.overlayPassthrough) { setField('opacity', v / 100); return }
+              if (matteOn) { setField('opacity', v / 100); return }
               onChange({ ...params, ...brightnessToOpacityBlend(v) })
             }}
           />
@@ -146,11 +171,6 @@ export default function SimplifiedLineArtPanel({
               <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>Color — coming soon for this algorithm</p>
             </>
           )}
-          <div className="crop-bottomcontent" style={{ padding: 0, marginTop: 10, justifyContent: 'space-between' }}>
-            <button type="button" className="theme-btn" aria-label="Discard changes" onClick={onDiscardEdit}>✕</button>
-            <span className="font-button-label" style={{ color: 'var(--accent-title)' }}>{activeFilter.label}</span>
-            <button type="button" className="theme-btn" aria-label="Commit changes" onClick={onCommitEdit}>✓</button>
-          </div>
         </div>
       </BottomSheet>
     )
@@ -159,7 +179,7 @@ export default function SimplifiedLineArtPanel({
   const quick = activeFilter ? QUICK_MACRO_FIELDS[activeFilter.algo] : undefined
 
   return (
-    <BottomSheet>
+    <BottomSheet noDrag>
       <div className="lineart-slidergroup-stack">
         {quick && (
           <>
@@ -173,13 +193,12 @@ export default function SimplifiedLineArtPanel({
               defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
               onChange={(v) => setField(quick.thickness, v)}
             />
-            <div className="lineart-divider" />
           </>
         )}
-        <div className="lineart-algoselector-row">
+        <div className="filter-carousel-row">
           <FilterChip
             label="None"
-            thumbnail={undefined}
+            thumbnail={filterThumbnails.none}
             active={activeFilterId === null}
             editable={false}
             onClick={() => onSelectFilter(null)}

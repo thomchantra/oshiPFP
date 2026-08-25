@@ -8,6 +8,16 @@
     "hardness": 0.6,
     "fillInvert": false,
     "opacity": 1,
-    "blendMode": "multiply"
+    "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [1, 1, 1],
+    "fillType": "image",
+    "tintColor": [0, 0, 0],
+    "colorContrast": 1,
+    "gradientShadow": [0, 0, 0],
+    "gradientMid": [0.5, 0.5, 0.5],
+    "gradientHighlight": [1, 1, 1],
+    "gradientPivot": 0,
+    "gradientDuoTone": false
   }
 }
