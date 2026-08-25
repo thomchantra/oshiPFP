@@ -25,12 +25,37 @@ import { useCropResize } from './crop/useCropResize'
 import { formatStateDump, parseStateDump } from './debug/dumpState'
 import { PRESET_MANIFEST } from './presets/presetManifest'
 import { applyPreset } from './presets/applyPreset'
+import { FILTER_MANIFEST } from './filters/filterManifest'
+import { applyFilter } from './filters/applyFilter'
 import { trace } from './debug/renderTrace'
 import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
 import { useColorAdjustments, IDENTITY_HSL_BY_BAND, IDENTITY_INVERT, IDENTITY_LIGHT, IDENTITY_COLOR_ADJUST, IDENTITY_GRADE_GRADIENT_MAP } from './color/useColorAdjustments'
 import type { PfpMode } from './components/HeaderBar'
 import type { ColorSubTab, CropMode, DualPaneMode, LineArtDisplayMode, LineArtMode, LineArtParams, LineArtSubTab, TabDef } from './types'
+import type { FilterManifestEntry } from './filters/filterTypes'
+
+declare global {
+  interface Window {
+    __pfpFilters?: {
+      list: () => FilterManifestEntry[]
+      select: (filterId: string | null) => void
+      openEdit: () => void
+      discardEdit: () => void
+      commitEdit: () => void
+      /** Pokes a single field through the same handleLineArtChange path a real macro slider would
+       * use, for exercising the filterOverrides capture effect without the Simplified panel UI
+       * that doesn't exist yet (Stage D/E). */
+      setField: (field: keyof LineArtParams, value: unknown) => void
+      state: () => {
+        activeFilterId: string | null
+        filterOverrides: Record<string, Partial<LineArtParams>>
+        editSnapshot: Partial<LineArtParams> | null
+        currentParams: LineArtParams
+      }
+    }
+  }
+}
 
 const TABS: TabDef[] = [
   { id: 'crop', label: 'CROP', icon: 'crop' },
@@ -245,6 +270,11 @@ export default function App() {
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [previewMode, setPreviewMode] = useState<'original' | 'result'>('result')
   const [paramsByMode, setParamsByMode] = useState<Record<LineArtMode, LineArtParams>>(buildInitialParamsByMode)
+  // Simplified-mode filter carousel state — session-only, cleared by resetApp/page refresh, never
+  // persisted to the (read-only) filter JSON. See src/filters/filterTypes.ts.
+  const [filterOverrides, setFilterOverrides] = useState<Record<string, Partial<LineArtParams>>>({})
+  const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
+  const [editSnapshot, setEditSnapshot] = useState<Partial<LineArtParams> | null>(null)
   // Desktop-only Dual Pane toggle — off by default, only meaningful at the 900px breakpoint
   // (isDesktop below); see the tab === 'maximizer' block for how this and dualPaneMode swap out
   // the single-mode SegmentedControl for a 3-way pane-pair one.
@@ -607,6 +637,69 @@ export default function App() {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
   }
 
+  // Keeps filterOverrides in sync with whatever the active filter's own whitelisted fields
+  // currently read in paramsByMode — every edit path (quick sliders, the future edit sheet,
+  // double-tap reset) already flows through handleLineArtChange above, so this one effect covers
+  // all of them instead of each site writing to filterOverrides itself. Only fields the active
+  // filter's own JSON declares are ever captured, so an unrelated Advanced-panel edit made while a
+  // filter happens to be active can't leak into that filter's session state.
+  useEffect(() => {
+    if (!activeFilterId) return
+    const filter = FILTER_MANIFEST.find((f) => f.id === activeFilterId)
+    if (!filter || filter.algo !== lineArtMode) return
+    const current = paramsByMode[lineArtMode]
+    const snapshot: Partial<LineArtParams> = {}
+    for (const key of Object.keys(filter.params) as (keyof LineArtParams)[]) {
+      ;(snapshot as Record<string, unknown>)[key] = current[key]
+    }
+    setFilterOverrides((prev) => ({ ...prev, [activeFilterId]: snapshot }))
+  }, [paramsByMode, lineArtMode, activeFilterId])
+
+  // Selecting a filter from the carousel — re-applies its JSON defaults plus any
+  // session-accumulated overrides for that filter (so A/B switching between filters is
+  // non-destructive), same merge-onto-current convention as applyPreset.ts.
+  const handleSelectFilter = (filterId: string | null) => {
+    setEditSnapshot(null)
+    setActiveFilterId(filterId)
+    if (!filterId) return
+    const filter = FILTER_MANIFEST.find((f) => f.id === filterId)
+    if (!filter) return
+    applyFilter(filter, filterOverrides[filterId] ?? {}, { setLineArtMode, setParamsByMode })
+  }
+
+  // Edit-sheet reset tier (sheet UI itself is Stage E) — Discard reverts to whatever was live the
+  // moment the sheet opened, not the filter's JSON default; Commit just confirms and exits, since
+  // live edits are already the persisted state.
+  const handleOpenFilterEdit = () => {
+    if (!activeFilterId) return
+    setEditSnapshot(filterOverrides[activeFilterId] ?? {})
+  }
+  const handleDiscardFilterEdit = () => {
+    const filter = activeFilterId ? FILTER_MANIFEST.find((f) => f.id === activeFilterId) : undefined
+    if (!filter || editSnapshot === null) return
+    setParamsByMode((prev) => ({ ...prev, [filter.algo]: { ...prev[filter.algo], ...filter.params, ...editSnapshot } }))
+    setEditSnapshot(null)
+  }
+  const handleCommitFilterEdit = () => {
+    setEditSnapshot(null)
+  }
+
+  // Dev-only console hook for exercising the filter data layer before Stage D/E build its UI —
+  // same pattern as renderTrace.ts's window.__pfpTrace, no-ops outside dev builds.
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === 'undefined') return
+    window.__pfpFilters = {
+      list: () => FILTER_MANIFEST,
+      select: handleSelectFilter,
+      openEdit: handleOpenFilterEdit,
+      discardEdit: handleDiscardFilterEdit,
+      commitEdit: handleCommitFilterEdit,
+      setField: (field, value) => handleLineArtChange({ ...paramsByMode[lineArtMode], mode: lineArtMode, [field]: value }),
+      state: () => ({ activeFilterId, filterOverrides, editSnapshot, currentParams: paramsByMode[lineArtMode] }),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilterId, filterOverrides, editSnapshot, paramsByMode, lineArtMode])
+
   const handleLineArtReset = () => {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: buildDefaultParams(lineArtMode) }))
     setLineArtDisplayMode('composite')
@@ -628,6 +721,9 @@ export default function App() {
     setColorDisplayMode('graded')
     setPreviewMode('result')
     setParamsByMode(buildInitialParamsByMode())
+    setFilterOverrides({})
+    setActiveFilterId(null)
+    setEditSnapshot(null)
     setDualPaneEnabled(false)
     setDualPaneMode('original-composite')
     setViewportDragOver(false)

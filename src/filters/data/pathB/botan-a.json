@@ -1,0 +1,13 @@
+{
+  "id": "botan-a",
+  "algo": "pathB",
+  "label": "Botan A",
+  "params": {
+    "threshold": 0.3,
+    "radius": 2.375,
+    "hardness": 0.6,
+    "fillInvert": false,
+    "opacity": 1,
+    "blendMode": "multiply"
+  }
+}
