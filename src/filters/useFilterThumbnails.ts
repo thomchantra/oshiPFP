@@ -113,5 +113,31 @@ export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasImage, cropSignal])
 
-  return { filterThumbnails, thumbnailsGenerating, regenerateThumbnails: () => { void runGeneration() } }
+  /** Refreshes exactly one filter's own cached thumbnail — for the moment a filter stops being
+   * the active selection (App.tsx calls this from handleSelectFilter, passing the *previous*
+   * activeFilterId, right before switching to the new one). The carousel already hides the active
+   * filter's own thumbnail behind the edit-icon overlay the whole time it's selected (see
+   * SimplifiedLineArtPanel.tsx's FilterChip), so nothing needs to update live while threshold/
+   * thickness/edit-sheet fields are actually changing — only once, when the user moves on and the
+   * real thumbnail becomes visible again, so it reflects whatever ended up committed rather than
+   * the stale default-JSON look. Silently no-ops if the algorithm has no isolated thumb path yet
+   * (renderThumbnail returns null) — the next full regeneration's fallback loop will still catch
+   * it eventually. */
+  function refreshFilterThumbnail(filterId: string) {
+    const filter = FILTER_MANIFEST.find((f) => f.id === filterId)
+    if (!filter) return
+    const { paramsByMode: pbm, filterOverrides: overrides } = latestRef.current
+    const params: LineArtParams = {
+      ...pbm[filter.algo],
+      mode: filter.algo,
+      displayMode: 'composite',
+      ...filter.params,
+      ...(overrides[filterId] ?? {}),
+    }
+    const pixels = pipeline.renderThumbnail(params, THUMB_LONGEST_SIDE, THUMB_LONGEST_SIDE)
+    if (!pixels) return
+    setFilterThumbnails((prev) => ({ ...prev, [filterId]: pixelsToDataUrl(pixels) }))
+  }
+
+  return { filterThumbnails, thumbnailsGenerating, regenerateThumbnails: () => { void runGeneration() }, refreshFilterThumbnail }
 }

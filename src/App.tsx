@@ -560,7 +560,7 @@ export default function App() {
     onRectChange: pipeline.setCropRect,
   })
 
-  const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails } = useFilterThumbnails({
+  const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails, refreshFilterThumbnail } = useFilterThumbnails({
     hasImage,
     paramsByMode,
     filterOverrides,
@@ -699,6 +699,10 @@ export default function App() {
   // session-accumulated overrides for that filter (so A/B switching between filters is
   // non-destructive), same merge-onto-current convention as applyPreset.ts.
   const handleSelectFilter = (filterId: string | null) => {
+    // Refresh the filter we're switching AWAY from — its own thumbnail was hidden behind the
+    // edit-icon overlay the whole time it was selected, so this is the one moment to catch up
+    // whatever ended up committed (or discarded back to baseline) before it becomes visible again.
+    if (activeFilterId && activeFilterId !== filterId) refreshFilterThumbnail(activeFilterId)
     setEditSnapshot(null)
     setActiveFilterId(filterId)
     if (!filterId) {

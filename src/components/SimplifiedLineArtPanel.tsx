@@ -244,7 +244,7 @@ function FilterChip({
     >
       <span className="filter-chip-thumb">
         {editable ? (
-          <span className="filter-chip-edit-icon"><Icon name="slider" size={20} color="var(--bg-light)" /></span>
+          <span className="filter-chip-edit-icon"><Icon name="slider" size={30} color="var(--bg-light)" /></span>
         ) : thumbnail ? (
           <img src={thumbnail} alt={label} />
         ) : loading ? (

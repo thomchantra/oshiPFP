@@ -423,6 +423,9 @@ export class Pipeline {
   private thumbGradeGradientMapCompositeTarget: TargetTexture | null = null
   private thumbLightColorTarget: TargetTexture | null = null
   private thumbColorTarget: TargetTexture | null = null
+  /** Final small-resolution downsample of thumbColorTarget (native res) — see renderThumbnail's
+   * own doc comment on why the detection chain runs at native res but only this gets read back. */
+  private thumbColorSmallTarget: TargetTexture | null = null
   private thumbNoneTarget: TargetTexture | null = null
 
   // On-screen-only "peek" slots ('previewA'/'previewB' in resolveLineArtDisplay) — used exclusively
@@ -3675,11 +3678,19 @@ export class Pipeline {
    * other mode so callers can fall back to the slower full-canvas render for algorithms that don't
    * have this treatment yet.
    */
-  renderThumbnail(p: LineArtParams, width: number, height: number): { data: Uint8ClampedArray; width: number; height: number } | null {
+  renderThumbnail(p: LineArtParams, outWidth: number, outHeight: number): { data: Uint8ClampedArray; width: number; height: number } | null {
     if (p.mode !== 'pathB') return null
     if (!this.enhanceTarget) return null
     const gl = this.gl
     const base = this.enhanceTarget
+    // Detection chain runs at the photo's true native resolution, not the requested thumbnail
+    // size — Botan's radius/feather/JFA step sizes are absolute-pixel values calibrated against
+    // native res, so rendering them directly at (e.g.) 128px makes a 2-3px radius cover a hugely
+    // disproportionate fraction of the image (confirmed visually: blobby, thick, wrong-proportion
+    // lines). Only the FINAL composited+graded result is downsampled, in one cheap blit pass,
+    // right before readback (see the end of this method) — keeps every isolation/no-canvas-touch
+    // guarantee, just costs more GPU time per thumbnail than rendering natively small would.
+    const { width, height } = base
     const texelSize: [number, number] = [1 / width, 1 / height]
 
     // --- Tuning prefix (isolated counterpart of computeLineArtRaw's own mode-agnostic prefix) ---
@@ -3863,7 +3874,16 @@ export class Pipeline {
       this.lineArt = savedLineArt
     }
 
-    return this.readTargetPixels(colorOut)
+    // Final downsample — GL's own bilinear sampling in this one cheap blit pass, not a second CPU
+    // resize step. readTargetPixels below stays cheap regardless of native resolution since it
+    // only ever reads this small target, never colorOut itself.
+    this.thumbColorSmallTarget = this.ensureTarget(this.thumbColorSmallTarget, outWidth, outHeight)
+    this.runPass(this.blitProgram, this.thumbColorSmallTarget, outWidth, outHeight, () => {
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, colorOut.texture)
+      gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
+    })
+    return this.readTargetPixels(this.thumbColorSmallTarget)
   }
 
   /** "None" chip's own thumbnail — the plain unprocessed photo, matching LineArtDisplayMode
