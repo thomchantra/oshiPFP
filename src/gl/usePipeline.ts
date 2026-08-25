@@ -90,6 +90,10 @@ export function usePipeline() {
     pipelineRef.current?.setLineArtActive(active)
   }, [])
 
+  const setLineArtBypassed = useCallback((bypassed: boolean) => {
+    pipelineRef.current?.setLineArtBypassed(bypassed)
+  }, [])
+
   const setPreviewMode = useCallback((mode: 'original' | 'result') => {
     pipelineRef.current?.setPreviewMode(mode)
   }, [])
@@ -149,6 +153,7 @@ export function usePipeline() {
     setResizeParams,
     setLineArtParams,
     setLineArtActive,
+    setLineArtBypassed,
     setPreviewMode,
     setTabPreviewBypass,
     setExportPreviewParams,

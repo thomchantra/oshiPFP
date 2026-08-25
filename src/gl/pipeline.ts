@@ -500,6 +500,12 @@ export class Pipeline {
   private colorDirty = true
   /** See setLineArtActive — true by default so the very first render (before anything settles it) still shows Botan. */
   private lineArtActive = true
+  /** See setLineArtBypassed — a persistent, user-driven "skip the whole module" toggle (Simplified
+   * mode's "None" filter), distinct from lineArtActive's transient crop-drag freeze. Checked ahead
+   * of lineArtActive in render()'s lineArtDirty block, plus renderExportPreview/readExportPixels
+   * (which independently recompute line art for Export) — see CLAUDE.md's RenderSlot convention
+   * note for why this needed 3 call sites, not 1. */
+  private lineArtBypassed = false
   /** See armLineArtSettle — non-null while crop interaction has frozen line-art and is waiting to reactivate it. */
   private lineArtSettleTimer: ReturnType<typeof setTimeout> | null = null
   /** Fullscreen-preview A/B toggle (App.tsx renders it only while no tab is selected) — 'original' blits cropTarget (post-crop, pre-Enhancement/Line Art/Color) instead of the fully-processed colorTarget. Only affects the on-screen canvas; Export always reads the full colorTarget regardless. */
@@ -930,6 +936,17 @@ export class Pipeline {
       this.lineArtDirty = true
       this.scheduleRender()
     }
+  }
+
+  /** Real, persistent "skip the whole line-art module" toggle — unlike setLineArtActive's
+   * transient crop-drag freeze, this stays on until explicitly turned off, and (via the 3 call
+   * sites this drives) is honored by every tab/consumer, not just a canvas-level peek while the
+   * Line Art tab happens to be open. See lineArtBypassed's own field doc comment. */
+  setLineArtBypassed(bypassed: boolean): void {
+    if (this.lineArtBypassed === bypassed) return
+    this.lineArtBypassed = bypassed
+    this.lineArtDirty = true
+    this.scheduleRender()
   }
 
   /**
@@ -3277,10 +3294,10 @@ export class Pipeline {
       return
     }
 
-    if (!this.lineArtActive || !this.lineArtRawTarget) {
-      // Line art is frozen (mid crop-drag) or hasn't computed a raw target yet this session —
-      // fall back to the pre-line-art photo (optionally graded) rather than resolve against a
-      // stale/missing raw target; this is a transient state that self-corrects next frame.
+    if (!this.lineArtActive || !this.lineArtRawTarget || this.lineArtBypassed) {
+      // Line art is frozen (mid crop-drag), bypassed (persistent "None" selection), or hasn't
+      // computed a raw target yet this session — fall back to the pre-line-art photo (optionally
+      // graded) rather than resolve against a stale/missing raw target.
       this.exportPreviewResult = this.exportColorGrade && this.colorTarget
         ? this.blendGradeIntensity(this.enhanceTarget, this.colorTarget, this.exportColorGradeIntensity, this.enhanceTarget.width, this.enhanceTarget.height)
         : this.enhanceTarget
@@ -3421,7 +3438,15 @@ export class Pipeline {
     if (!this.enhanceTarget) return
 
     if (this.lineArtDirty) {
-      if (this.lineArtActive) {
+      if (this.lineArtBypassed) {
+        // Persistent bypass ("None" filter selected) — same repoint-at-consumption pattern the
+        // frozen-passthrough branch below already uses, just driven by a real toggle instead of
+        // the transient crop-settle timer. Skips the Dual Pane branch and renderLineArt() below
+        // entirely, exactly like lineArtActive===false already does.
+        this.lineArtOutputTarget = this.enhanceTarget
+        this.lineArtOutputTargetB = this.dualPaneEnabled ? this.enhanceTarget : null
+        this.lineArtDirty = false
+      } else if (this.lineArtActive) {
         const { width, height } = this.enhanceTarget
         if (this.dualPaneEnabled) {
           // Shared raw algorithm output (Botan JFA etc. — the expensive part) computed once. Both
@@ -3912,6 +3937,16 @@ export class Pipeline {
     }
     if (!this.enhanceTarget) return null
     const { width, height } = this.enhanceTarget
+    if (this.lineArtBypassed) {
+      // Persistent bypass ("None" filter selected) — unlike exportMode==='original' above, this
+      // still respects Enhancement (crop-tab Smooth/Sharpen), it only skips the algorithm chain —
+      // matches renderExportPreview's own fallback for the identical state (line ~3280).
+      return this.readTargetPixels(
+        colorGrade && this.colorTarget
+          ? this.blendGradeIntensity(this.enhanceTarget, this.colorTarget, colorGradeIntensity, width, height)
+          : this.enhanceTarget,
+      )
+    }
     const rawTarget = this.computeLineArtRaw(this.enhanceTarget, width, height)
     const resolved = this.resolveLineArtDisplay(this.enhanceTarget, rawTarget, exportMode, width, height, 'export')
     const finalTarget = colorGrade

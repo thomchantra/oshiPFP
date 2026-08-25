@@ -372,6 +372,17 @@ export default function App() {
   // below) — only reachable via Simplified mode's carousel, so gated on !labMode defensively too.
   const filterEditActive = !labMode && filterEditSheetOpen
 
+  // Keeps the pipeline's real, cross-tab line-art bypass (pipeline.setLineArtBypassed — see its
+  // own doc comment) in sync with "Simplified mode, None selected" as a single source of truth,
+  // rather than scattering setLineArtBypassed calls across every place activeFilterId/labMode can
+  // change (handleSelectFilter, resetApp, the Lab toggle) and risking one getting missed. Lab mode
+  // has no "None" concept, so entering it always clears the bypass regardless of what was selected
+  // in Simplified mode underneath.
+  useEffect(() => {
+    pipeline.setLineArtBypassed(!labMode && activeFilterId === null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labMode, activeFilterId])
+
   // Dev-only debug aid (see HeaderBar's dev-only Dump State button, gated on import.meta.env.DEV)
   // — a JSON snapshot of every tab's current config, for reproducing/comparing algo-tuning
   // results across sessions without hand-transcribing slider values. Line Art dumps all 7
@@ -691,9 +702,12 @@ export default function App() {
     setEditSnapshot(null)
     setActiveFilterId(filterId)
     if (!filterId) {
-      // "None" — matches its own carousel thumbnail (useFilterThumbnails.ts's displayMode:
-      // 'original' render): the live canvas must actually switch to the unprocessed photo too,
-      // not just leave whatever line art was last showing.
+      // "None" — the actual pipeline bypass (pipeline.setLineArtBypassed, skips the line-art
+      // module for every tab's real output, not just a canvas peek) is kept in sync by a dedicated
+      // effect below, derived from activeFilterId/labMode — see that effect's own comment for why
+      // this isn't set directly here. setLineArtDisplayMode is purely cosmetic, keeping the LineArt
+      // tab's own ORIGINAL/COMPOSITE/OVERLAY strip (visible in Simplified mode too) consistent
+      // with what's actually showing.
       setLineArtDisplayMode('original')
       return
     }
@@ -760,7 +774,9 @@ export default function App() {
     setLineArtMode('pathB')
     setColorSubTab('light')
     setLineArtSubTab('lineart')
-    setLineArtDisplayMode('composite')
+    // Cosmetic strip state only — the real bypass effect below reacts to activeFilterId
+    // (reset right below) and labMode (untouched by reset) on its own.
+    setLineArtDisplayMode(labMode ? 'composite' : 'original')
     setColorDisplayMode('graded')
     setPreviewMode('result')
     setParamsByMode(buildInitialParamsByMode())
