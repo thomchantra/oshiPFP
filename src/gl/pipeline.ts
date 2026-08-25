@@ -3958,11 +3958,35 @@ export class Pipeline {
       })
     }
     const { data, width: w, height: h } = this.readTargetPixels(this.zoneCorrectedTarget)
-    for (let i = 0; i < data.length; i += 4) {
-      const inverted = 255 - data[i]
-      data[i] = inverted
-      data[i + 1] = inverted
-      data[i + 2] = inverted
+    // Botan (pathB) and Daiya (pathD, both its Octagon and JFA sub-modes — confirmed by direct
+    // read) literally threshold this same signal downstream (see runPass(thresholdProgram) a few
+    // hundred lines up: `detectionSource = runDenoise(runColorLift(correctedTarget))`, compared as
+    // `luminance < uThreshold`) — so for these two specifically, this can show the REAL binary
+    // ink/not-ink decision (BT.709 luminance, matching threshold.frag.ts's own formula) rather
+    // than just the continuous corrected/pinch-weight image, letting a Clip-mode (blackClip/
+    // whiteClip) tuning session converge on an actual ink preview too, not just Pinch's. Daiya's
+    // own daiyaInvertSeed flips the comparison direction, same as thresholdProgram's uInvert does.
+    // Skips colorLift/denoise (usually identity/off) as a deliberate simplification — not a fully
+    // exact preview, just close enough for finding a threshold ballpark. Not extended to Gumi/etc:
+    // Gumi's real detection input is its own separate luminance-ramp system, not this generic
+    // toneShaping prefix at all.
+    if (p.mode === 'pathB' || p.mode === 'pathD') {
+      const invert = p.mode === 'pathD' && p.daiyaInvertSeed
+      for (let i = 0; i < data.length; i += 4) {
+        const luminance01 = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255
+        const isInk = invert ? luminance01 >= p.threshold : luminance01 < p.threshold
+        const value = isInk ? 0 : 255
+        data[i] = value
+        data[i + 1] = value
+        data[i + 2] = value
+      }
+    } else {
+      for (let i = 0; i < data.length; i += 4) {
+        const inverted = 255 - data[i]
+        data[i] = inverted
+        data[i + 1] = inverted
+        data[i + 2] = inverted
+      }
     }
     return { data, width: w, height: h }
   }

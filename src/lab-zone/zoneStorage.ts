@@ -7,6 +7,18 @@ import type { ConnectedComponentStats } from '../imageStats/thresholdStats'
 export interface ZoneRecord {
   imageId: string
   algo: LineArtMode
+  /** Which Ramp Mode was actually active at record time — the fields below are captured
+   * regardless of which one, so a Clip-mode recording never silently loses what was actually
+   * tuned. See changelog/oshipfp-v0.5-instagram-mode-saga.md session 6. */
+  toneShapingMode: 'clip' | 'pinch'
+  /** Both apply upstream of blackClip/whiteClip (exposure) or the contrast pivot after it — either
+   * one changes what raw-image luminance a given clip/pinch/threshold combination actually
+   * corresponds to, so both are captured unconditionally same as clip/pinch below, not just when
+   * non-default. */
+  toneShapingExposure: number
+  toneShapingContrast: number
+  clipBlackClip: number
+  clipWhiteClip: number
   pinchPosition: number
   pinchExpand: number
   pinchFeathering: number
@@ -40,5 +52,13 @@ export function saveZoneRecords(records: ZoneRecord[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
   } catch {
     // Storage full/unavailable — same as labGridStorage.ts, not worth surfacing for a dev tool.
+  }
+}
+
+export function clearZoneRecords(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // Storage unavailable — nothing to clear.
   }
 }

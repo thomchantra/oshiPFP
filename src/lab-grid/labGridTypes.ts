@@ -3,17 +3,14 @@ import type { LabMode, LabParams } from '../lab/labPipeline'
 // The 7 named, shipped algorithms this lab targets — matches the mapping in
 // src/lineArtDefaults.ts / AlgoGalleryModal.tsx (the source of truth for
 // which path id is which character). Excludes 'original', 'v1-reference',
-// and 'pathA'/'pathE', which are older/experimental LabMode-only paths with
-// no character name and aren't part of the shipped 7-algorithm lineup —
-// pathE in particular is the parked CPU vectorize+offset path, easy to
-// confuse with pathF/Fumiko (real Sobel edge detection) since both sound
-// plausible as "the edge-finding one." pathA (continuous erosion, no
-// threshold input) was *wrongly* aliased to Botan here until 2026-08-26 —
-// production Botan is pathB (JFA distance-transform, real threshold input,
-// see labPipeline.ts's pathB branch and src/types.ts's LineArtMode union,
-// which has no 'pathA' at all). Every pre-2026-08-26 lab-grid tagging
-// dataset labeled "Botan" was actually measuring dead pathA code, not the
-// algorithm that ships — see changelog/oshipfp-v0.5-instagram-mode-saga.md.
+// 'pathA', and 'pathE' — older/experimental LabMode-only paths with no
+// character name, not part of the shipped 7-algorithm lineup. Production
+// Botan is pathB (JFA distance-transform); pathA is a discarded continuous-
+// erosion experiment with no threshold input at all — see
+// changelog/oshipfp-v0.5-instagram-mode-saga.md for why this distinction
+// matters. pathE is the parked CPU vectorize+offset path, easy to confuse
+// with pathF/Fumiko (real Sobel edge detection) since both sound plausible
+// as "the edge-finding one."
 export type AlgoId = 'pathB' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
 
 export const ALGOS: { id: AlgoId; label: string }[] = [
