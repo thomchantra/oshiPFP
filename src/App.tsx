@@ -30,6 +30,7 @@ import { getEditableFields } from './filters/macroFields'
 import { applyFilter } from './filters/applyFilter'
 import { useFilterThumbnails } from './filters/useFilterThumbnails'
 import SimplifiedLineArtPanel from './components/SimplifiedLineArtPanel'
+import LoadSampleModal from './components/LoadSampleModal'
 import { trace } from './debug/renderTrace'
 import { buildResampledCanvas, downloadBlob } from './export/exportPica'
 import { computeTarget } from './export/computeTarget'
@@ -287,6 +288,7 @@ export default function App() {
   // reset by resetApp(), same precedent as `theme` (a display preference, not app data).
   const [labMode, setLabMode] = useState(false)
   const [filterEditSheetOpen, setFilterEditSheetOpen] = useState(false)
+  const [loadSampleOpen, setLoadSampleOpen] = useState(false)
   // Desktop-only Dual Pane toggle — off by default, only meaningful at the 900px breakpoint
   // (isDesktop below); see the tab === 'maximizer' block for how this and dualPaneMode swap out
   // the single-mode SegmentedControl for a 3-way pane-pair one.
@@ -705,20 +707,15 @@ export default function App() {
     if (activeFilterId && activeFilterId !== filterId) refreshFilterThumbnail(activeFilterId)
     setEditSnapshot(null)
     setActiveFilterId(filterId)
-    if (!filterId) {
-      // "None" — the actual pipeline bypass (pipeline.setLineArtBypassed, skips the line-art
-      // module for every tab's real output, not just a canvas peek) is kept in sync by a dedicated
-      // effect below, derived from activeFilterId/labMode — see that effect's own comment for why
-      // this isn't set directly here. setLineArtDisplayMode is purely cosmetic, keeping the LineArt
-      // tab's own ORIGINAL/COMPOSITE/OVERLAY strip (visible in Simplified mode too) consistent
-      // with what's actually showing.
-      setLineArtDisplayMode('original')
-      return
-    }
+    // The pipeline bypass (pipeline.setLineArtBypassed — the real, cross-tab fix) is kept in sync
+    // by a dedicated effect below, derived from activeFilterId/labMode. The ORIGINAL/COMPOSITE/
+    // OVERLAY viewport strip (lineArtDisplayMode) is deliberately left untouched here — it's a
+    // user-controlled preview toggle, independent of which filter is selected; filter selection
+    // used to force it to 'original'/'composite', which fought with the user's own choice there.
+    if (!filterId) return
     const filter = FILTER_MANIFEST.find((f) => f.id === filterId)
     if (!filter) return
     applyFilter(filter, filterOverrides[filterId] ?? {}, { setLineArtMode, setParamsByMode })
-    setLineArtDisplayMode('composite')
   }
 
   // Edit-sheet reset tier (sheet UI itself is Stage E) — Discard reverts to whatever was live the
@@ -778,9 +775,9 @@ export default function App() {
     setLineArtMode('pathB')
     setColorSubTab('light')
     setLineArtSubTab('lineart')
-    // Cosmetic strip state only — the real bypass effect below reacts to activeFilterId
-    // (reset right below) and labMode (untouched by reset) on its own.
-    setLineArtDisplayMode(labMode ? 'composite' : 'original')
+    // The viewport strip is independent user-controlled state now (see handleSelectFilter's own
+    // comment) — reset just restores its plain default, unrelated to activeFilterId/labMode.
+    setLineArtDisplayMode('composite')
     setColorDisplayMode('graded')
     setPreviewMode('result')
     setParamsByMode(buildInitialParamsByMode())
@@ -839,6 +836,7 @@ export default function App() {
         onLoadPreset={handleLoadPreset}
         hasImage={hasImage}
       />
+      <LoadSampleModal open={loadSampleOpen} onClose={() => setLoadSampleOpen(false)} onLoadFile={pipeline.loadFile} />
 
       <div className="body-layout">
       <div className="viewport-area">
@@ -902,7 +900,14 @@ export default function App() {
             circle={pfpMode === 'circle'}
             interactive={tab === 'crop' && cropMode === 'square'}
             overlay={
-              !hasImage ? <BlankState onLoadFile={pipeline.loadFile} circle={pfpMode === 'circle'} onBrowseGallery={() => setGalleryOpen(true)} /> :
+              !hasImage ? (
+                <BlankState
+                  onLoadFile={pipeline.loadFile}
+                  circle={pfpMode === 'circle'}
+                  onBrowseGallery={() => (labMode ? setGalleryOpen(true) : setLoadSampleOpen(true))}
+                  browseGalleryLabel={labMode ? 'Browse Gallery' : 'Load Sample Image'}
+                />
+              ) :
               tab === 'export' && exportPreviewUrl && exportPreviewDims ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-light)' }}>
                   {/* Shows the actual resampled output at its true target pixel dimensions —

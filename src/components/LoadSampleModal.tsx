@@ -1,22 +1,54 @@
+import { useState } from 'react'
 import Modal from './Modal'
+import { PRESET_MANIFEST } from '../presets/presetManifest'
 
 interface LoadSampleModalProps {
   open: boolean
   onClose: () => void
+  onLoadFile: (file: File) => void
 }
 
-/** Stub — Simplified mode's "Load Sample Image" replaces Advanced mode's algorithm-gallery button
- * (see HeaderBar.tsx), since the demo-preset gallery concept doesn't apply here. This is meant to
- * become a picker over the same sample photos the presets/filters were built from (the original
- * before.webp set) so a user with no photo of their own can still try filters — flagged during
- * Stage E UI testing, not yet designed; this stub exists so the button has somewhere real to go
- * rather than being wired to a no-op. */
-export default function LoadSampleModal({ open, onClose }: LoadSampleModalProps) {
+/** Simplified mode's "Load Sample Image" — replaces Advanced mode's algorithm-gallery button (see
+ * HeaderBar.tsx/BlankState.tsx), since the demo-preset gallery concept (per-algo before/after
+ * cards, "Load Demo" applying tuning) doesn't apply in Simplified mode. This is a plain photo
+ * picker over the same before.webp set the presets/filters were built from (PRESET_MANIFEST,
+ * src/presets/data/) — every entry has its own distinct sample photo (35 total, 5 per algo), so no
+ * dedup needed. Tapping one only loads the photo itself, no tuning/preset params — the user picks
+ * filters afterward like any other photo, matching "sample photo for someone with no photo of
+ * their own to try filters on," not "load a pre-baked look." */
+export default function LoadSampleModal({ open, onClose, onLoadFile }: LoadSampleModalProps) {
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  const handlePick = async (id: string, beforeImage: string) => {
+    if (loadingId) return
+    setLoadingId(id)
+    try {
+      const response = await fetch(beforeImage)
+      const blob = await response.blob()
+      const file = new File([blob], `${id}-sample.webp`, { type: blob.type || 'image/webp' })
+      onLoadFile(file)
+      onClose()
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Load Sample Image">
-      <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>
-        Coming soon — this will let you try filters on a sample photo without uploading your own.
-      </p>
+      <div className="load-sample-grid">
+        {PRESET_MANIFEST.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="load-sample-cell"
+            disabled={!!loadingId}
+            aria-label={`Load ${preset.algoLabel} sample photo`}
+            onClick={() => void handlePick(preset.id, preset.beforeImage)}
+          >
+            <img src={preset.beforeImage} alt={`${preset.algoLabel} sample`} />
+          </button>
+        ))}
+      </div>
     </Modal>
   )
 }

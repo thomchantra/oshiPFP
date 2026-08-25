@@ -1239,6 +1239,24 @@ button, input {
   padding: 16px;
   overflow-y: auto;
 }
+/* LoadSampleModal.tsx — 3-column square grid, per docs/v05_frames/oshiPFP-loadsampleimage.png. */
+.load-sample-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.load-sample-cell {
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  background: var(--white-50);
+}
+.load-sample-cell:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+.load-sample-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Reset oshiPFP (v0.3 polish pass) — toolbar icon button. Default state matches its neighbor
    .theme-btn icon buttons (transparent bg, accent-colored icon, same as every other toolbar
    icon); the solid red fill + white icon is reserved for hover/focus, a deliberate exception

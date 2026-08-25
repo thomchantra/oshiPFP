@@ -6,12 +6,15 @@ interface BlankStateProps {
   onLoadFile: (file: File) => void
   /** Follow the header's square/circle toggle even before an image is loaded — otherwise the dashed border stays square-rounded while the outer viewport clip (see PreviewViewport) goes circular, leaving stray dash fragments clipped at odd angles. */
   circle: boolean
-  /** Opens AlgoGalleryModal — lets someone browse the algorithm/preset gallery and pick a
-   * "Load Demo" before ever uploading their own photo. */
+  /** Opens AlgoGalleryModal (Advanced/Lab mode) or LoadSampleModal (Simplified mode) — App.tsx
+   * decides which based on labMode; this component just renders whatever label/handler it's given. */
   onBrowseGallery: () => void
+  /** "Browse Gallery" (Advanced/Lab mode, opens the per-algo demo gallery) vs "Load Sample Image"
+   * (Simplified mode, opens a plain photo picker — see LoadSampleModal.tsx). */
+  browseGalleryLabel?: string
 }
 
-export default function BlankState({ onLoadFile, circle, onBrowseGallery }: BlankStateProps) {
+export default function BlankState({ onLoadFile, circle, onBrowseGallery, browseGalleryLabel = 'Browse Gallery' }: BlankStateProps) {
   const [dragOver, setDragOver] = useState(false)
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -50,7 +53,7 @@ export default function BlankState({ onLoadFile, circle, onBrowseGallery }: Blan
             }}
           />
         </label>
-        <IconButton onClick={onBrowseGallery}>Browse Gallery</IconButton>
+        <IconButton onClick={onBrowseGallery}>{browseGalleryLabel}</IconButton>
       </div>
     </div>
   )
