@@ -106,7 +106,7 @@ export default function LabGridApp() {
 
   const [state, setState] = useState<LabGridState>(() => loadLabGridState())
   const [selectedImageId, setSelectedImageId] = useState<string | null>(TEST_IMAGES[0]?.id ?? null)
-  const [selectedAlgo, setSelectedAlgo] = useState<AlgoId>('pathA')
+  const [selectedAlgo, setSelectedAlgo] = useState<AlgoId>('pathB')
   const [gridAlgos, setGridAlgos] = useState<AlgoId[]>(ALGOS.map((a) => a.id))
   const [gridIntensities, setGridIntensities] = useState<Intensity[]>([...INTENSITY_PRESETS])
 

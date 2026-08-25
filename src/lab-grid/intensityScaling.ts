@@ -21,9 +21,10 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function scaleParams(algo: AlgoId, baseline: LabParams, factor: number): Partial<LabParams> {
   switch (algo) {
-    case 'pathA':
+    case 'pathB':
       return {
-        radius: scaleField(baseline.radius, factor, 0.1, 40),
+        threshold: scaleField(baseline.threshold, factor, 0, 1),
+        radius: scaleField(baseline.radius, factor, 0, 20),
       }
     case 'pathC':
       return {

@@ -1,4 +1,11 @@
+import { IDENTITY_COLOR_LIFT } from './gl/pipeline'
 import type { LineArtMode, LineArtParams } from './types'
+
+/** Canonical list of the 7 shipped algorithms, in display order — shared by App.tsx and any lab
+ * harness that needs to iterate every mode (e.g. seeding one params object per algorithm) without
+ * re-deriving the list locally. See CLAUDE.md's Recurring Gotchas: this project has repeatedly
+ * paid for the same fact being duplicated in more than one place and drifting. */
+export const LINE_ART_MODES: LineArtMode[] = ['pathB', 'pathC', 'pathD', 'pathF', 'pathG', 'pathH', 'pathI']
 
 /** Cosmetic display names, keyed by internal mode id — shared by LineArtPanel's algo selector and
  * App.tsx's dev-only state dump (src/debug/dumpState.ts), which both need the same human-readable

@@ -3,15 +3,21 @@ import type { LabMode, LabParams } from '../lab/labPipeline'
 // The 7 named, shipped algorithms this lab targets — matches the mapping in
 // src/lineArtDefaults.ts / AlgoGalleryModal.tsx (the source of truth for
 // which path id is which character). Excludes 'original', 'v1-reference',
-// and 'pathB'/'pathE', which are older/experimental LabMode-only paths with
+// and 'pathA'/'pathE', which are older/experimental LabMode-only paths with
 // no character name and aren't part of the shipped 7-algorithm lineup —
 // pathE in particular is the parked CPU vectorize+offset path, easy to
 // confuse with pathF/Fumiko (real Sobel edge detection) since both sound
-// plausible as "the edge-finding one."
-export type AlgoId = 'pathA' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
+// plausible as "the edge-finding one." pathA (continuous erosion, no
+// threshold input) was *wrongly* aliased to Botan here until 2026-08-26 —
+// production Botan is pathB (JFA distance-transform, real threshold input,
+// see labPipeline.ts's pathB branch and src/types.ts's LineArtMode union,
+// which has no 'pathA' at all). Every pre-2026-08-26 lab-grid tagging
+// dataset labeled "Botan" was actually measuring dead pathA code, not the
+// algorithm that ships — see changelog/oshipfp-v0.5-instagram-mode-saga.md.
+export type AlgoId = 'pathB' | 'pathC' | 'pathD' | 'pathF' | 'pathG' | 'pathH' | 'pathI'
 
 export const ALGOS: { id: AlgoId; label: string }[] = [
-  { id: 'pathA', label: 'Botan' },
+  { id: 'pathB', label: 'Botan' },
   { id: 'pathC', label: 'Chie' },
   { id: 'pathD', label: 'Daiya' },
   { id: 'pathF', label: 'Fumiko' },
@@ -38,13 +44,19 @@ export interface Tier1Knob {
 
 // Tier-1 core knobs per algorithm — grounded directly in which LabParams
 // fields each mode's render() branch actually reads (src/lab/labPipeline.ts),
-// not the aspirational doc list. E.g. pathA/Botan's continuous-RGB erosion
-// has no threshold or feather input at all; pathD/Daiya's octagon-grow
-// never touches `feather`; pathF/Fumiko's Sobel edge detection has no
-// threshold either — its core knob is `sensitivity` (findEdges.frag.ts's
-// uSensitivity acts as an inverse magnitude threshold, 1/uSensitivity).
+// not the aspirational doc list. pathB/Botan's JFA distance-transform reads
+// both threshold and radius (uThreshold on the mask pass, uRadius on the
+// distance-to-edge pass) — ranges match production's real slider bounds
+// (LineArtPanel.tsx's pathB block: Threshold 0-1, Radius 0-20px);
+// pathD/Daiya's octagon-grow never touches `feather`; pathF/Fumiko's Sobel
+// edge detection has no threshold either — its core knob is `sensitivity`
+// (findEdges.frag.ts's uSensitivity acts as an inverse magnitude threshold,
+// 1/uSensitivity).
 export const TIER1_KNOBS: Record<AlgoId, Tier1Knob[]> = {
-  pathA: [{ field: 'radius', label: 'Radius', min: 0.5, max: 8, step: 0.1 }],
+  pathB: [
+    { field: 'threshold', label: 'Threshold', min: 0, max: 1, step: 0.01 },
+    { field: 'radius', label: 'Radius', min: 0, max: 20, step: 1 },
+  ],
   pathC: [
     { field: 'radius', label: 'Radius', min: 0.5, max: 8, step: 0.1 },
     { field: 'gateThreshold', label: 'Gate threshold', min: 0, max: 0.5, step: 0.01 },
@@ -183,7 +195,7 @@ export interface TagRecord {
 export type NumericLabParamKey = { [K in keyof LabParams]: LabParams[K] extends number ? K : never }[keyof LabParams]
 
 export const PRIMARY_KNOB_FIELDS: Record<AlgoId, NumericLabParamKey[]> = {
-  pathA: ['radius'],
+  pathB: ['threshold'],
   pathC: ['radius'],
   pathD: ['threshold'],
   pathF: ['sensitivity'],
