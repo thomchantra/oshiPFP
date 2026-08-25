@@ -134,6 +134,10 @@ export function usePipeline() {
     return pipelineRef.current?.renderNoneThumbnail(width, height) ?? null
   }, [])
 
+  const readToneShapingZonePixels = useCallback((params: LineArtParams) => {
+    return pipelineRef.current?.readToneShapingZonePixels(params) ?? null
+  }, [])
+
   return {
     canvasRef,
     error,
@@ -164,5 +168,6 @@ export function usePipeline() {
     sampleEnhancePixel,
     renderThumbnail,
     renderNoneThumbnail,
+    readToneShapingZonePixels,
   }
 }

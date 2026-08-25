@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
   if (includeLab) {
     input.lab = 'lab.html'
     input.labGrid = 'lab-grid.html'
+    input.labZone = 'lab-zone.html'
   }
   return {
     plugins: [react()],

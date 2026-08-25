@@ -428,6 +428,15 @@ export class Pipeline {
   private thumbColorSmallTarget: TargetTexture | null = null
   private thumbNoneTarget: TargetTexture | null = null
 
+  // Isolated 'zone' slot fields — dedicated counterparts of correctedTarget/toneExposureTarget,
+  // used only by readToneShapingZonePixels() below (a lab-only diagnostic: previews the Tone
+  // Lift/Pinch pre-processing stage's own output in isolation, before any per-algorithm detection
+  // runs on top of it). Kept as their own separate fields rather than reusing the thumb* fields
+  // above — same RenderSlot-convention reasoning as thumb* itself, just for a different isolated
+  // caller so the two isolated call paths can never contend over the same field.
+  private zoneCorrectedTarget: TargetTexture | null = null
+  private zoneToneExposureTarget: TargetTexture | null = null
+
   // On-screen-only "peek" slots ('previewA'/'previewB' in resolveLineArtDisplay) — used exclusively
   // to substitute an alternate view (currently only 'overlay') into the live canvas at blit time,
   // for either the single-pane preview strip (previewA) or Dual Pane's per-pane mode selector
@@ -3884,6 +3893,78 @@ export class Pipeline {
       gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
     })
     return this.readTargetPixels(this.thumbColorSmallTarget)
+  }
+
+  /**
+   * Lab-only diagnostic: isolated readback of the Tone Lift/Pinch pre-processing stage's own
+   * output (`correctedTarget`'s isolated counterpart, `zoneCorrectedTarget`), before any
+   * per-algorithm detection chain runs on top of it — lets a lab harness show exactly which
+   * luminance band `toneShaping.pinchMode`'s position/expand/feathering currently isolates,
+   * without needing to run threshold/JFA/etc. Reuses computeLineArtRaw's own tone-shaping prefix
+   * logic verbatim (see the top of that method), just against dedicated `zone*` fields per the
+   * RenderSlot convention — same isolation reasoning as renderThumbnail() above, kept as a
+   * separate field pair so the two isolated call paths never contend over the same target.
+   *
+   * No shader changes: plateauRamp.frag.ts already outputs band-weight as white-inside/
+   * black-outside grayscale (see its own doc comment) — this method inverts that in JS on the
+   * read-back buffer (background stays white, the isolated zone renders black), rather than
+   * adding a new uniform to a shared program.
+   *
+   * Only reads `p.toneShaping` — every other field on `p` is ignored, so callers can pass a full
+   * LineArtParams for any mode. Returns `null` if no image is loaded yet.
+   */
+  readToneShapingZonePixels(p: LineArtParams): { data: Uint8ClampedArray; width: number; height: number } | null {
+    // Force one synchronous pass first — same reasoning as readFinalPixels() above: setters go
+    // through scheduleRender (rAF-coalesced), so without this a pending-but-not-yet-fired param
+    // change could leak a stale enhanceTarget into this readback.
+    this.render()
+    if (!this.enhanceTarget) return null
+    const gl = this.gl
+    const base = this.enhanceTarget
+    const { width, height } = base
+    this.zoneCorrectedTarget = this.ensureTarget(this.zoneCorrectedTarget, width, height)
+    const ts = p.toneShaping
+    if (ts.mode === 'pinch') {
+      this.zoneToneExposureTarget = this.ensureTarget(this.zoneToneExposureTarget, width, height)
+      this.runPass(this.colorCorrectProgram, this.zoneToneExposureTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), 1)
+      })
+      const plateau = pinchToPlateau(ts.pinchMode)
+      this.runPass(this.plateauRampProgram, this.zoneCorrectedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, this.zoneToneExposureTarget!.texture)
+        gl.uniform1i(gl.getUniformLocation(this.plateauRampProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFloor'), plateau.floor)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerLow'), plateau.innerLow)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uInnerHigh'), plateau.innerHigh)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uCeiling'), plateau.ceiling)
+        gl.uniform1f(gl.getUniformLocation(this.plateauRampProgram, 'uFeather'), plateau.feather)
+      })
+    } else {
+      this.runPass(this.colorCorrectProgram, this.zoneCorrectedTarget, width, height, () => {
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, base.texture)
+        gl.uniform1i(gl.getUniformLocation(this.colorCorrectProgram, 'uSource'), 0)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uExposure'), ts.exposure)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uContrast'), Math.min(3, Math.max(0.2, 1 + ts.contrast)))
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uBlackClip'), ts.clipMode.blackClip)
+        gl.uniform1f(gl.getUniformLocation(this.colorCorrectProgram, 'uWhiteClip'), ts.clipMode.whiteClip)
+      })
+    }
+    const { data, width: w, height: h } = this.readTargetPixels(this.zoneCorrectedTarget)
+    for (let i = 0; i < data.length; i += 4) {
+      const inverted = 255 - data[i]
+      data[i] = inverted
+      data[i + 1] = inverted
+      data[i + 2] = inverted
+    }
+    return { data, width: w, height: h }
   }
 
   /** "None" chip's own thumbnail — the plain unprocessed photo, matching LineArtDisplayMode
