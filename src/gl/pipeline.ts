@@ -18,6 +18,7 @@ import { distanceToEdgeFrag } from './shaders/distanceToEdge.frag'
 import { findEdgesFrag } from './shaders/findEdges.frag'
 import { boxBlurFrag } from './shaders/boxBlur.frag'
 import { mixBlendFrag } from './shaders/mixBlend.frag'
+import { topHatDifferenceFrag } from './shaders/topHatDifference.frag'
 import { alphaModulateFrag } from './shaders/alphaModulate.frag'
 import { layerMergeFrag } from './shaders/layerMerge.frag'
 import { unsharpMaskFrag } from './shaders/unsharpMask.frag'
@@ -142,6 +143,8 @@ const IDENTITY_LINE_ART: LineArtParams = {
   // Retired from the UI — frozen off rather than deleted, keeping the pipeline branch
   // dormant/revivable instead of dead code removal.
   gumiGapClosing: false,
+  gumiTopHatMode: false,
+  gumiTopHatRadius: 2,
   gumiBlobGamma: 1,
   gumiColorBleed: false,
   gumiBleedFeather: 1.5,
@@ -265,6 +268,11 @@ export class Pipeline {
   private findEdgesProgram: WebGLProgram
   private boxBlurProgram: WebGLProgram
   private mixBlendProgram: WebGLProgram
+  /** Gumi Top-Hat cleanup's own two-texture combine (see topHatDifference.frag.ts) — not reused
+   * from mixBlendProgram (a lerp) or composite.frag.ts's Difference blend mode (built for the
+   * N-layer compositor's uniform-array shape, and doesn't do this pass's final invert back to the
+   * 0=ink convention). */
+  private topHatDifferenceProgram: WebGLProgram
   /** Porter-Duff "over" merge of two independent RGBA layers — Gumi Dual Line's only
    * consumer (see layerMerge.frag.ts's doc comment for why mixBlendProgram/composite.frag.ts
    * don't already cover this). */
@@ -470,6 +478,12 @@ export class Pipeline {
   /** Gap Closing prototype (gated by LineArtParams.gumiGapClosing) — a separate grow-then-shrink pair applied on top of gumiMaxVTarget, ping-ponging through these two rather than reusing gumiMaxHTarget/gumiMaxVTarget so this pass's own output never aliases the texture it reads as input. */
   private gumiCloseHTarget: TargetTexture | null = null
   private gumiCloseVTarget: TargetTexture | null = null
+  /** Top-Hat cleanup prototype (gated by LineArtParams.gumiTopHatMode) — separate erosion ping-pong
+   * pair plus a result target, applied to gumiMaskTarget before the grow pass above, so this
+   * pass's own writes never alias the texture it reads from mid-pass. See topHatDifference.frag.ts. */
+  private gumiTopHatErodeHTarget: TargetTexture | null = null
+  private gumiTopHatErodeVTarget: TargetTexture | null = null
+  private gumiTopHatResultTarget: TargetTexture | null = null
   /** Gumi Line mode's post-process (see runGumiLinePostProcess) — Overdrive's min-filter dilate ping-pong pair, then Hardness's blur-mix (its own ping-pong pair plus one more target for the mix output). */
   private gumiOverdriveHTarget: TargetTexture | null = null
   private gumiOverdriveVTarget: TargetTexture | null = null
@@ -618,6 +632,7 @@ export class Pipeline {
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
     this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
+    this.topHatDifferenceProgram = createProgram(this.gl, passthroughVert, topHatDifferenceFrag)
     this.layerMergeProgram = createProgram(this.gl, passthroughVert, layerMergeFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
@@ -690,7 +705,7 @@ export class Pipeline {
       'lineArtBlendTargetB', 'lineArtOverlayPreviewTargetB', 'lineArtOutputTargetB', 'lightColorTargetB', 'colorTargetB',
       'lineArtRawTarget', 'exportLineArtBlendTarget', 'exportLineArtOverlayTarget', 'exportLightColorTarget', 'exportColorTarget',
       'lineArtPeekOverlayTarget', 'lineArtPeekOverlayTargetB', 'inkCorrectTarget',
-      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget',
+      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget', 'gumiTopHatErodeHTarget', 'gumiTopHatErodeVTarget', 'gumiTopHatResultTarget',
       'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
       'gumiDualBlackColorTarget', 'gumiDualWhiteColorTarget', 'gumiDualMergeTarget',
       'gumiSeedTargetA',
@@ -720,6 +735,7 @@ export class Pipeline {
     this.findEdgesProgram = createProgram(this.gl, passthroughVert, findEdgesFrag)
     this.boxBlurProgram = createProgram(this.gl, passthroughVert, boxBlurFrag)
     this.mixBlendProgram = createProgram(this.gl, passthroughVert, mixBlendFrag)
+    this.topHatDifferenceProgram = createProgram(this.gl, passthroughVert, topHatDifferenceFrag)
     this.layerMergeProgram = createProgram(this.gl, passthroughVert, layerMergeFrag)
     this.unsharpMaskProgram = createProgram(this.gl, passthroughVert, unsharpMaskFrag)
     this.saturationAdjustProgram = createProgram(this.gl, passthroughVert, saturationAdjustFrag)
@@ -807,7 +823,7 @@ export class Pipeline {
       'lineArtRawTarget', 'exportLineArtBlendTarget', 'exportLineArtOverlayTarget', 'exportLightColorTarget', 'exportColorTarget',
       'lineArtPeekOverlayTarget', 'lineArtPeekOverlayTargetB', 'inkCorrectTarget',
       'exportGradeGradientMapTarget', 'exportGradeGradientMapCompositeTarget', 'exportGradeIntensityTarget',
-      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget',
+      'rampTarget', 'gumiBoostTarget', 'gumiMaskTarget', 'gumiMaxHTarget', 'gumiMaxVTarget', 'gumiCloseHTarget', 'gumiCloseVTarget', 'gumiTopHatErodeHTarget', 'gumiTopHatErodeVTarget', 'gumiTopHatResultTarget',
       'gumiOverdriveHTarget', 'gumiOverdriveVTarget', 'gumiHardnessHTarget', 'gumiHardnessVTarget', 'gumiHardnessMixTarget', 'gumiLineColorTarget',
       'gumiDualBlackColorTarget', 'gumiDualWhiteColorTarget', 'gumiDualMergeTarget',
       'gumiSeedTargetA', 'gumiSeedTargetB', 'gumiBlobTarget', 'gumiBleedTarget', 'gradientMapTarget', 'highPassTarget',
@@ -2436,6 +2452,49 @@ export class Pipeline {
         })
       }
 
+      // Top-Hat cleanup prototype (gated by p.gumiTopHatMode): erode the raw (deliberately
+      // overshot) threshold mask by gumiTopHatRadius, then keep only where the pre/post-erosion
+      // masks disagree — see topHatDifference.frag.ts's doc comment for why this cleans up
+      // shaded blobs while leaving genuine thin strokes untouched. Feeds the same grow/overdrive/
+      // gap-closing/fill chain below unchanged; only the mask that chain starts from differs.
+      let preGrowMask = this.gumiMaskTarget!
+      if (p.gumiTopHatMode) {
+        this.gumiTopHatErodeHTarget = this.ensureTarget(this.gumiTopHatErodeHTarget, width, height)
+        this.gumiTopHatErodeVTarget = this.ensureTarget(this.gumiTopHatErodeVTarget, width, height)
+        this.runPass(this.minFilterContinuousProgram, this.gumiTopHatErodeHTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiMaskTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uTexelSize'), texelSize)
+          gl.uniform1f(gl.getUniformLocation(this.minFilterContinuousProgram, 'uRadius'), p.gumiTopHatRadius)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uDirection'), [1, 0])
+          // TODO(verify): mode direction not yet visually confirmed for this call site — the
+          // grow pass below empirically needs uMode=1 despite looking like it should be 0 (see
+          // CLAUDE.md Recurring Gotchas), so don't trust either value here without checking the
+          // Zone view first (thin strokes should vanish, blob edges should shrink).
+          gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uMode'), 1)
+        })
+        this.runPass(this.minFilterContinuousProgram, this.gumiTopHatErodeVTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiTopHatErodeHTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uSource'), 0)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uTexelSize'), texelSize)
+          gl.uniform1f(gl.getUniformLocation(this.minFilterContinuousProgram, 'uRadius'), p.gumiTopHatRadius)
+          gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uDirection'), [0, 1])
+          gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uMode'), 1)
+        })
+        this.gumiTopHatResultTarget = this.ensureTarget(this.gumiTopHatResultTarget, width, height)
+        this.runPass(this.topHatDifferenceProgram, this.gumiTopHatResultTarget, width, height, () => {
+          gl.activeTexture(gl.TEXTURE0)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiMaskTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.topHatDifferenceProgram, 'uBefore'), 0)
+          gl.activeTexture(gl.TEXTURE1)
+          gl.bindTexture(gl.TEXTURE_2D, this.gumiTopHatErodeVTarget!.texture)
+          gl.uniform1i(gl.getUniformLocation(this.topHatDifferenceProgram, 'uAfter'), 1)
+        })
+        preGrowMask = this.gumiTopHatResultTarget
+      }
+
       this.gumiMaxHTarget = this.ensureTarget(this.gumiMaxHTarget, width, height)
       this.gumiMaxVTarget = this.ensureTarget(this.gumiMaxVTarget, width, height)
       // Uses minFilterContinuousProgram (its own private program, not the shared
@@ -2443,7 +2502,7 @@ export class Pipeline {
       // unrounded. See minFilterContinuous.frag.ts's doc comment.
       this.runPass(this.minFilterContinuousProgram, this.gumiMaxHTarget, width, height, () => {
         gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, this.gumiMaskTarget!.texture)
+        gl.bindTexture(gl.TEXTURE_2D, preGrowMask.texture)
         gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uSource'), 0)
         gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uTexelSize'), texelSize)
         gl.uniform1f(gl.getUniformLocation(this.minFilterContinuousProgram, 'uRadius'), p.radius)
@@ -4011,6 +4070,21 @@ export class Pipeline {
       }
     }
     return { data, width: w, height: h }
+  }
+
+  /**
+   * Lab-only debug readback of Gumi Top-Hat cleanup's raw output (gumiTopHatResultTarget) —
+   * reads the real GPU texture the main render already computes when gumiTopHatMode is on,
+   * rather than re-deriving the erosion/diff math in JS (that's a spatial filter, not a per-pixel
+   * function like readToneShapingZonePixels's other branches — re-deriving it here would risk
+   * exactly the lab/production drift CLAUDE.md warns about). Returns null if gumiTopHatMode is
+   * off, mode isn't pathG, or no image is loaded — this target only exists in that combination.
+   */
+  readGumiTopHatDebugPixels(p: LineArtParams): { data: Uint8ClampedArray; width: number; height: number } | null {
+    if (p.mode !== 'pathG' || !p.gumiTopHatMode) return null
+    this.render()
+    if (!this.gumiTopHatResultTarget) return null
+    return this.readTargetPixels(this.gumiTopHatResultTarget)
   }
 
   /** "None" chip's own thumbnail — the plain unprocessed photo, matching LineArtDisplayMode

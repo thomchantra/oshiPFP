@@ -159,6 +159,8 @@ export default function LabZoneApp() {
   const zoneCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const histCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const edgeHistCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const topHatDebugCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [topHatDebugImage, setTopHatDebugImage] = useState(false)
 
   const lineArtParams: LineArtParams = { ...paramsByMode[lineArtMode], mode: lineArtMode, displayMode: lineArtDisplayMode }
 
@@ -266,6 +268,28 @@ export default function LabZoneApp() {
     } finally {
       setPinchGuessLoading(false)
     }
+  }
+
+  // One-shot debug view of Gumi Top-Hat's raw output (readGumiTopHatDebugPixels reads the real
+  // GPU texture, not a JS reimplementation — see that method's own doc comment on why). Manual
+  // button rather than a live-updating effect (like Zone view) since this is a one-off prototype
+  // debug tool, not a tuning workflow yet.
+  const showTopHatDebug = () => {
+    const result = pipeline.readGumiTopHatDebugPixels(lineArtParams)
+    const canvas = topHatDebugCanvasRef.current
+    setTopHatDebugImage(true)
+    if (!result) return
+    // setTopHatDebugImage(true) above only just mounted the canvas this render — its ref won't
+    // resolve until after this synchronous block, so defer the draw to the next tick.
+    requestAnimationFrame(() => {
+      const c = topHatDebugCanvasRef.current ?? canvas
+      if (!c) return
+      c.width = result.width
+      c.height = result.height
+      const ctx = c.getContext('2d')
+      if (!ctx) return
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(result.data), result.width, result.height), 0, 0)
+    })
   }
 
   // Applies the guessed position with pinchExpand pinned to 0 (the "peak sweep" recipe) and resets
@@ -439,6 +463,8 @@ export default function LabZoneApp() {
       gumiGapClosing: lineArtParams.gumiGapClosing,
       gumiSoftDetection: lineArtParams.gumiSoftDetection,
       gumiSoftness: lineArtParams.gumiSoftness,
+      gumiTopHatMode: lineArtParams.gumiTopHatMode,
+      gumiTopHatRadius: lineArtParams.gumiTopHatRadius,
       toneShapingMode: lineArtParams.toneShaping.mode,
       toneShapingExposure: lineArtParams.toneShaping.exposure,
       toneShapingContrast: lineArtParams.toneShaping.contrast,
@@ -647,6 +673,46 @@ export default function LabZoneApp() {
                 ? `Pinch — position ${lineArtParams.toneShaping.pinchMode.position.toFixed(3)}, expand ${lineArtParams.toneShaping.pinchMode.expand.toFixed(3)}, feathering ${lineArtParams.toneShaping.pinchMode.feathering.toFixed(2)}`
                 : `Clip — black ${lineArtParams.toneShaping.clipMode.blackClip.toFixed(2)}, white ${lineArtParams.toneShaping.clipMode.whiteClip.toFixed(2)}`}
             </div>
+            <div style={{ marginTop: 8, padding: 8, border: '1px dashed #555' }}>
+              <label style={{ fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={lineArtParams.gumiTopHatMode}
+                  onChange={(e) => handleLineArtChange({ ...lineArtParams, gumiTopHatMode: e.target.checked })}
+                />
+                {' '}Top-Hat cleanup (prototype) — deliberately overshoot threshold/pinch position,
+                erode by the radius below, keep only where pre/post-erosion disagree
+              </label>
+              {lineArtParams.gumiTopHatMode && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ fontSize: 13 }}>
+                    Erosion radius: {lineArtParams.gumiTopHatRadius.toFixed(2)}px
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={0.1}
+                      value={lineArtParams.gumiTopHatRadius}
+                      onChange={(e) => handleLineArtChange({ ...lineArtParams, gumiTopHatRadius: Number(e.target.value) })}
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" onClick={showTopHatDebug}>Show Top-Hat Debug (raw mask)</button>
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                      Shows gumiTopHatResultTarget directly — before the existing grow/overdrive/
+                      blob-suppression chain runs on it, so it isolates exactly what this new stage
+                      does. Thin strokes should survive intact (black); blob interiors should drop
+                      out, leaving only their outline. If it looks backwards (blobs solid/thicker,
+                      strokes vanished), the erosion pass's uMode needs flipping in pipeline.ts.
+                    </div>
+                  </div>
+                  {topHatDebugImage && (
+                    <canvas ref={topHatDebugCanvasRef} style={{ width: '100%', maxWidth: 400, border: '1px solid #444', marginTop: 8 }} />
+                  )}
+                </div>
+              )}
+            </div>
             <div style={{ marginTop: 8 }}>
               <input
                 type="text"
@@ -689,6 +755,7 @@ export default function LabZoneApp() {
                     <th style={{ textAlign: 'left' }}>overdrive</th>
                     <th style={{ textAlign: 'left' }}>gapClose</th>
                     <th style={{ textAlign: 'left' }}>soft</th>
+                    <th style={{ textAlign: 'left' }}>topHat</th>
                     <th style={{ textAlign: 'left' }}>otsu</th>
                     <th style={{ textAlign: 'left' }}>valley</th>
                     <th style={{ textAlign: 'left' }}>brightPeak</th>
@@ -705,6 +772,7 @@ export default function LabZoneApp() {
                       <td>{r.gumiOverdrive}</td>
                       <td>{r.gumiGapClosing ? 'on' : 'off'}</td>
                       <td>{r.gumiSoftDetection ? r.gumiSoftness.toFixed(2) : 'off'}</td>
+                      <td>{r.gumiTopHatMode ? r.gumiTopHatRadius.toFixed(1) : 'off'}</td>
                       <td>{r.otsu255}</td>
                       <td>{r.valleyEmphasis255}</td>
                       <td>{r.brightPeakThreshold255} ({r.brightPeakConfidence})</td>

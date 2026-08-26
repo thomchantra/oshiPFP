@@ -345,6 +345,16 @@ export interface LineArtParams {
    * V/Y stroke intersections without permanently thickening straight runs (unlike just cranking
    * `radius`, which grows everywhere). See pipeline.ts's GUMI_GAP_CLOSING_RADIUS. */
   gumiGapClosing: boolean
+  /** Top-hat morphological cleanup prototype (see pipeline.ts's pathG branch and
+   * topHatDifference.frag.ts) — an alternative to fine threshold/pinch-position tuning for a clean
+   * detection: deliberately overshoot the threshold (letting shaded blobs bleed into the mask),
+   * then erode the raw mask by gumiTopHatRadius and keep only where the pre/post-erosion masks
+   * disagree. A stroke thinner than the erosion radius vanishes completely under erosion and
+   * survives whole; a blob wider than that keeps an interior core that gets subtracted away,
+   * leaving only its outline. Applied before the existing radius/overdrive/gap-closing/fill chain,
+   * which is otherwise unchanged. */
+  gumiTopHatMode: boolean
+  gumiTopHatRadius: number
   /** "Detection Contrast" — shared by blobMask.frag.ts and fillMask.frag.ts: reshapes their
    * distance-to-edge boundary decision from a hard single-pixel cutoff into an antialiased,
    * gamma-adjustable falloff (exact same `pow(t, gamma)` idea as distanceToEdge.frag.ts's own

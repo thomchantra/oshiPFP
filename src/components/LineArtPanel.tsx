@@ -640,6 +640,8 @@ export default function LineArtPanel({
                     gumiContrastBoost: 1,
                     blobMaxDt: 2,
                     gumiGapClosing: false,
+                    gumiTopHatMode: false,
+                    gumiTopHatRadius: 2,
                     gumiBlobGamma: 1,
                     gumiOverdrive: 0,
                     hardness: 1,

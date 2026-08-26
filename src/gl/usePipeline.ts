@@ -138,6 +138,10 @@ export function usePipeline() {
     return pipelineRef.current?.readToneShapingZonePixels(params) ?? null
   }, [])
 
+  const readGumiTopHatDebugPixels = useCallback((params: LineArtParams) => {
+    return pipelineRef.current?.readGumiTopHatDebugPixels(params) ?? null
+  }, [])
+
   return {
     canvasRef,
     error,
@@ -169,5 +173,6 @@ export function usePipeline() {
     renderThumbnail,
     renderNoneThumbnail,
     readToneShapingZonePixels,
+    readGumiTopHatDebugPixels,
   }
 }

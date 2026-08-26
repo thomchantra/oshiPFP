@@ -84,6 +84,10 @@ export const LINE_ART_MODE_DEFAULTS: Record<LineArtMode, Partial<LineArtParams>>
     // Not exposed in the UI — frozen off, keeping the pipeline branch dormant/revivable rather
     // than removing the code.
     gumiGapClosing: false,
+    // Top-hat cleanup prototype — lab-only control surface (LabZoneApp.tsx's Gumi panel), not yet
+    // a production slider. See types.ts's gumiTopHatMode doc comment.
+    gumiTopHatMode: false,
+    gumiTopHatRadius: 2,
     gumiBlobGamma: 1,
     gumiColorBleed: false,
     gumiBleedFeather: 1.5,
@@ -235,6 +239,8 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   gumiLineSolidColor: [0, 0, 0],
   gumiLineInvert: false,
   gumiGapClosing: false,
+  gumiTopHatMode: false,
+  gumiTopHatRadius: 2,
   gumiBlobGamma: 1,
   gumiColorBleed: false,
   gumiBleedFeather: 1.5,

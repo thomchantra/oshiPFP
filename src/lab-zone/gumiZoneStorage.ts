@@ -14,6 +14,8 @@ export interface GumiZoneRecord {
   gumiGapClosing: boolean
   gumiSoftDetection: boolean
   gumiSoftness: number
+  gumiTopHatMode: boolean
+  gumiTopHatRadius: number
   toneShapingMode: 'clip' | 'pinch'
   toneShapingExposure: number
   toneShapingContrast: number
