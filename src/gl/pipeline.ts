@@ -2468,10 +2468,10 @@ export class Pipeline {
           gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uTexelSize'), texelSize)
           gl.uniform1f(gl.getUniformLocation(this.minFilterContinuousProgram, 'uRadius'), p.gumiTopHatRadius)
           gl.uniform2fv(gl.getUniformLocation(this.minFilterContinuousProgram, 'uDirection'), [1, 0])
-          // TODO(verify): mode direction not yet visually confirmed for this call site — the
-          // grow pass below empirically needs uMode=1 despite looking like it should be 0 (see
-          // CLAUDE.md Recurring Gotchas), so don't trust either value here without checking the
-          // Zone view first (thin strokes should vanish, blob edges should shrink).
+          // uMode=1 erodes here (verified via the lab's Top-Hat debug readback — thin strokes
+          // vanish, blob interiors shrink to their outline, matching the design intent). Same
+          // uMode=1-for-this-direction quirk as the grow pass below — see CLAUDE.md's Recurring
+          // Gotchas before assuming shader-math intuition transfers to a new call site.
           gl.uniform1i(gl.getUniformLocation(this.minFilterContinuousProgram, 'uMode'), 1)
         })
         this.runPass(this.minFilterContinuousProgram, this.gumiTopHatErodeVTarget, width, height, () => {

@@ -1,0 +1,28 @@
+{
+  "id": "gumi-b",
+  "algo": "pathG",
+  "label": "Gumi B",
+  "params": {
+    "threshold": 0.35,
+    "blobMaxDt": 3,
+    "gumiOverdrive": 0.5,
+    "gumiLineInvert": true,
+    "radius": 2,
+    "gumiBlobGamma": 1.5,
+    "opacity": 1,
+    "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [1, 1, 1],
+    "gumiLineFillType": "solid",
+    "gumiLineSolidColor": [0, 0, 0],
+    "gumiLineColorContrast": 1,
+    "gumiLineGradientPivot": 0,
+    "gumiGradientShadow": [0, 0, 0],
+    "gumiGradientMid": [0.5, 0.5, 0.5],
+    "gumiGradientHighlight": [1, 1, 1]
+  },
+  "extraFields": [
+    { "field": "radius", "label": "Detection Radius", "min": 0, "max": 40, "step": 0.01 },
+    { "field": "gumiBlobGamma", "label": "Detection Contrast", "min": 0.2, "max": 5, "step": 0.01 }
+  ]
+}

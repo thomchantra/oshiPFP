@@ -10,6 +10,18 @@ import { MACRO_FIELDS, COLOR_MACRO_FIELDS } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import type { FillType, LineArtParams } from '../types'
 
+/** Gumi-specific: blobMask.frag.ts rejects a pixel once it sits farther than blobMaxDt from any
+ * boundary — meant to reject blob *interiors*, but a stroke whose own width (after growth) exceeds
+ * ~2×blobMaxDt has its center rejected too, hollowing out what should be one solid stroke into a
+ * double outline with the original photo showing through the middle. gumiOverdrive (a true dilate
+ * that runs after blob-rejection) is what fills that hole back in — so Thickness (mapped to
+ * blobMaxDt for Gumi, see quickMacros.ts) has to move both together, at a fixed 3:0.5 ratio, to
+ * avoid resurfacing this by construction rather than just resizing blobMaxDt alone. No other
+ * algo's Thickness macro maps to blobMaxDt (Botan/Daiya/Fumiko all map to `radius`, a real
+ * independent morphological grow with no such rejection step), so this coupling is scoped to
+ * pathG only. */
+const GUMI_OVERDRIVE_PER_THICKNESS = 0.5 / 3
+
 interface SimplifiedLineArtPanelProps {
   params: LineArtParams
   onChange: (next: LineArtParams) => void
@@ -95,7 +107,13 @@ export default function SimplifiedLineArtPanel({
           <GradientSlider
             label="Thickness" value={getNum(quick.thickness)} min={0} max={20}
             defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
-            onChange={(v) => setField(quick.thickness, v)}
+            onChange={(v) => {
+              if (activeFilter.algo === 'pathG') {
+                onChange({ ...params, [quick.thickness]: v, gumiOverdrive: v * GUMI_OVERDRIVE_PER_THICKNESS })
+                return
+              }
+              setField(quick.thickness, v)
+            }}
           />
           {hardnessField && (
             <GradientSlider
@@ -104,6 +122,14 @@ export default function SimplifiedLineArtPanel({
               onChange={(v) => setField(hardnessField, v)}
             />
           )}
+          {activeFilter.extraFields?.map((extra) => (
+            <GradientSlider
+              key={extra.field}
+              label={extra.label} value={getNum(extra.field)} min={extra.min} max={extra.max} step={extra.step}
+              defaultValue={(activeFilter.params[extra.field] as number) ?? extra.min}
+              onChange={(v) => setField(extra.field, v)}
+            />
+          ))}
           <div className="lineart-divider" />
           <GradientSlider
             label={matteOn ? 'Opacity' : 'Brightness'}
@@ -155,12 +181,12 @@ export default function SimplifiedLineArtPanel({
               {fillType === 'gradient' && (
                 <GradientFillControls
                   shadow={getColor(colorFields.gradientShadow)} mid={getColor(colorFields.gradientMid)} highlight={getColor(colorFields.gradientHighlight)}
-                  pivot={getNum(colorFields.gradientPivot)} duoTone={getBool(colorFields.gradientDuoTone)}
+                  pivot={getNum(colorFields.gradientPivot)} duoTone={colorFields.gradientDuoTone ? getBool(colorFields.gradientDuoTone) : undefined}
                   onShadowChange={(rgb) => setField(colorFields.gradientShadow, rgb)}
                   onMidChange={(rgb) => setField(colorFields.gradientMid, rgb)}
                   onHighlightChange={(rgb) => setField(colorFields.gradientHighlight, rgb)}
                   onPivotChange={(v) => setField(colorFields.gradientPivot, v)}
-                  onDuoToneChange={(v) => setField(colorFields.gradientDuoTone, v)}
+                  onDuoToneChange={colorFields.gradientDuoTone ? (v) => setField(colorFields.gradientDuoTone!, v) : undefined}
                 />
               )}
             </>

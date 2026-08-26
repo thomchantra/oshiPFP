@@ -1,10 +1,8 @@
 // Gumi (pathG)'s own ground-truth capture — a separate record shape from ZoneRecord (Botan/
 // Daiya's) and ChieZoneRecord, since Gumi's detection has its own multi-knob tuning surface
 // (contrast-boost pre-pass, overdrive, gap closing, soft detection) beyond the single threshold
-// Botan/Daiya converge on — see the auto-detection session's peakBasedThresholdBright investigation
-// in changelog/oshipfp-v0.5-instagram-mode-saga.md for why this data collection pass exists (the
-// naive mirrored-peak guess produced coarse tonal splits, not line-like selections, on several test
-// images) and thresholdStats.ts's own doc comment on the mirroring approach.
+// Botan/Daiya converge on. See changelog/oshipfp-v0.5-instagram-mode-saga.md and
+// thresholdStats.ts's peakBasedThresholdBright doc comment for the detection math this pairs with.
 export interface GumiZoneRecord {
   imageId: string
   threshold: number

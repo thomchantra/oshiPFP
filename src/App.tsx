@@ -541,9 +541,10 @@ export default function App() {
   // Keeps filterOverrides in sync with whatever the active filter's own editable fields currently
   // read in paramsByMode — every edit path (quick sliders, the edit sheet, double-tap reset)
   // already flows through handleLineArtChange above, so this one effect covers all of them instead
-  // of each site writing to filterOverrides itself. Whitelisted against getEditableFields(algo) —
-  // the FULL macro surface the Simplified panel can touch for this algo — not just the keys the
-  // filter's own JSON happens to declare: whitelisting against the JSON's own (possibly sparse)
+  // of each site writing to filterOverrides itself. Whitelisted against getEditableFields(filter) —
+  // the FULL macro surface the Simplified panel can touch for this filter (algo baseline plus any
+  // of its own extraFields) — not just the keys the filter's own JSON happens to declare:
+  // whitelisting against the JSON's own (possibly sparse)
   // keys let an edit to a field the JSON omitted (e.g. Fill Type on a filter that only declared
   // threshold/radius/hardness) go uncaptured and leak straight into the shared per-algo
   // paramsByMode base, permanently bleeding into every other filter on that algo. Every filter's
@@ -555,7 +556,7 @@ export default function App() {
     if (!filter || filter.algo !== lineArtMode) return
     const current = paramsByMode[lineArtMode]
     const snapshot: Partial<LineArtParams> = {}
-    for (const key of getEditableFields(filter.algo)) {
+    for (const key of getEditableFields(filter)) {
       ;(snapshot as Record<string, unknown>)[key] = current[key]
     }
     setFilterOverrides((prev) => ({ ...prev, [activeFilterId]: snapshot }))

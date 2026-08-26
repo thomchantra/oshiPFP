@@ -1,21 +1,12 @@
 import { pinchToPlateau } from '../tone/pinchRamp'
 
 /**
- * Gumi's "peak sweep" Pinch tuning (see changelog/oshipfp-v0.5-instagram-mode-saga.md) reframed
- * the detection knob from "raw luminance threshold" to "position of a sliding, fixed-width Tone
- * Lift Pinch window" (pinchExpand=0, pinchFeathering fixed) — sitting upstream of Gumi's own
- * threshold/contrastBoost, which stay at their neutral defaults (0.5/1) once Pinch is doing the
- * real work. Auto-detection for that knob turned out to need a shape-aware signal: plain
- * luminance-histogram peak/valley finding and connectivity/blob-size metrics both kept preferring
- * "biggest flat region" (background, skin) over the real target (a thin, curvy ink-stroke
- * network) — neither distinguishes region *size* from region *shape*. This module scores each
- * candidate position by how elongated/curvy the resulting ink mask's connected components are
- * (perimeter/area — high for thin strokes, low for round/blobby regions), which is what those
- * earlier signals were missing. Validated against a 20-image ground-truth set with real but
- * imperfect accuracy (median position error ~31/255, a handful of images still miss badly when a
- * textured/hatched region elsewhere scores higher than the real ink) — treat this as a starting
- * guess for the user to rate, not a trusted final answer, same posture as Botan/Daiya/Chie's own
- * guess flow before each was validated.
+ * Scores a candidate Tone Lift Pinch position (pinchExpand=0, fixed feathering — see
+ * changelog/oshipfp-v0.5-instagram-mode-saga.md) by how elongated/curvy the resulting ink mask's
+ * connected components are (perimeter/area — high for thin strokes, low for round/blobby
+ * regions). Sits upstream of Gumi's own threshold/contrastBoost, left at neutral defaults (0.5/1)
+ * once Pinch is doing the real selection work. Unvalidated — a starting guess for the user to
+ * rate, same posture as Botan/Daiya/Chie's own guess flow before each was validated.
  */
 
 export interface PinchPositionGuess {

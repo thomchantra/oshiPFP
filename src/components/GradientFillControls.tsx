@@ -96,31 +96,36 @@ export function GradientFillControls({
   mid: [number, number, number]
   highlight: [number, number, number]
   pivot: number
-  duoTone: boolean
+  /** Omit alongside onDuoToneChange for an algo with no live duo-tone field (e.g. Gumi's Line-mode
+   * gradient fill) — hides the toggle entirely and always shows Mid, rather than rendering a
+   * control that can't actually do anything. */
+  duoTone?: boolean
   onShadowChange: (rgb: [number, number, number]) => void
   onMidChange: (rgb: [number, number, number]) => void
   onHighlightChange: (rgb: [number, number, number]) => void
   onPivotChange: (v: number) => void
-  onDuoToneChange: (v: boolean) => void
+  onDuoToneChange?: (v: boolean) => void
 }) {
   return (
     <>
       <GradientSlider label="Gradient Pivot" value={pivot} min={-1} max={1} defaultValue={0} onChange={onPivotChange} />
-      <div
-        className="lineart-toggle-row"
-        role="button"
-        tabIndex={0}
-        onClick={() => onDuoToneChange(!duoTone)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onDuoToneChange(!duoTone)
-          }
-        }}
-      >
-        <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Duo Tone</span>
-        <ToggleSwitch on={duoTone} label="Duo Tone" />
-      </div>
+      {onDuoToneChange && (
+        <div
+          className="lineart-toggle-row"
+          role="button"
+          tabIndex={0}
+          onClick={() => onDuoToneChange(!duoTone)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onDuoToneChange(!duoTone)
+            }
+          }}
+        >
+          <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Duo Tone</span>
+          <ToggleSwitch on={!!duoTone} label="Duo Tone" />
+        </div>
+      )}
       <TintColorRow label="Shadow" tintColor={shadow} onChange={onShadowChange} />
       {!duoTone && <TintColorRow label="Mid" tintColor={mid} onChange={onMidChange} />}
       <TintColorRow label="Highlight" tintColor={highlight} onChange={onHighlightChange} />
