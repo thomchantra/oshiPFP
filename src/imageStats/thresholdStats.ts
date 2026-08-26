@@ -219,6 +219,27 @@ export function peakBasedThreshold(histogram: LuminanceHistogram): PeakThreshold
   return { threshold255: otsuThreshold(histogram), peaks: [], confidence: 'low' }
 }
 
+/**
+ * Gumi's single-band Line mode selects the *bright* side of its (identity-boosted) luminance
+ * threshold (`uInvert=1` in pipeline.ts's pathG branch — opposite polarity from Botan/Daiya's dark-
+ * ink selection). peakBasedThreshold always resolves its valley between the two *darkest* genuine
+ * peaks, so it can't be reused directly for Gumi's polarity — this reverses the histogram's bin
+ * order, runs the same peak-finding logic (now landing on the two darkest peaks in *reversed*
+ * space, i.e. the two brightest in the original), then mirrors the result back to the original
+ * scale. otsuThreshold/valleyEmphasisThreshold don't need this: both are symmetric under mirroring
+ * (their split point doesn't depend on which side is labeled "foreground"), only peakBasedThreshold's
+ * explicit darkest-two-peaks assumption is polarity-specific.
+ */
+export function peakBasedThresholdBright(histogram: LuminanceHistogram): PeakThresholdResult {
+  const mirroredBins = [...histogram.bins].reverse()
+  const result = peakBasedThreshold({ bins: mirroredBins, totalPixels: histogram.totalPixels })
+  return {
+    threshold255: 255 - result.threshold255,
+    peaks: result.peaks.map((p) => 255 - p),
+    confidence: result.confidence,
+  }
+}
+
 export interface ConnectedComponentStats {
   componentCount: number
   /** Fraction of all "ink" pixels belonging to the single largest component — high (close to 1)

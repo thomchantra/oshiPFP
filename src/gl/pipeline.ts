@@ -3967,15 +3967,37 @@ export class Pipeline {
     // whiteClip) tuning session converge on an actual ink preview too, not just Pinch's. Daiya's
     // own daiyaInvertSeed flips the comparison direction, same as thresholdProgram's uInvert does.
     // Skips colorLift/denoise (usually identity/off) as a deliberate simplification — not a fully
-    // exact preview, just close enough for finding a threshold ballpark. Not extended to Gumi/etc:
-    // Gumi's real detection input is its own separate luminance-ramp system, not this generic
-    // toneShaping prefix at all.
+    // exact preview, just close enough for finding a threshold ballpark. Gumi (pathG) reuses this
+    // same toneShaping-corrected signal too — its single-band Line mode applies one more
+    // contrast-boost pass (gumiContrastBoost, pivot-at-0.5, matching colorCorrect.frag.ts) on top
+    // before thresholding at uInvert=1 (selects the *bright* side — see threshold.frag.ts's own
+    // doc comment on the polarity), reproduced here in JS to match pipeline.ts's pathG branch.
     if (p.mode === 'pathB' || p.mode === 'pathD') {
       const invert = p.mode === 'pathD' && p.daiyaInvertSeed
       for (let i = 0; i < data.length; i += 4) {
         const luminance01 = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255
         const isInk = invert ? luminance01 >= p.threshold : luminance01 < p.threshold
         const value = isInk ? 0 : 255
+        data[i] = value
+        data[i + 1] = value
+        data[i + 2] = value
+      }
+    } else if (p.mode === 'pathG') {
+      // A pure binary cut (like Botan/Daiya's branch above) can't show how close a pixel is to
+      // flipping — useless for fine threshold dialing, only for coarse clip/pinch tuning where big
+      // regions visibly move. Within a small margin of the current threshold, show the real boosted
+      // luminance (grayscale) instead of collapsing to black/white — this is where a threshold nudge
+      // actually changes the decision, so this is where gradient/texture detail matters. Outside the
+      // margin, collapse to flat solid black (ink) / white (background matte) for a clean read of
+      // the overall composition. Lets threshold and gumiContrastBoost be judged together: moving
+      // either one reshapes both the confident black/white regions and what's currently inside the
+      // margin band.
+      const margin = 0.05
+      for (let i = 0; i < data.length; i += 4) {
+        const luminance01 = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255
+        const boosted = Math.min(1, Math.max(0, (luminance01 - 0.5) * p.gumiContrastBoost + 0.5))
+        const diff = boosted - p.threshold
+        const value = diff > margin ? 0 : diff < -margin ? 255 : Math.round(boosted * 255)
         data[i] = value
         data[i + 1] = value
         data[i + 2] = value

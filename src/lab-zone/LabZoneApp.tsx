@@ -10,6 +10,7 @@ import {
   otsuThreshold,
   valleyEmphasisThreshold,
   peakBasedThreshold,
+  peakBasedThresholdBright,
   downsampleForAnalysis,
   connectedComponentStats,
 } from '../imageStats/thresholdStats'
@@ -23,6 +24,14 @@ import { exportGuessJson } from './exportGuessJson'
 import { loadChieZoneRecords, saveChieZoneRecords, clearChieZoneRecords } from './chieZoneStorage'
 import type { ChieZoneRecord } from './chieZoneStorage'
 import { exportChieZoneJson } from './exportChieZoneJson'
+import { loadGumiZoneRecords, saveGumiZoneRecords, clearGumiZoneRecords } from './gumiZoneStorage'
+import type { GumiZoneRecord } from './gumiZoneStorage'
+import { exportGumiZoneJson } from './exportGumiZoneJson'
+import { findBestPinchPosition } from '../imageStats/pinchPositionStats'
+import type { PinchPositionGuess } from '../imageStats/pinchPositionStats'
+import { loadPinchGuessRecords, savePinchGuessRecords, clearPinchGuessRecords } from './pinchGuessStorage'
+import type { PinchGuessRecord } from './pinchGuessStorage'
+import { exportPinchGuessJson } from './exportPinchGuessJson'
 import type { LineArtDisplayMode, LineArtMode, LineArtParams, LineArtSubTab } from '../types'
 
 // Guess is only computed/shown for algorithms with a validated formula — presenting an
@@ -31,11 +40,14 @@ import type { LineArtDisplayMode, LineArtMode, LineArtParams, LineArtSubTab } fr
 // ground truth). Chie uses a plain multiplier on Otsu(edgeStrengthHistogram) instead — peak-
 // detection degenerates to Otsu's own value on Chie's histogram shape, adding nothing — with
 // gateThreshold's polarity flipped from Botan/Daiya's (higher = more restrictive here, so the
-// multiplier biases low, not high), validated only at radius=1/hardness=1 so far. Gumi/Fumiko/
+// multiplier biases low, not high), validated only at radius=1/hardness=1 so far. Gumi (single-
+// band Line mode, gumiContrastBoost fixed at its identity default of 1) reuses the same raw-
+// luminance histogram as Botan/Daiya but selects the bright side (uInvert=1 in pipeline.ts) — see
+// peakBasedThresholdBright's own doc comment. Not yet validated against ground truth. Fumiko/
 // Hinata/Tsukiko use different detection math entirely and aren't supported yet — see
 // changelog/oshipfp-v0.5-instagram-mode-saga.md session 6 for the full per-algo investigation and
 // calibration data behind all of this.
-const GUESS_SUPPORTED_MODES: LineArtMode[] = ['pathB', 'pathD', 'pathC']
+const GUESS_SUPPORTED_MODES: LineArtMode[] = ['pathB', 'pathD', 'pathC', 'pathG']
 const CHIE_GATE_MULTIPLIER = 0.55
 
 // Which field each algo's own detection strength most directly maps to — production-param
@@ -76,6 +88,9 @@ interface EdgeStats {
 }
 
 const STATS_ANALYSIS_MAX_DIMENSION = 500
+// findBestPinchPosition does an O(pixels) flood-fill per swept position (~64 positions at the
+// default step) — smaller than STATS_ANALYSIS_MAX_DIMENSION to keep the sweep responsive.
+const PINCH_SWEEP_MAX_DIMENSION = 300
 
 function drawHistogram(canvas: HTMLCanvasElement, bins: number[], markers: { value: number; color: string }[]) {
   const ctx = canvas.getContext('2d')
@@ -134,6 +149,12 @@ export default function LabZoneApp() {
   const [edgeStatsLoading, setEdgeStatsLoading] = useState(false)
   const [chieRecords, setChieRecords] = useState<ChieZoneRecord[]>(loadChieZoneRecords)
   const [chieRemark, setChieRemark] = useState('')
+  const [gumiRecords, setGumiRecords] = useState<GumiZoneRecord[]>(loadGumiZoneRecords)
+  const [gumiRemark, setGumiRemark] = useState('')
+  const [pinchGuess, setPinchGuess] = useState<PinchPositionGuess | null>(null)
+  const [pinchGuessLoading, setPinchGuessLoading] = useState(false)
+  const [pinchGuessRemark, setPinchGuessRemark] = useState('')
+  const [pinchGuessRecords, setPinchGuessRecords] = useState<PinchGuessRecord[]>(loadPinchGuessRecords)
 
   const zoneCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const histCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -153,6 +174,7 @@ export default function LabZoneApp() {
       setGuess(null)
       setStats(null)
       setEdgeStats(null)
+      setPinchGuess(null)
       return
     }
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
@@ -171,6 +193,9 @@ export default function LabZoneApp() {
   // Zone preview: pulls the Tone Lift/Pinch stage's own isolated output whenever the relevant
   // params (or the loaded image) change, but only while that view is actually selected — no
   // point paying for the extra GPU readback while looking at the live composite instead.
+  // Deps must list every field readToneShapingZonePixels actually reads beyond toneShaping —
+  // threshold/daiyaInvertSeed (Botan/Daiya's binary branch) and gumiContrastBoost (Gumi's) — not
+  // just toneShaping, or moving those sliders while Zone is open silently no-ops (stale canvas).
   useEffect(() => {
     if (viewMode !== 'zone') return
     const result = pipeline.readToneShapingZonePixels(lineArtParams)
@@ -183,7 +208,7 @@ export default function LabZoneApp() {
     ctx.putImageData(new ImageData(new Uint8ClampedArray(result.data), result.width, result.height), 0, 0)
     // pipeline identity is stable; only re-run when the relevant params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, lineArtParams.toneShaping, selectedImage, currentFile])
+  }, [viewMode, lineArtParams.toneShaping, lineArtParams.threshold, lineArtParams.daiyaInvertSeed, lineArtParams.gumiContrastBoost, selectedImage, currentFile])
 
   const loadTestImage = async (image: TestImage) => {
     const file = await fetchTestImageFile(image)
@@ -192,6 +217,7 @@ export default function LabZoneApp() {
     setStats(null)
     setGuess(null)
     setEdgeStats(null)
+    setPinchGuess(null)
     await pipeline.loadFile(file)
   }
 
@@ -201,6 +227,7 @@ export default function LabZoneApp() {
     setStats(null)
     setGuess(null)
     setEdgeStats(null)
+    setPinchGuess(null)
     await pipeline.loadFile(file)
   }
 
@@ -216,10 +243,70 @@ export default function LabZoneApp() {
       const componentsAtValley = connectedComponentStats(downsampled.data, downsampled.width, downsampled.height, valleyEmphasis255)
       const componentsAtOtsu = connectedComponentStats(downsampled.data, downsampled.width, downsampled.height, otsu255)
       setStats({ otsu255, valleyEmphasis255, componentsAtValley, componentsAtOtsu, histogramBins: histogram.bins })
-      setGuess(peakBasedThreshold(histogram))
+      // Gumi selects the bright side of the histogram (see peakBasedThresholdBright's doc comment)
+      // — otsu255/valleyEmphasis255 above are symmetric and stay valid as-is for either polarity.
+      setGuess(lineArtMode === 'pathG' ? peakBasedThresholdBright(histogram) : peakBasedThreshold(histogram))
     } finally {
       setStatsLoading(false)
     }
+  }
+
+  // Gumi's Pinch-position guess (stroke-shape-score sweep, see pinchPositionStats.ts) — a separate
+  // algorithm from the threshold-based `guess` above, targeting toneShaping.pinchMode.position
+  // instead. Feathering is read from the live pinchMode value (not hardcoded) so the sweep matches
+  // whatever feathering the user has already converged on for this image.
+  const computePinchGuess = async () => {
+    if (!currentFile) return
+    setPinchGuessLoading(true)
+    try {
+      const full = await decodeToImageData(currentFile)
+      const downsampled = downsampleForAnalysis(full.data as Uint8ClampedArray, full.width, full.height, PINCH_SWEEP_MAX_DIMENSION)
+      const best = findBestPinchPosition(downsampled.data, downsampled.width, downsampled.height, lineArtParams.toneShaping.pinchMode.feathering)
+      setPinchGuess(best)
+    } finally {
+      setPinchGuessLoading(false)
+    }
+  }
+
+  // Applies the guessed position with pinchExpand pinned to 0 (the "peak sweep" recipe) and resets
+  // threshold/gumiContrastBoost to their neutral defaults — matching the recipe the guess was
+  // validated against (see pinchPositionStats.ts doc comment), where Pinch position does the real
+  // selection work and those two fields just ride along at identity. Switches to Zone view so the
+  // resulting mask is immediately visible for rating, not the full composite.
+  const applyPinchGuessToLive = () => {
+    if (!pinchGuess) return
+    handleLineArtChange({
+      ...lineArtParams,
+      threshold: 0.5,
+      gumiContrastBoost: 1,
+      toneShaping: {
+        ...lineArtParams.toneShaping,
+        mode: 'pinch',
+        pinchMode: {
+          ...lineArtParams.toneShaping.pinchMode,
+          position: pinchGuess.position255 / 255,
+          expand: 0,
+        },
+      },
+    })
+    setViewMode('zone')
+  }
+
+  const recordPinchGuessRating = (rating: PinchGuessRecord['rating']) => {
+    if (!selectedImage || !pinchGuess) return
+    const record: PinchGuessRecord = {
+      imageId: selectedImage.id,
+      guessedPosition255: pinchGuess.position255,
+      guessScore: pinchGuess.score,
+      guessDensity: pinchGuess.density,
+      rating,
+      ...(pinchGuessRemark ? { remark: pinchGuessRemark } : {}),
+      timestamp: Date.now(),
+    }
+    const next = [...pinchGuessRecords, record]
+    setPinchGuessRecords(next)
+    savePinchGuessRecords(next)
+    setPinchGuessRemark('')
   }
 
   useEffect(() => {
@@ -333,6 +420,44 @@ export default function LabZoneApp() {
     setChieRecords(next)
     saveChieZoneRecords(next)
     setChieRemark('')
+  }
+
+  // Gumi ground truth: captures every knob the user actually converged on manually (threshold,
+  // radius, contrast boost, overdrive, gap closing, soft detection) — not just threshold, since
+  // Gumi's single-band Line mode is a genuinely multi-knob tuning surface (see gumiZoneStorage.ts's
+  // doc comment). Reuses the shared Stats/guess panel's computeStats() output (same raw-luminance
+  // histogram domain Botan/Daiya use, since gumiContrastBoost defaults to 1/identity) rather than a
+  // separate compute step — stats/guess are already generic across modes.
+  const recordGumiGroundTruth = () => {
+    if (!selectedImage || !stats || !guess || lineArtMode !== 'pathG') return
+    const record: GumiZoneRecord = {
+      imageId: selectedImage.id,
+      threshold: lineArtParams.threshold,
+      radius: lineArtParams.radius,
+      gumiContrastBoost: lineArtParams.gumiContrastBoost,
+      gumiOverdrive: lineArtParams.gumiOverdrive,
+      gumiGapClosing: lineArtParams.gumiGapClosing,
+      gumiSoftDetection: lineArtParams.gumiSoftDetection,
+      gumiSoftness: lineArtParams.gumiSoftness,
+      toneShapingMode: lineArtParams.toneShaping.mode,
+      toneShapingExposure: lineArtParams.toneShaping.exposure,
+      toneShapingContrast: lineArtParams.toneShaping.contrast,
+      clipBlackClip: lineArtParams.toneShaping.clipMode.blackClip,
+      clipWhiteClip: lineArtParams.toneShaping.clipMode.whiteClip,
+      pinchPosition: lineArtParams.toneShaping.pinchMode.position,
+      pinchExpand: lineArtParams.toneShaping.pinchMode.expand,
+      pinchFeathering: lineArtParams.toneShaping.pinchMode.feathering,
+      otsu255: stats.otsu255,
+      valleyEmphasis255: stats.valleyEmphasis255,
+      brightPeakThreshold255: guess.threshold255,
+      brightPeakConfidence: guess.confidence,
+      ...(gumiRemark ? { remark: gumiRemark } : {}),
+      timestamp: Date.now(),
+    }
+    const next = [...gumiRecords, record]
+    setGumiRecords(next)
+    saveGumiZoneRecords(next)
+    setGumiRemark('')
   }
 
   const recordGroundTruth = () => {
@@ -467,7 +592,7 @@ export default function LabZoneApp() {
           return (
           <div style={{ marginTop: 16, borderTop: '1px solid #333', paddingTop: 12 }}>
             <div style={{ fontSize: 13 }}>
-              <span style={{ color: '#c060e0' }}>■</span> {lineArtMode === 'pathC' ? `Gate threshold guess (${CHIE_GATE_MULTIPLIER}× Otsu)` : 'Peak-based guess'}: {guess.threshold255} (÷255 = {(guess.threshold255 / 255).toFixed(3)})
+              <span style={{ color: '#c060e0' }}>■</span> {lineArtMode === 'pathC' ? `Gate threshold guess (${CHIE_GATE_MULTIPLIER}× Otsu)` : lineArtMode === 'pathG' ? 'Peak-based guess (bright side)' : 'Peak-based guess'}: {guess.threshold255} (÷255 = {(guess.threshold255 / 255).toFixed(3)})
               {' '}— confidence: {guess.confidence}
               {guess.peaks.length > 0 && ` — peaks used: ${guess.peaks.join(', ')}`}
             </div>
@@ -497,7 +622,181 @@ export default function LabZoneApp() {
         })()}
         {guess && !GUESS_SUPPORTED_MODES.includes(lineArtMode) && (
           <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6 }}>
-            Guess is only validated for Botan/Daiya/Chie — switch to one of those to see/rate it.
+            Guess is only available for Botan/Daiya/Chie/Gumi — switch to one of those to see/rate it.
+          </div>
+        )}
+
+        {lineArtMode === 'pathG' && (
+          <div style={{ marginTop: 16, borderTop: '1px solid #333', paddingTop: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
+              Gumi ground-truth data collection — manually tune Line mode above until it looks
+              right, then record every knob that mattered (not just threshold). Stats/guess above
+              are the same raw-luminance histogram Botan/Daiya use (Compute Stats button) — Gumi
+              selects the bright side, see peakBasedThresholdBright's doc comment. Use the "Zone"
+              view button above to see the actual binary threshold decision (black = selected/ink)
+              independent of radius/overdrive/gap-closing/fill — isolates exactly what the
+              threshold+contrast-boost knobs are doing before any cleanup obscures it.
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              Current live: threshold {lineArtParams.threshold.toFixed(3)}, radius {lineArtParams.radius.toFixed(2)},
+              contrast boost {lineArtParams.gumiContrastBoost.toFixed(2)}, overdrive {lineArtParams.gumiOverdrive},
+              gap closing {lineArtParams.gumiGapClosing ? 'on' : 'off'},
+              soft detection {lineArtParams.gumiSoftDetection ? `on (${lineArtParams.gumiSoftness.toFixed(2)})` : 'off'}
+              <br />
+              Tone Lift: {lineArtParams.toneShaping.mode === 'pinch'
+                ? `Pinch — position ${lineArtParams.toneShaping.pinchMode.position.toFixed(3)}, expand ${lineArtParams.toneShaping.pinchMode.expand.toFixed(3)}, feathering ${lineArtParams.toneShaping.pinchMode.feathering.toFixed(2)}`
+                : `Clip — black ${lineArtParams.toneShaping.clipMode.blackClip.toFixed(2)}, white ${lineArtParams.toneShaping.clipMode.whiteClip.toFixed(2)}`}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="remark (optional)"
+                value={gumiRemark}
+                onChange={(e) => setGumiRemark(e.target.value)}
+                style={{ width: '50%' }}
+              />
+              {' '}
+              <button type="button" onClick={recordGumiGroundTruth} disabled={!stats || !guess}>
+                Record ground truth
+              </button>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => exportGumiZoneJson(gumiRecords)} disabled={gumiRecords.length === 0}>
+                Export Gumi JSON ({gumiRecords.length})
+              </button>
+              {' '}
+              <button
+                type="button"
+                onClick={() => {
+                  if (gumiRecords.length === 0) return
+                  if (!window.confirm(`Clear all ${gumiRecords.length} Gumi records? This can't be undone.`)) return
+                  clearGumiZoneRecords()
+                  setGumiRecords([])
+                }}
+                disabled={gumiRecords.length === 0}
+              >
+                Clear all Gumi records
+              </button>
+            </div>
+            {gumiRecords.length > 0 && (
+              <table style={{ marginTop: 12, fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>image</th>
+                    <th style={{ textAlign: 'left' }}>threshold</th>
+                    <th style={{ textAlign: 'left' }}>radius</th>
+                    <th style={{ textAlign: 'left' }}>boost</th>
+                    <th style={{ textAlign: 'left' }}>overdrive</th>
+                    <th style={{ textAlign: 'left' }}>gapClose</th>
+                    <th style={{ textAlign: 'left' }}>soft</th>
+                    <th style={{ textAlign: 'left' }}>otsu</th>
+                    <th style={{ textAlign: 'left' }}>valley</th>
+                    <th style={{ textAlign: 'left' }}>brightPeak</th>
+                    <th style={{ textAlign: 'left' }}>remark</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gumiRecords.map((r) => (
+                    <tr key={r.timestamp}>
+                      <td>{r.imageId}</td>
+                      <td>{r.threshold.toFixed(3)}</td>
+                      <td>{r.radius.toFixed(2)}</td>
+                      <td>{r.gumiContrastBoost.toFixed(2)}</td>
+                      <td>{r.gumiOverdrive}</td>
+                      <td>{r.gumiGapClosing ? 'on' : 'off'}</td>
+                      <td>{r.gumiSoftDetection ? r.gumiSoftness.toFixed(2) : 'off'}</td>
+                      <td>{r.otsu255}</td>
+                      <td>{r.valleyEmphasis255}</td>
+                      <td>{r.brightPeakThreshold255} ({r.brightPeakConfidence})</td>
+                      <td>{r.remark ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <div style={{ marginTop: 20, borderTop: '1px solid #333', paddingTop: 12 }}>
+              <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
+                Pinch position auto-guess (stroke-shape-score sweep — see pinchPositionStats.ts).
+                Scores candidate Pinch positions by how thin/curvy the resulting ink mask is
+                (perimeter/area), not just how connected or how much of it there is — plain
+                connectivity/size metrics kept preferring big flat regions over real linework.
+                Validated against 20 images at ~31/255 median position error, with a handful of
+                bigger misses (likely a competing textured/hatched region scoring higher than the
+                real ink) — not trusted yet, rate it like Botan/Daiya's guess was before it was.
+              </div>
+              <button type="button" onClick={() => void computePinchGuess()} disabled={!currentFile || pinchGuessLoading}>
+                {pinchGuessLoading ? 'Computing…' : 'Compute Pinch Position Guess'}
+              </button>
+              {pinchGuess && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: '#c060e0' }}>■</span> Guessed position: {pinchGuess.position255} (÷255 = {(pinchGuess.position255 / 255).toFixed(3)})
+                    {' '}— shape score {pinchGuess.score.toFixed(3)}, ink density {(pinchGuess.density * 100).toFixed(1)}%
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" onClick={applyPinchGuessToLive}>Apply Guess to Live (pinchExpand=0, threshold/boost reset)</button>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="remark (optional — e.g. what it picked up instead, if wrong)"
+                      value={pinchGuessRemark}
+                      onChange={(e) => setPinchGuessRemark(e.target.value)}
+                      style={{ width: '50%' }}
+                    />
+                    {' '}
+                    <button type="button" onClick={() => recordPinchGuessRating('good')}>✓ Good</button>{' '}
+                    <button type="button" onClick={() => recordPinchGuessRating('maybe')}>? Maybe</button>{' '}
+                    <button type="button" onClick={() => recordPinchGuessRating('bad')}>✗ Bad</button>
+                  </div>
+                </div>
+              )}
+              <div style={{ marginTop: 16 }}>
+                <button type="button" onClick={() => exportPinchGuessJson(pinchGuessRecords)} disabled={pinchGuessRecords.length === 0}>
+                  Export Pinch Guess JSON ({pinchGuessRecords.length})
+                </button>
+                {' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pinchGuessRecords.length === 0) return
+                    if (!window.confirm(`Clear all ${pinchGuessRecords.length} pinch guess ratings? This can't be undone.`)) return
+                    clearPinchGuessRecords()
+                    setPinchGuessRecords([])
+                  }}
+                  disabled={pinchGuessRecords.length === 0}
+                >
+                  Clear all pinch guess ratings
+                </button>
+              </div>
+              {pinchGuessRecords.length > 0 && (
+                <table style={{ marginTop: 12, fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>image</th>
+                      <th style={{ textAlign: 'left' }}>guessed position</th>
+                      <th style={{ textAlign: 'left' }}>score</th>
+                      <th style={{ textAlign: 'left' }}>density</th>
+                      <th style={{ textAlign: 'left' }}>rating</th>
+                      <th style={{ textAlign: 'left' }}>remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pinchGuessRecords.map((r) => (
+                      <tr key={r.timestamp}>
+                        <td>{r.imageId}</td>
+                        <td>{r.guessedPosition255} ({(r.guessedPosition255 / 255).toFixed(3)})</td>
+                        <td>{r.guessScore.toFixed(3)}</td>
+                        <td>{(r.guessDensity * 100).toFixed(1)}%</td>
+                        <td>{r.rating}</td>
+                        <td>{r.remark ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 
