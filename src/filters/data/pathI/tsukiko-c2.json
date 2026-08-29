@@ -1,0 +1,117 @@
+{
+  "id": "tsukiko-c2",
+  "algo": "pathI",
+  "label": "Tsukiko C2",
+  "alias": "Tsukiko Tone Mode Overwrite C2",
+  "macro": {
+    "invert": "hiToneHueInvert",
+    "derivedFields": [
+      "hiToneTarget",
+      "hiToneGain"
+    ]
+  },
+  "color": null,
+  "extraFields": [
+    {
+      "field": "hiToneContrast",
+      "label": "Tone Contrast",
+      "min": 0.2,
+      "max": 5,
+      "step": 0.05
+    },
+    {
+      "field": "hiToneSaturation",
+      "label": "Saturation",
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    {
+      "field": "laplacianSharpenAmount",
+      "label": "Post-Sharpen",
+      "min": 0,
+      "max": 3,
+      "step": 0.05
+    },
+    {
+      "field": "laplacianGrow",
+      "label": "Grow",
+      "min": 0,
+      "max": 20,
+      "step": 1
+    }
+  ],
+  "lockedFields": [
+    "highPassResponsiveColor",
+    "thresholdEnabled",
+    "overlayPassthrough",
+    "matteColor",
+    "hiRawDarkenLighten",
+    "hiRawContrast",
+    "threshold",
+    "hiThresholdContrast",
+    "hiThresholdInvert",
+    "fillInvert",
+    "fillType",
+    "tintColor",
+    "colorContrast",
+    "colorExposure",
+    "gradientShadow",
+    "gradientMid",
+    "gradientHighlight",
+    "gradientPivot",
+    "gradientDuoTone"
+  ],
+  "params": {
+    "opacity": 1,
+    "blendMode": "overwrite",
+    "highPassResponsiveColor": false,
+    "thresholdEnabled": false,
+    "hiToneTarget": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
+    "laplacianStrength": 4,
+    "laplacianPreBlur": 1,
+    "laplacianSharpenAmount": 0.3,
+    "laplacianGrow": 0,
+    "hiRawDarkenLighten": 0,
+    "hiRawContrast": 1,
+    "threshold": 0.48,
+    "hiThresholdContrast": 1,
+    "hiThresholdInvert": false,
+    "fillInvert": false,
+    "fillType": "solid",
+    "tintColor": [
+      0,
+      0,
+      0
+    ],
+    "colorContrast": 1,
+    "colorExposure": 0,
+    "gradientShadow": [
+      0,
+      0,
+      0
+    ],
+    "gradientMid": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "gradientHighlight": [
+      1,
+      1,
+      1
+    ],
+    "gradientPivot": 0,
+    "gradientDuoTone": false,
+    "hiToneGain": 2,
+    "hiToneContrast": 1.3,
+    "hiToneSaturation": 1,
+    "hiToneHueInvert": false
+  }
+}

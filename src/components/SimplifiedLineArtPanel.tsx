@@ -148,7 +148,7 @@ export default function SimplifiedLineArtPanel({
     const invertLabel = macroFields.invert ? (INVERT_LABELS[macroFields.invert] ?? 'Invert Filter') : 'Invert Filter'
     // Hinata Tone's Multiply/Screen bipolar control replaces the flat Invert row's neighbours —
     // shown when the filter opts in via macro.derivedFields (Edge/Emboss/Erode never do).
-    const hinataToneOn = activeFilter.macro?.derivedFields?.includes('hiToneTarget') === true
+    const toneBlendOn = activeFilter.macro?.derivedFields?.includes('hiToneTarget') === true
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
 
     // Blending Mode macro: "Mult / Add" is the one bipolar tab (sign picks the darken/brighten
@@ -219,7 +219,7 @@ export default function SimplifiedLineArtPanel({
               onChange={(v) => setField(hardnessField, v)}
             />
           )}
-          {hinataToneOn && (
+          {toneBlendOn && (
             <GradientSlider
               label="Tone (Multiply / Screen)"
               value={paramsToToneBlend(params.hiToneTarget, params.hiToneGain)}
