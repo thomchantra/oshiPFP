@@ -85,6 +85,21 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
     gradientMid: 'gradientMid',
     gradientHighlight: 'gradientHighlight',
   },
+  // Fumiko's post-erosion edge fill also runs through maskFillColorProgram (same shared fill
+  // fields as Botan/Chie), Exposure included. The whole group is hidden in the panel when
+  // `findEdge` or `overlayPassthrough` is on (findEdge bypasses fillType entirely; passthrough
+  // flattens onto the matte — see SimplifiedLineArtPanel.tsx).
+  pathF: {
+    fillType: 'fillType',
+    solidColor: 'tintColor',
+    colorContrast: 'colorContrast',
+    exposure: 'colorExposure',
+    gradientPivot: 'gradientPivot',
+    gradientDuoTone: 'gradientDuoTone',
+    gradientShadow: 'gradientShadow',
+    gradientMid: 'gradientMid',
+    gradientHighlight: 'gradientHighlight',
+  },
   // No gradientDuoTone — see ColorMacroFields.gradientDuoTone's own doc comment.
   pathG: {
     fillType: 'gumiLineFillType',

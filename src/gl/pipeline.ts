@@ -2353,7 +2353,7 @@ export class Pipeline {
             vividBoost: p.vividBoost,
             vividDeadzone: p.vividDeadzone,
             colorContrast: p.colorContrast,
-            colorExposure: 0,
+            colorExposure: p.colorExposure,
           })
         })
         outputTarget = this.tintTarget

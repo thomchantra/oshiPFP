@@ -9,7 +9,7 @@ import { ALGO_OPTIONS } from './AlgoGalleryModal'
 import { GradientFillControls, TintColorRow } from './GradientFillControls'
 import { FillTypeRow } from './LineArtPanel'
 import { FILTER_MANIFEST } from '../filters/filterManifest'
-import { resolveQuickFields } from '../filters/quickMacros'
+import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
 import { MACRO_FIELDS, COLOR_MACRO_FIELDS } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
@@ -122,7 +122,15 @@ export default function SimplifiedLineArtPanel({
     const macroFields = MACRO_FIELDS[activeFilter.algo]
     const colorFields = COLOR_MACRO_FIELDS[activeFilter.algo]
     const quick = resolveQuickFields(activeFilter)
+    const quickMeta = resolveQuickMeta(activeFilter)
     const locked = new Set(activeFilter.lockedFields ?? [])
+    // Hide the Fill / Color group when it can't meaningfully drive the output: Find Edge mode
+    // bypasses fillType/fillInvert entirely (raw Sobel colour, forced Multiply), and Overlay
+    // Passthrough flattens the result onto the matte. Both fields are baked per-filter (never live
+    // toggles here); `findEdge` is false for every non-Fumiko algo.
+    const findEdgeOn = params.findEdge === true
+    const passthroughOn = params.overlayPassthrough === true
+    const hideFillGroup = findEdgeOn || passthroughOn
     const hardnessField = macroFields.hardness
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
 
@@ -156,28 +164,32 @@ export default function SimplifiedLineArtPanel({
       >
         <div className="lineart-slidergroup-stack">
           <GradientSlider
-            label="Threshold" value={getNum(quick.threshold)} min={0} max={1}
+            label={quickMeta.threshold.label} value={getNum(quick.threshold)}
+            min={quickMeta.threshold.min} max={quickMeta.threshold.max} step={quickMeta.threshold.step}
             defaultValue={(activeFilter.params[quick.threshold] as number) ?? 0}
             onChange={(v) => setField(quick.threshold, v)}
           />
-          <div
-            className="lineart-toggle-row"
-            role="button"
-            tabIndex={0}
-            onClick={() => setField(macroFields.invert, !getBool(macroFields.invert))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setField(macroFields.invert, !getBool(macroFields.invert))
-              }
-            }}
-          >
-            <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Filter</span>
-            <ToggleSwitch on={getBool(macroFields.invert)} label="Invert Filter" />
-          </div>
+          {!findEdgeOn && (
+            <div
+              className="lineart-toggle-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => setField(macroFields.invert, !getBool(macroFields.invert))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setField(macroFields.invert, !getBool(macroFields.invert))
+                }
+              }}
+            >
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Filter</span>
+              <ToggleSwitch on={getBool(macroFields.invert)} label="Invert Filter" />
+            </div>
+          )}
           <div className="lineart-divider" />
           <GradientSlider
-            label="Thickness" value={getNum(quick.thickness)} min={0} max={10}
+            label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+            min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
             defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
             onChange={(v) => {
               if (activeFilter.algo === 'pathG') {
@@ -251,7 +263,7 @@ export default function SimplifiedLineArtPanel({
               setField('opacity', v / 100)
             }}
           />
-          {colorFields && (
+          {colorFields && !hideFillGroup && (
             <>
               <div className="lineart-divider" />
               <FillTypeRow value={fillType!} onChange={(v) => setField(colorFields.fillType, v)} />
@@ -285,7 +297,7 @@ export default function SimplifiedLineArtPanel({
               )}
             </>
           )}
-          {!colorFields && (
+          {!colorFields && !hideFillGroup && (
             <>
               <div className="lineart-divider" />
               <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>Color — coming soon for this algorithm</p>
@@ -297,19 +309,22 @@ export default function SimplifiedLineArtPanel({
   }
 
   const quick = activeFilter ? resolveQuickFields(activeFilter) : undefined
+  const quickMeta = activeFilter ? resolveQuickMeta(activeFilter) : undefined
 
   return (
     <BottomSheet noDrag>
       <div className="lineart-slidergroup-stack">
-        {quick && (
+        {quick && quickMeta && (
           <div className="simplified-quick-row">
             <GradientSlider
-              label="Threshold" value={getNum(quick.threshold)} min={0} max={1}
+              label={quickMeta.threshold.label} value={getNum(quick.threshold)}
+              min={quickMeta.threshold.min} max={quickMeta.threshold.max} step={quickMeta.threshold.step}
               defaultValue={(activeFilter!.params[quick.threshold] as number) ?? 0}
               onChange={(v) => setField(quick.threshold, v)}
             />
             <GradientSlider
-              label="Thickness" value={getNum(quick.thickness)} min={0} max={10}
+              label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+              min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
               defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
               onChange={(v) => setField(quick.thickness, v)}
             />

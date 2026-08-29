@@ -1,0 +1,30 @@
+{
+  "id": "fumiko-a1",
+  "algo": "pathF",
+  "label": "Fumiko A1",
+  "alias": "Fumiko Find Edge A1",
+  "lockedFields": ["findEdge", "saturation", "vividDeadzone", "vividBoost", "overlayPassthrough", "matteColor"],
+  "params": {
+    "sensitivity": 3,
+    "radius": 0.2,
+    "hardness": 0,
+    "fillInvert": false,
+    "findEdge": true,
+    "saturation": 0.5,
+    "vividDeadzone": 0.15,
+    "vividBoost": 1.5,
+    "opacity": 1,
+    "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [1, 1, 1],
+    "fillType": "image",
+    "tintColor": [0, 0, 0],
+    "colorContrast": 1,
+    "colorExposure": 0,
+    "gradientShadow": [0, 0, 0],
+    "gradientMid": [0.5, 0.5, 0.5],
+    "gradientHighlight": [1, 1, 1],
+    "gradientPivot": 0,
+    "gradientDuoTone": false
+  }
+}

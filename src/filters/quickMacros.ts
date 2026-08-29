@@ -27,3 +27,28 @@ export const QUICK_MACRO_FIELDS: Record<LineArtMode, { threshold: keyof LineArtP
 export function resolveQuickFields(filter: FilterManifestEntry): { threshold: keyof LineArtParams; thickness: keyof LineArtParams } {
   return filter.quick ?? QUICK_MACRO_FIELDS[filter.algo]
 }
+
+export interface QuickSlotMeta { label: string; min: number; max: number; step?: number }
+
+const DEFAULT_THRESHOLD_META: QuickSlotMeta = { label: 'Threshold', min: 0, max: 1 }
+const DEFAULT_THICKNESS_META: QuickSlotMeta = { label: 'Thickness', min: 0, max: 10 }
+
+/** Per-algo label/range for the two quick slots, where the "Threshold 0-1 / Thickness 0-10"
+ * default doesn't fit the mapped field — e.g. Fumiko's Sensitivity is 0.5-20, its Radius 0-3.
+ * Only algos that need an override appear here; everything else uses the defaults above. */
+const QUICK_MACRO_META: Partial<Record<LineArtMode, { threshold?: Partial<QuickSlotMeta>; thickness?: Partial<QuickSlotMeta> }>> = {
+  pathF: {
+    threshold: { label: 'Sensitivity', min: 0.5, max: 20 },
+    thickness: { label: 'Radius', min: 0, max: 3 },
+  },
+}
+
+/** Label + slider range for a filter's two quick slots — the per-algo override merged onto the
+ * shared defaults. Pair with `resolveQuickFields` (which field each slot writes). */
+export function resolveQuickMeta(filter: FilterManifestEntry): { threshold: QuickSlotMeta; thickness: QuickSlotMeta } {
+  const m = QUICK_MACRO_META[filter.algo]
+  return {
+    threshold: { ...DEFAULT_THRESHOLD_META, ...m?.threshold },
+    thickness: { ...DEFAULT_THICKNESS_META, ...m?.thickness },
+  }
+}
