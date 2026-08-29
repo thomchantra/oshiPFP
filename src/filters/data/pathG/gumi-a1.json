@@ -3,7 +3,11 @@
   "algo": "pathG",
   "label": "Gumi A1",
   "alias": "Gumi Line Mode A1",
-  "lockedFields": ["overlayPassthrough", "matteColor"],
+  "lockedFields": [
+    "gumiFillMode", "gumiFillPixelThreshold", "gumiFillRadius", "gumiFillInvert", "gumiFillType",
+    "gumiFillSolidColor", "gumiFillColorContrast", "gumiFillGradientPivot",
+    "overlayPassthrough", "matteColor"
+  ],
   "params": {
     "threshold": 0.3,
     "blobMaxDt": 3,
@@ -21,7 +25,15 @@
     "gumiLineGradientPivot": 0,
     "gumiGradientShadow": [0, 0, 0],
     "gumiGradientMid": [0.5, 0.5, 0.5],
-    "gumiGradientHighlight": [1, 1, 1]
+    "gumiGradientHighlight": [1, 1, 1],
+    "gumiFillMode": false,
+    "gumiFillPixelThreshold": false,
+    "gumiFillRadius": 8,
+    "gumiFillInvert": false,
+    "gumiFillType": "image",
+    "gumiFillSolidColor": [0, 0, 0],
+    "gumiFillColorContrast": 1,
+    "gumiFillGradientPivot": 0
   },
   "extraFields": [
     { "field": "gumiOverdrive", "label": "Line Overdrive", "min": 0, "max": 5, "step": 0.01 }

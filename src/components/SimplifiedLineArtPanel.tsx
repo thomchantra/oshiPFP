@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import GradientSlider from './GradientSlider'
 import SegmentedControl from './SegmentedControl'
@@ -68,6 +68,9 @@ export default function SimplifiedLineArtPanel({
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const groupRefs = useRef<Partial<Record<LineArtMode, HTMLButtonElement | null>>>({})
   const scrollRafRef = useRef<number | null>(null)
+  // Carousel scroll position survives the edit-sheet round trip — the main-view carousel unmounts
+  // while the sheet is open (early return below), so without this it re-mounts scrolled to 0.
+  const carouselScrollRef = useRef(0)
   const [activeCategory, setActiveCategory] = useState<LineArtMode | null>(null)
 
   const syncCategoryFromScroll = useCallback(() => {
@@ -83,12 +86,21 @@ export default function SimplifiedLineArtPanel({
   }, [])
 
   const handleCarouselScroll = useCallback(() => {
+    if (carouselRef.current) carouselScrollRef.current = carouselRef.current.scrollLeft
     if (scrollRafRef.current != null) return
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = null
       syncCategoryFromScroll()
     })
   }, [syncCategoryFromScroll])
+
+  // Restore the saved scroll position each time the main-view carousel (re)mounts — i.e. when the
+  // edit sheet closes. Layout effect so it lands before paint (no visible jump to 0 then back).
+  useLayoutEffect(() => {
+    if (editSheetOpen) return
+    const container = carouselRef.current
+    if (container) container.scrollLeft = carouselScrollRef.current
+  }, [editSheetOpen])
 
   const jumpToGroup = useCallback((mode: LineArtMode) => {
     const container = carouselRef.current
