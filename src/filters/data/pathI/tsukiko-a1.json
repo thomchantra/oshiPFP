@@ -7,6 +7,20 @@
   "color": null,
   "extraFields": [
     {
+      "field": "laplacianPreBlur",
+      "label": "Denoise",
+      "min": 0,
+      "max": 10,
+      "step": 0.1
+    },
+    {
+      "field": "laplacianSharpenAmount",
+      "label": "Post-Sharpen",
+      "min": 0,
+      "max": 3,
+      "step": 0.05
+    },
+    {
       "field": "hiRawDarkenLighten",
       "label": "Darken / Lighten",
       "min": -1,
@@ -19,20 +33,6 @@
       "min": 0.2,
       "max": 3,
       "step": 0.01
-    },
-    {
-      "field": "laplacianSharpenAmount",
-      "label": "Post-Sharpen",
-      "min": 0,
-      "max": 3,
-      "step": 0.05
-    },
-    {
-      "field": "laplacianGrow",
-      "label": "Grow",
-      "min": 0,
-      "max": 20,
-      "step": 1
     }
   ],
   "lockedFields": [

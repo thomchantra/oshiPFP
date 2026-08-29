@@ -17,9 +17,10 @@ export const QUICK_MACRO_FIELDS: Record<LineArtMode, { threshold: keyof LineArtP
   // COLOR_MACRO_FIELDS.pathG doc comment and the Gumi filter JSON for the rest of that story.
   pathG: { threshold: 'threshold', thickness: 'blobMaxDt' },
   pathH: { threshold: 'highPassStrength', thickness: 'responsiveGrow' },
-  // Tsukiko ships Emboss/Erode/Tone only (no Edge — that path doesn't use the Laplacian), so both
-  // quick slots are the Laplacian's own primary dials: Strength + Pre-Blur (labelled "Denoise").
-  pathI: { threshold: 'laplacianStrength', thickness: 'laplacianPreBlur' },
+  // Tsukiko ships Emboss/Erode/Tone only (no Edge — that path doesn't use the Laplacian). Quick
+  // slots are Strength + Grow (mirrors Hinata Edge's Strength/Grow pair); Pre-Blur ("Denoise") and
+  // Post-Sharpen ride the edit sheet just below.
+  pathI: { threshold: 'laplacianStrength', thickness: 'laplacianGrow' },
 }
 
 /** The quick Threshold/Thickness field pair for a specific filter — its own `quick` override if it
@@ -50,7 +51,7 @@ const QUICK_MACRO_META: Partial<Record<LineArtMode, { threshold?: Partial<QuickS
   },
   pathI: {
     threshold: { label: 'Strength', min: 0.5, max: 10 },
-    thickness: { label: 'Denoise', min: 0, max: 10 },
+    thickness: { label: 'Grow', min: 0, max: 10, step: 1 },
   },
 }
 

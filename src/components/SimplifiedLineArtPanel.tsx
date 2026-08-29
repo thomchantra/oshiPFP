@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import BottomSheet from './BottomSheet'
 import GradientSlider from './GradientSlider'
 import SegmentedControl from './SegmentedControl'
@@ -13,6 +13,7 @@ import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
 import { resolveMacroFields, resolveColorFields } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import { toneBlendToParams, paramsToToneBlend, formatToneBlend } from '../lineart/hinataToneBlend'
+import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
 
 /** Algos with at least one authored filter, in ALGO_OPTIONS order — drives the category pill row
@@ -33,6 +34,22 @@ const INVERT_LABELS: Partial<Record<string, string>> = {
   hiThresholdInvert: 'Invert Erosion',
   hiToneHueInvert: 'Invert Hue',
 }
+
+/** Per-algo carousel colour code — the Color Lift rainbow palette, one hue per algo group, washed
+ * faintly over each filter chip and the active category pill so the groups read apart at a glance. */
+const tintHex = (k: string) => HUE_BAND_SWATCHES.find((s) => s.key === k)!.hex
+const ALGO_TINT: Partial<Record<LineArtMode, string>> = {
+  pathB: tintHex('red'),
+  pathC: tintHex('orange'),
+  pathF: tintHex('yellow'),
+  pathG: tintHex('green'),
+  pathH: tintHex('blue'),
+  pathI: tintHex('purple'),
+}
+
+/** Carousel chips lean on the category-pill colour code for grouping, so the chip label only needs
+ * the variant tag ("A1", "C2") — drop the leading algo name from `filter.label`. */
+const chipShortLabel = (label: string) => label.split(' ').slice(1).join(' ') || label
 
 interface SimplifiedLineArtPanelProps {
   params: LineArtParams
@@ -78,12 +95,19 @@ export default function SimplifiedLineArtPanel({
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const groupRefs = useRef<Partial<Record<LineArtMode, HTMLButtonElement | null>>>({})
   const scrollRafRef = useRef<number | null>(null)
+  // While a category-pill jump-scroll is animating, the pill highlight is pinned to the tapped
+  // target and the scroll-spy is suppressed — otherwise the spy walks the highlight through every
+  // group the smooth-scroll passes over (visible flicker/trailing). Cleared on `scrollend` (with a
+  // timeout fallback for browsers that don't fire it).
+  const jumpLockRef = useRef<LineArtMode | null>(null)
+  const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Carousel scroll position survives the edit-sheet round trip — the main-view carousel unmounts
   // while the sheet is open (early return below), so without this it re-mounts scrolled to 0.
   const carouselScrollRef = useRef(0)
   const [activeCategory, setActiveCategory] = useState<LineArtMode | null>(null)
 
   const syncCategoryFromScroll = useCallback(() => {
+    if (jumpLockRef.current != null) return // pinned to the jump target until the scroll settles
     const container = carouselRef.current
     if (!container) return
     const slop = 24 // treat a group as "current" once its first chip is within 24px of the edge
@@ -116,9 +140,21 @@ export default function SimplifiedLineArtPanel({
     const container = carouselRef.current
     const el = groupRefs.current[mode]
     if (!container || !el) return
-    container.scrollTo({ left: Math.max(0, el.offsetLeft - 4), behavior: 'smooth' })
+    jumpLockRef.current = mode
     setActiveCategory(mode)
-  }, [])
+    container.scrollTo({ left: Math.max(0, el.offsetLeft - 4), behavior: 'smooth' })
+    const release = () => {
+      if (jumpTimerRef.current) { clearTimeout(jumpTimerRef.current); jumpTimerRef.current = null }
+      container.removeEventListener('scrollend', release)
+      jumpLockRef.current = null
+      syncCategoryFromScroll()
+    }
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
+    container.addEventListener('scrollend', release)
+    jumpTimerRef.current = setTimeout(release, 700) // fallback: Safari < 18.2 has no scrollend
+  }, [syncCategoryFromScroll])
+
+  useEffect(() => () => { if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current) }, [])
 
   // Selecting a filter (or clearing to None) keeps the pill highlight in step without waiting for a
   // scroll event — a filter tap doesn't necessarily move the carousel.
@@ -397,6 +433,7 @@ export default function SimplifiedLineArtPanel({
               icon={o.icon}
               variant="secondary"
               active={activeCategory === o.mode}
+              style={ALGO_TINT[o.mode] ? ({ ['--pill-tint' as string]: ALGO_TINT[o.mode] } as CSSProperties) : undefined}
               onClick={() => jumpToGroup(o.mode)}
             >
               {o.label}
@@ -417,6 +454,8 @@ export default function SimplifiedLineArtPanel({
               <FilterChip
                 key={filter.id}
                 label={filter.label}
+                displayLabel={chipShortLabel(filter.label)}
+                tint={ALGO_TINT[filter.algo]}
                 thumbnail={filterThumbnails[filter.id]}
                 loading={thumbnailsGenerating && !filterThumbnails[filter.id]}
                 active={activeFilterId === filter.id}
@@ -435,6 +474,8 @@ export default function SimplifiedLineArtPanel({
 
 function FilterChip({
   label,
+  displayLabel,
+  tint,
   thumbnail,
   loading,
   active,
@@ -444,6 +485,10 @@ function FilterChip({
   onClick,
 }: {
   label: string
+  /** Visible chip text — the trimmed variant tag ("A1"). `label` stays the full name for aria. */
+  displayLabel?: string
+  /** Per-algo colour code hex, exposed as `--chip-tint` for the faint chip wash (base.css). */
+  tint?: string
   thumbnail: string | undefined
   loading?: boolean
   active: boolean
@@ -458,6 +503,7 @@ function FilterChip({
       type="button"
       className={`filter-chip${active ? ' active' : ''}`}
       data-group-start={groupStart ? 'true' : undefined}
+      style={tint ? ({ ['--chip-tint' as string]: tint } as CSSProperties) : undefined}
       onClick={onClick}
       aria-label={editable ? `Edit ${label}` : `Select ${label}`}
     >
@@ -470,7 +516,7 @@ function FilterChip({
           <span className="filter-chip-placeholder" aria-hidden="true" />
         ) : null}
       </span>
-      <span className="font-value filter-chip-label">{label}</span>
+      <span className="font-value filter-chip-label">{displayLabel ?? label}</span>
     </button>
   )
 }
