@@ -16,6 +16,7 @@
     "fillType": "solid",
     "tintColor": [0, 0, 0],
     "colorContrast": 1,
+    "colorExposure": 0,
     "gradientShadow": [0, 0, 0],
     "gradientMid": [0.5, 0.5, 0.5],
     "gradientHighlight": [1, 1, 1],

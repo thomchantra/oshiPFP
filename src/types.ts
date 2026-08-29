@@ -290,6 +290,10 @@ export interface LineArtParams {
    * color before it's used, only meaningful when `fillType === 'image'`. Also used by Gumi's
    * Color Bleed alongside `colorExpansion` above. */
   colorContrast: number
+  /** Image-fill exposure in EV stops (pow(2, ev)), applied to the source color before
+   * `colorContrast`. Only meaningful when `fillType === 'image'`; wired to the Simplified/Advanced
+   * Image group for Botan/Chie (Daiya/Fumiko's vivid-boost image fill doesn't expose it). 0 = no-op. */
+  colorExposure: number
   gateThreshold: number
   sensitivity: number
   saturation: number

@@ -404,7 +404,10 @@ export default function LineArtPanel({
             <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
             <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
             {params.fillType === 'image' && (
-              <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+              <>
+                <GradientSlider label="Exposure" value={params.colorExposure} min={-3} max={3} defaultValue={0} onChange={(v) => set('colorExposure', v)} />
+                <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+              </>
             )}
             {params.fillType === 'solid' && (
               <TintColorRow label="Line Color" tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />
@@ -432,7 +435,10 @@ export default function LineArtPanel({
             <InvertFillRow on={params.fillInvert} onChange={(v) => set('fillInvert', v)} />
             <FillTypeRow value={params.fillType} onChange={(v) => set('fillType', v)} />
             {params.fillType === 'image' && (
-              <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+              <>
+                <GradientSlider label="Exposure" value={params.colorExposure} min={-3} max={3} defaultValue={0} onChange={(v) => set('colorExposure', v)} />
+                <GradientSlider label="Color Contrast" value={params.colorContrast} min={0.2} max={3} defaultValue={1} onChange={(v) => set('colorContrast', v)} />
+              </>
             )}
             {params.fillType === 'solid' && (
               <TintColorRow tintColor={params.tintColor} onChange={(rgb) => set('tintColor', rgb)} />

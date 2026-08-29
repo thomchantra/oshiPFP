@@ -37,6 +37,11 @@
  * spatial falloff shape. Two different things both called "contrast" by
  * feel, so they get two separate uniforms rather than overloading uGamma.
  *
+ * uColorExposure — also color-expansion only: EV-stops exposure (pow(2, ev))
+ * on the sampled seedColor before uColorContrast, matching
+ * fillTypeColor.frag.ts's image branch (Botan keeps shape+color fused here
+ * so it can't reuse that shader's pass). Neutral at 0.
+ *
  * The lab's "hardness" macro (LabApp.tsx/labPipeline.ts) maps entirely
  * onto uFeather — no separate sharpen uniform.
  *
@@ -62,6 +67,7 @@ uniform float uRadius;
 uniform float uFeather;
 uniform float uGamma;
 uniform float uColorContrast;
+uniform float uColorExposure;
 uniform int uColorExpansion;
 uniform vec3 uLineColor;
 uniform int uInvert;
@@ -77,8 +83,9 @@ void main() {
 
   vec3 seedColor;
   if (uColorExpansion == 1) {
-    vec3 base = texture(uOriginal, vUV).rgb;
-    seedColor = hasSeed ? texture(uOriginal, seed.xy / uTexSize).rgb : base;
+    float expo = pow(2.0, uColorExposure);
+    vec3 base = texture(uOriginal, vUV).rgb * expo;
+    seedColor = hasSeed ? texture(uOriginal, seed.xy / uTexSize).rgb * expo : base;
     seedColor = clamp((seedColor - 0.5) * uColorContrast + 0.5, 0.0, 1.0);
   } else {
     seedColor = uLineColor;

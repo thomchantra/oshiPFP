@@ -120,6 +120,7 @@ const IDENTITY_LINE_ART: LineArtParams = {
   daiyaSoftThresholdOverdrive: 1,
   colorExpansion: false,
   colorContrast: 1,
+  colorExposure: 0,
   gateThreshold: 0,
   sensitivity: 3,
   saturation: 0.5,
@@ -1236,6 +1237,7 @@ export class Pipeline {
       vividBoost: number
       vividDeadzone: number
       colorContrast: number
+      colorExposure: number
     },
   ): void {
     const gl = this.gl
@@ -1249,6 +1251,7 @@ export class Pipeline {
     gl.uniform1f(gl.getUniformLocation(program, 'uVividBoost'), opts.vividBoost)
     gl.uniform1f(gl.getUniformLocation(program, 'uVividDeadzone'), opts.vividDeadzone)
     gl.uniform1f(gl.getUniformLocation(program, 'uColorContrast'), opts.colorContrast)
+    gl.uniform1f(gl.getUniformLocation(program, 'uColorExposure'), opts.colorExposure)
   }
 
   private runDenoise(base: TargetTexture, width: number, height: number): TargetTexture {
@@ -1654,6 +1657,7 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
       gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividDeadzone'), 1)
       gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorContrast'), colorContrast)
+      gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorExposure'), 0)
     })
     return finalTarget
   }
@@ -1937,6 +1941,7 @@ export class Pipeline {
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), feather)
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
         gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
+        gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExposure'), p.colorExposure)
         gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), botanFused ? 1 : 0)
         gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
         gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), botanFused && p.fillInvert ? 1 : 0)
@@ -1986,6 +1991,7 @@ export class Pipeline {
             vividBoost: 1,
             vividDeadzone: 1,
             colorContrast: 1,
+            colorExposure: 0,
           })
         })
         outputTarget = this.botanFillColorTarget
@@ -2031,6 +2037,7 @@ export class Pipeline {
           vividBoost: 1,
           vividDeadzone: 1,
           colorContrast: p.colorContrast,
+          colorExposure: p.colorExposure,
         })
       })
       outputTarget = this.chieFillColorTarget
@@ -2199,6 +2206,7 @@ export class Pipeline {
           // Botan's non-fused (solid/gradient) branch. Daiya has no fused-image fast path (see scope
           // note in the JFA port plan) so this pass never emits final color itself.
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), 1)
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExposure'), 0)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), 0)
           gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), 0)
@@ -2282,6 +2290,8 @@ export class Pipeline {
           vividBoost: p.vividBoost,
           vividDeadzone: p.vividDeadzone,
           colorContrast: p.colorContrast,
+          // Daiya's image fill (vivid-boost variant) isn't wired to the Exposure macro yet — 0 no-op.
+          colorExposure: 0,
         })
       })
       outputTarget = this.tintTarget
@@ -2343,6 +2353,7 @@ export class Pipeline {
             vividBoost: p.vividBoost,
             vividDeadzone: p.vividDeadzone,
             colorContrast: p.colorContrast,
+            colorExposure: 0,
           })
         })
         outputTarget = this.tintTarget
@@ -2593,6 +2604,8 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), p.gumiBleedFeather)
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
           gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
+          // Gumi Color Bleed isn't wired to the Exposure macro — 0 no-op (shared-uniform-leak rule).
+          gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExposure'), 0)
           gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), p.colorExpansion ? 1 : 0)
           gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
           // Explicit uInvert set — see CLAUDE.md Recurring Gotchas (shared-uniform-leak class).
@@ -2637,6 +2650,7 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividBoost'), 1)
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividDeadzone'), 1)
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorContrast'), p.gumiFillColorContrast)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorExposure'), 0)
         })
         outputTarget = this.gumiBlobTarget
       } else {
@@ -2684,6 +2698,7 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividDeadzone'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorContrast'), p.gumiLineColorContrast)
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorExposure'), 0)
         })
         this.traceSampleGrid('gl:gumiLineColorTarget-final(Gumi)', this.gumiLineColorTarget, {
           mode: p.mode,
@@ -2978,6 +2993,7 @@ export class Pipeline {
             vividBoost: 1,
             vividDeadzone: 1,
             colorContrast: p.colorContrast,
+            colorExposure: 0,
           })
         })
         outputTarget = this.hiThreshFillColorTarget
@@ -3883,6 +3899,7 @@ export class Pipeline {
       gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uFeather'), feather)
       gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uGamma'), p.blobContrast)
       gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorContrast'), p.colorContrast)
+      gl.uniform1f(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExposure'), p.colorExposure)
       gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uColorExpansion'), botanFused ? 1 : 0)
       gl.uniform3fv(gl.getUniformLocation(this.distanceToEdgeProgram, 'uLineColor'), p.tintColor)
       gl.uniform1i(gl.getUniformLocation(this.distanceToEdgeProgram, 'uInvert'), botanFused && p.fillInvert ? 1 : 0)
@@ -3916,6 +3933,7 @@ export class Pipeline {
           vividBoost: 1,
           vividDeadzone: 1,
           colorContrast: 1,
+          colorExposure: 0,
         })
       })
       outputTarget = this.thumbBotanFillColorTarget

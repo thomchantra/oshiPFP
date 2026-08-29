@@ -22,6 +22,10 @@
  * uColorContrast=1 (identity multiplier, matching every other "1 = no-op" contrast convention
  * in this codebase).
  *
+ * uColorExposure: EV-stops exposure (pow(2, ev)) applied to the 'image' branch's passthrough
+ * color before the vivid/contrast chain — the "exposure then levels then contrast" order the
+ * app's other exposure sliders use. Neutral at 0. Only the 'image' branch reads it.
+ *
  * Including shader must declare `in vec2 vUV;` and provide uOriginal/uDetectionSource as
  * bound samplers even when a given fillType doesn't read them (GLSL still requires every
  * declared sampler uniform to have *something* bound).
@@ -39,6 +43,7 @@ uniform int uGradientDuoTone;
 uniform float uVividBoost;
 uniform float uVividDeadzone;
 uniform float uColorContrast;
+uniform float uColorExposure;
 `
 
 export const resolveFillTypeColorFn = `
@@ -89,7 +94,7 @@ vec3 resolveFillTypeColor(vec2 uv) {
     }
   }
 
-  vec3 img = texture(uOriginal, uv).rgb;
+  vec3 img = texture(uOriginal, uv).rgb * pow(2.0, uColorExposure);
   vec3 hsv = rgb2hsvFillType(img);
   float boostedSat = hsv.y < uVividDeadzone ? hsv.y : clamp(hsv.y * uVividBoost, 0.0, 1.0);
   vec3 vivid = hsv2rgbFillType(vec3(hsv.x, boostedSat, hsv.z));

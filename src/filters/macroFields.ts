@@ -38,6 +38,10 @@ export interface ColorMacroFields {
   fillType: keyof LineArtParams
   solidColor: keyof LineArtParams
   colorContrast: keyof LineArtParams
+  /** Optional — the Image group's EV-stops Exposure slider (before Color Contrast). Present for
+   * Botan/Chie; omitted for algos whose image fill isn't wired to it (Daiya/Fumiko's vivid variant,
+   * Gumi). SimplifiedLineArtPanel.tsx hides the row when absent. */
+  exposure?: keyof LineArtParams
   gradientPivot: keyof LineArtParams
   /** Optional — Gumi's Line-mode gradient fill has no live duo-tone field (pipeline.ts's
    * maskFillColorProgram call site for it hardcodes uGradientDuoTone=0), so its own
@@ -61,6 +65,7 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
     fillType: 'fillType',
     solidColor: 'tintColor',
     colorContrast: 'colorContrast',
+    exposure: 'colorExposure',
     gradientPivot: 'gradientPivot',
     gradientDuoTone: 'gradientDuoTone',
     gradientShadow: 'gradientShadow',
@@ -68,11 +73,12 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
     gradientHighlight: 'gradientHighlight',
   },
   // Chie shares Botan's fill fields exactly (erosionGate → maskFillColorProgram reads the same
-  // p.fillType/p.tintColor/p.gradient*/p.colorContrast/p.fillInvert — see pipeline.ts pathC branch).
+  // p.fillType/p.tintColor/p.gradient*/p.colorContrast/p.colorExposure/p.fillInvert — see pipeline.ts pathC branch).
   pathC: {
     fillType: 'fillType',
     solidColor: 'tintColor',
     colorContrast: 'colorContrast',
+    exposure: 'colorExposure',
     gradientPivot: 'gradientPivot',
     gradientDuoTone: 'gradientDuoTone',
     gradientShadow: 'gradientShadow',
@@ -110,6 +116,7 @@ export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtPa
   if (macro.derivedFields) fields.push(...macro.derivedFields)
   if (color) {
     fields.push(color.fillType, color.solidColor, color.colorContrast, color.gradientPivot, color.gradientShadow, color.gradientMid, color.gradientHighlight)
+    if (color.exposure) fields.push(color.exposure)
     if (color.gradientDuoTone) fields.push(color.gradientDuoTone)
   }
   if (filter.extraFields) fields.push(...filter.extraFields.map((f) => f.field))

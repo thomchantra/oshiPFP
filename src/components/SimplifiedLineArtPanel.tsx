@@ -255,6 +255,13 @@ export default function SimplifiedLineArtPanel({
             <>
               <div className="lineart-divider" />
               <FillTypeRow value={fillType!} onChange={(v) => setField(colorFields.fillType, v)} />
+              {fillType === 'image' && colorFields.exposure && (
+                <GradientSlider
+                  label="Exposure" value={getNum(colorFields.exposure)} min={-3} max={3}
+                  defaultValue={(activeFilter.params[colorFields.exposure] as number) ?? 0}
+                  onChange={(v) => setField(colorFields.exposure!, v)}
+                />
+              )}
               {fillType === 'image' && (
                 <GradientSlider
                   label="Color Contrast" value={getNum(colorFields.colorContrast)} min={0.2} max={3}

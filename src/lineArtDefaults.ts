@@ -218,6 +218,7 @@ const BASE_LINE_ART_PARAMS: LineArtParams = {
   daiyaSoftThresholdOverdrive: 1,
   colorExpansion: false,
   colorContrast: 1,
+  colorExposure: 0,
   gateThreshold: 0,
   sensitivity: 3,
   saturation: 0.5,

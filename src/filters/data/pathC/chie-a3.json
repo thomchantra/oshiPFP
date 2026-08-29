@@ -16,6 +16,7 @@
     "fillType": "gradient",
     "tintColor": [0, 0, 0],
     "colorContrast": 1,
+    "colorExposure": 0,
     "gradientShadow": [0, 0, 1],
     "gradientMid": [1, 0, 1],
     "gradientHighlight": [1, 0, 0],
