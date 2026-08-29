@@ -1,10 +1,12 @@
-import { QUICK_MACRO_FIELDS } from './quickMacros'
+import { resolveQuickFields } from './quickMacros'
 import type { FilterManifestEntry } from './filterTypes'
 import type { LineArtMode, LineArtParams } from '../types'
 
-/** Universal Brightness macro's own fields (lineBrightness.ts + the Matte pill's
- * overlayPassthrough/matteColor) — algo-independent, so not part of AlgoMacroFields/ColorMacroFields. */
-const BRIGHTNESS_FIELDS: (keyof LineArtParams)[] = ['opacity', 'blendMode', 'overlayPassthrough', 'matteColor']
+/** Universal Brightness macro's own fields (lineBrightness.ts) — algo-independent, so not part of
+ * AlgoMacroFields/ColorMacroFields. The Simplified "Matte" pill rides `blendMode`/`opacity` (a
+ * fixed 'overwrite' blend), NOT overlayPassthrough/matteColor — those two are per-filter-baked
+ * (filter.lockedFields), cut from the universal editable surface per the v0.5 scope decision. */
+const BRIGHTNESS_FIELDS: (keyof LineArtParams)[] = ['opacity', 'blendMode']
 
 /** Extends quickMacros.ts's Threshold/Thickness pair with the remaining Invert/Hardness macros,
  * per docs/0.5-simplified-mode-mvp-plan.md's mapping table. `hardness` is omitted for Gumi
@@ -48,12 +50,26 @@ export interface ColorMacroFields {
 }
 
 /** Color group (Fill Type: Image/Solid/Gradient) has real per-algo shape variance (Gumi Line's own
- * gradient sub-fields, Edge's narrower Image/Solid-only FillType, Daiya's vivid fields) not yet
- * verified for every algo — populated for Botan only for now, per this session's scope decision.
- * Extending to another algo is a small, isolated addition here, not new mechanism work — see
- * SimplifiedLineArtPanel.tsx's "Color — coming soon" fallback for algos absent from this map. */
+ * gradient sub-fields, Edge's narrower Image/Solid-only FillType, Daiya's vivid fields) — populated
+ * per algo as it's brought into the Simplified filter system. Botan/Chie/Daiya/Fumiko share the
+ * exact same LineArtParams fill fields (fillType, tintColor, the gradient stops, colorContrast —
+ * see types.ts's "Shared fill-type selector" comment), so their entries here are identical. Extending to another
+ * algo is a small, isolated addition here, not new mechanism work — see SimplifiedLineArtPanel.tsx's
+ * "Color — coming soon" fallback for algos absent from this map. */
 export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> = {
   pathB: {
+    fillType: 'fillType',
+    solidColor: 'tintColor',
+    colorContrast: 'colorContrast',
+    gradientPivot: 'gradientPivot',
+    gradientDuoTone: 'gradientDuoTone',
+    gradientShadow: 'gradientShadow',
+    gradientMid: 'gradientMid',
+    gradientHighlight: 'gradientHighlight',
+  },
+  // Chie shares Botan's fill fields exactly (erosionGate → maskFillColorProgram reads the same
+  // p.fillType/p.tintColor/p.gradient*/p.colorContrast/p.fillInvert — see pipeline.ts pathC branch).
+  pathC: {
     fillType: 'fillType',
     solidColor: 'tintColor',
     colorContrast: 'colorContrast',
@@ -75,18 +91,18 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
   },
 }
 
-/** The complete set of LineArtParams fields the Simplified panel can edit for a given algo —
- * quick Threshold/Thickness + Invert/Hardness + universal Brightness + Color group (if present).
- * This, not each filter's own `params` keys, is what App.tsx's session-override capture effect
- * whitelists: a filter JSON that only lists a subset of these (e.g. omits fillType/tintColor) would
- * otherwise let an edit to an unlisted field leak straight into the shared per-algo paramsByMode
- * base — permanently mutating it for every filter on that algo, not just the one being edited.
- * Every filter's JSON must declare a value for every field this returns, so each filter stays
- * genuinely self-contained (selecting it always resets every editable field, never inherits
- * whatever an earlier session touched). */
+/** The set of LineArtParams fields the Simplified panel renders as controls for a filter — quick
+ * Threshold/Thickness (per-filter `quick` override or algo default) + Invert/Hardness + universal
+ * Brightness + Color group (if present) + the filter's own `extraFields`. Pair with
+ * `getManagedFields` (this set plus `lockedFields`) for the capture-effect whitelist: a filter JSON
+ * that only lists a subset of the managed set would otherwise let an edit to an unlisted field leak
+ * straight into the shared per-algo paramsByMode base — permanently mutating it for every filter on
+ * that algo. Every filter's JSON must declare a value for every field `getManagedFields` returns,
+ * so each filter stays genuinely self-contained (selecting it always resets every managed field,
+ * never inherits whatever an earlier session touched). */
 export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtParams)[] {
   const algo = filter.algo
-  const quick = QUICK_MACRO_FIELDS[algo]
+  const quick = resolveQuickFields(filter)
   const macro = MACRO_FIELDS[algo]
   const color = COLOR_MACRO_FIELDS[algo]
   const fields: (keyof LineArtParams)[] = [quick.threshold, quick.thickness, macro.invert, ...BRIGHTNESS_FIELDS]
@@ -97,5 +113,15 @@ export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtPa
     if (color.gradientDuoTone) fields.push(color.gradientDuoTone)
   }
   if (filter.extraFields) fields.push(...filter.extraFields.map((f) => f.field))
+  return fields
+}
+
+/** getEditableFields plus the filter's `lockedFields` (pinned + hidden, but still per-filter state).
+ * This — not getEditableFields — is what App.tsx's capture effect snapshots: a locked field must be
+ * reset per-filter on reselection too (so it never inherits whatever a sibling filter on the same
+ * algo left in the shared paramsByMode base), it just isn't rendered as a control. */
+export function getManagedFields(filter: FilterManifestEntry): (keyof LineArtParams)[] {
+  const fields = getEditableFields(filter)
+  if (filter.lockedFields) fields.push(...filter.lockedFields)
   return fields
 }

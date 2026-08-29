@@ -7,6 +7,8 @@ import type { TestImage } from '../lab-grid/testImages'
 import {
   computeLuminanceHistogram,
   computeEdgeStrengthHistogram,
+  computeSobelMagnitudeHistogram,
+  computeHighPassDiffHistogram,
   otsuThreshold,
   valleyEmphasisThreshold,
   peakBasedThreshold,
@@ -24,6 +26,12 @@ import { exportGuessJson } from './exportGuessJson'
 import { loadChieZoneRecords, saveChieZoneRecords, clearChieZoneRecords } from './chieZoneStorage'
 import type { ChieZoneRecord } from './chieZoneStorage'
 import { exportChieZoneJson } from './exportChieZoneJson'
+import { loadFumikoZoneRecords, saveFumikoZoneRecords, clearFumikoZoneRecords } from './fumikoZoneStorage'
+import type { FumikoZoneRecord } from './fumikoZoneStorage'
+import { exportFumikoZoneJson } from './exportFumikoZoneJson'
+import { loadHinataZoneRecords, saveHinataZoneRecords, clearHinataZoneRecords } from './hinataZoneStorage'
+import type { HinataZoneRecord } from './hinataZoneStorage'
+import { exportHinataZoneJson } from './exportHinataZoneJson'
 import { loadGumiZoneRecords, saveGumiZoneRecords, clearGumiZoneRecords } from './gumiZoneStorage'
 import type { GumiZoneRecord } from './gumiZoneStorage'
 import { exportGumiZoneJson } from './exportGumiZoneJson'
@@ -85,6 +93,31 @@ interface EdgeStats {
   peak: PeakThresholdResult
   histogramBins: number[]
   radiusUsed: number
+}
+
+// Fumiko/pathF data-gathering only, no algorithm committed yet — see thresholdStats.ts's
+// computeSobelMagnitudeHistogram doc comment. Sensitivity's real knee=1/sensitivity is a scaled
+// value, not 0-255 like luminance/edgeStrength — maxValue carries the histogram's real-world scale
+// so the UI/export can convert a bin index back to a real sensitivity-comparable number.
+interface FumikoStats {
+  otsu255: number
+  valleyEmphasis255: number
+  peak: PeakThresholdResult
+  histogramBins: number[]
+  maxValue: number
+}
+
+// Hinata/pathH data-gathering only — see thresholdStats.ts's computeHighPassDiffHistogram doc
+// comment. Both radiusUsed and strengthUsed shape the histogram directly (unlike Fumiko's fixed
+// blur constant), so both need to be captured at compute time and staleness-guarded, same as
+// Chie's radiusUsed.
+interface HinataStats {
+  otsu255: number
+  valleyEmphasis255: number
+  peak: PeakThresholdResult
+  histogramBins: number[]
+  radiusUsed: number
+  strengthUsed: number
 }
 
 const STATS_ANALYSIS_MAX_DIMENSION = 500
@@ -149,6 +182,14 @@ export default function LabZoneApp() {
   const [edgeStatsLoading, setEdgeStatsLoading] = useState(false)
   const [chieRecords, setChieRecords] = useState<ChieZoneRecord[]>(loadChieZoneRecords)
   const [chieRemark, setChieRemark] = useState('')
+  const [fumikoStats, setFumikoStats] = useState<FumikoStats | null>(null)
+  const [fumikoStatsLoading, setFumikoStatsLoading] = useState(false)
+  const [fumikoRecords, setFumikoRecords] = useState<FumikoZoneRecord[]>(loadFumikoZoneRecords)
+  const [fumikoRemark, setFumikoRemark] = useState('')
+  const [hinataStats, setHinataStats] = useState<HinataStats | null>(null)
+  const [hinataStatsLoading, setHinataStatsLoading] = useState(false)
+  const [hinataRecords, setHinataRecords] = useState<HinataZoneRecord[]>(loadHinataZoneRecords)
+  const [hinataRemark, setHinataRemark] = useState('')
   const [gumiRecords, setGumiRecords] = useState<GumiZoneRecord[]>(loadGumiZoneRecords)
   const [gumiRemark, setGumiRemark] = useState('')
   const [pinchGuess, setPinchGuess] = useState<PinchPositionGuess | null>(null)
@@ -159,6 +200,8 @@ export default function LabZoneApp() {
   const zoneCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const histCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const edgeHistCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const fumikoHistCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const hinataHistCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const topHatDebugCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [topHatDebugImage, setTopHatDebugImage] = useState(false)
 
@@ -177,6 +220,8 @@ export default function LabZoneApp() {
       setStats(null)
       setEdgeStats(null)
       setPinchGuess(null)
+      setFumikoStats(null)
+      setHinataStats(null)
       return
     }
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
@@ -220,6 +265,8 @@ export default function LabZoneApp() {
     setGuess(null)
     setEdgeStats(null)
     setPinchGuess(null)
+    setFumikoStats(null)
+    setHinataStats(null)
     await pipeline.loadFile(file)
   }
 
@@ -230,6 +277,8 @@ export default function LabZoneApp() {
     setGuess(null)
     setEdgeStats(null)
     setPinchGuess(null)
+    setFumikoStats(null)
+    setHinataStats(null)
     await pipeline.loadFile(file)
   }
 
@@ -376,6 +425,117 @@ export default function LabZoneApp() {
       { value: edgeStats.peak.threshold255, color: '#c060e0' },
     ])
   }, [edgeStats])
+
+  // Fumiko/pathF data-gathering — Sobel gradient-magnitude histogram at the shader's fixed
+  // blur(1.2) pre-pass (see thresholdStats.ts's computeSobelMagnitudeHistogram doc comment). No
+  // radius/strength staleness concern: the blur is a fixed constant, not a live param.
+  const computeFumikoStats = async () => {
+    if (!currentFile || lineArtMode !== 'pathF') return
+    setFumikoStatsLoading(true)
+    try {
+      const full = await decodeToImageData(currentFile)
+      const histogram = computeSobelMagnitudeHistogram(full.data, full.width, full.height)
+      const otsu255 = otsuThreshold(histogram)
+      const valleyEmphasis255 = valleyEmphasisThreshold(histogram)
+      const peak = peakBasedThreshold(histogram)
+      setFumikoStats({ otsu255, valleyEmphasis255, peak, histogramBins: histogram.bins, maxValue: histogram.maxValue })
+    } finally {
+      setFumikoStatsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!fumikoStats || !fumikoHistCanvasRef.current) return
+    drawHistogram(fumikoHistCanvasRef.current, fumikoStats.histogramBins, [
+      { value: fumikoStats.otsu255, color: '#e08030' },
+      { value: fumikoStats.valleyEmphasis255, color: '#40c060' },
+      { value: fumikoStats.peak.threshold255, color: '#c060e0' },
+    ])
+  }, [fumikoStats])
+
+  const recordFumikoGroundTruth = () => {
+    if (!selectedImage || !fumikoStats || lineArtMode !== 'pathF') return
+    const record: FumikoZoneRecord = {
+      imageId: selectedImage.id,
+      sensitivity: lineArtParams.sensitivity,
+      blobContrast: lineArtParams.blobContrast,
+      otsu255: fumikoStats.otsu255,
+      valleyEmphasis255: fumikoStats.valleyEmphasis255,
+      peakThreshold255: fumikoStats.peak.threshold255,
+      peakConfidence: fumikoStats.peak.confidence,
+      ...(fumikoRemark ? { remark: fumikoRemark } : {}),
+      timestamp: Date.now(),
+    }
+    const next = [...fumikoRecords, record]
+    setFumikoRecords(next)
+    saveFumikoZoneRecords(next)
+    setFumikoRemark('')
+  }
+
+  // Hinata/pathH data-gathering — high-pass diff histogram at the current live radius/strength
+  // (both shape the histogram, see thresholdStats.ts's computeHighPassDiffHistogram doc comment).
+  const computeHinataStats = async () => {
+    if (!currentFile || lineArtMode !== 'pathH') return
+    setHinataStatsLoading(true)
+    try {
+      const full = await decodeToImageData(currentFile)
+      const radiusUsed = lineArtParams.radius
+      const strengthUsed = lineArtParams.highPassStrength
+      const histogram = computeHighPassDiffHistogram(full.data, full.width, full.height, radiusUsed, strengthUsed)
+      const otsu255 = otsuThreshold(histogram)
+      const valleyEmphasis255 = valleyEmphasisThreshold(histogram)
+      const peak = peakBasedThreshold(histogram)
+      setHinataStats({ otsu255, valleyEmphasis255, peak, histogramBins: histogram.bins, radiusUsed, strengthUsed })
+    } finally {
+      setHinataStatsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!hinataStats || !hinataHistCanvasRef.current) return
+    drawHistogram(hinataHistCanvasRef.current, hinataStats.histogramBins, [
+      { value: hinataStats.otsu255, color: '#e08030' },
+      { value: hinataStats.valleyEmphasis255, color: '#40c060' },
+      { value: hinataStats.peak.threshold255, color: '#c060e0' },
+    ])
+  }, [hinataStats])
+
+  const hinataStale = lineArtMode === 'pathH' && hinataStats !== null
+    && (lineArtParams.radius !== hinataStats.radiusUsed || lineArtParams.highPassStrength !== hinataStats.strengthUsed)
+
+  const recordHinataGroundTruth = () => {
+    if (!selectedImage || !hinataStats || lineArtMode !== 'pathH' || hinataStale) return
+    const record: HinataZoneRecord = {
+      imageId: selectedImage.id,
+      threshold: lineArtParams.threshold,
+      radius: hinataStats.radiusUsed,
+      highPassStrength: hinataStats.strengthUsed,
+      otsu255: hinataStats.otsu255,
+      valleyEmphasis255: hinataStats.valleyEmphasis255,
+      peakThreshold255: hinataStats.peak.threshold255,
+      peakConfidence: hinataStats.peak.confidence,
+      ...(hinataRemark ? { remark: hinataRemark } : {}),
+      timestamp: Date.now(),
+    }
+    const next = [...hinataRecords, record]
+    setHinataRecords(next)
+    saveHinataZoneRecords(next)
+    setHinataRemark('')
+  }
+
+  // Sets up the user's chosen calibration-view convention for Hinata: background raised to white,
+  // lines to black (thresholdEnabled on, tone-remap off) via multiply — rather than the shipped
+  // default Edge/responsive-color treatment, which has no single scalar threshold to calibrate
+  // against. Switches to Live so the binarized result is immediately visible for tuning.
+  const prepareHinataGroundTruthView = () => {
+    handleLineArtChange({
+      ...lineArtParams,
+      thresholdEnabled: true,
+      hiToneTarget: 'off',
+      blendMode: 'multiply',
+    })
+    setViewMode('live')
+  }
 
   // Applies the current guess directly to the live params, writing into whichever field this
   // algo's own threshold-family knob actually is (PRIMARY_THRESHOLD_FIELD — Chie's is
@@ -950,6 +1110,193 @@ export default function LabZoneApp() {
                       <td>{r.gateThreshold.toFixed(3)}</td>
                       <td>{r.radius.toFixed(2)}</td>
                       <td>{r.hardness.toFixed(2)}</td>
+                      <td>{r.otsu255}</td>
+                      <td>{r.valleyEmphasis255}</td>
+                      <td>{r.peakThreshold255} ({r.peakConfidence})</td>
+                      <td>{r.remark ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {lineArtMode === 'pathF' && (
+          <div style={{ marginTop: 16, borderTop: '1px solid #333', paddingTop: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
+              Fumiko data-gathering (no algorithm chosen yet) — Sobel gradient-magnitude histogram
+              at the shader's fixed blur(1.2) pre-pass. Real cutoff is mag vs. knee=1/sensitivity
+              (a value in [0.05, 2.0] for sensitivity's real 0.5-20 range), not a 0-255 scale — see
+              "Otsu"/"Valley"/"Peak" below for the conversion.
+            </div>
+            <button type="button" onClick={() => void computeFumikoStats()} disabled={!currentFile || fumikoStatsLoading}>
+              {fumikoStatsLoading ? 'Computing…' : 'Compute Fumiko Stats'}
+            </button>
+            {fumikoStats && (
+              <div style={{ marginTop: 12 }}>
+                <canvas ref={fumikoHistCanvasRef} width={512} height={120} style={{ width: '100%', maxWidth: 512, border: '1px solid #444' }} />
+                <div style={{ fontSize: 13, marginTop: 4 }}>
+                  <div><span style={{ color: '#e08030' }}>■</span> Otsu: {fumikoStats.otsu255} (knee = {((fumikoStats.otsu255 / 255) * fumikoStats.maxValue).toFixed(3)}, sensitivity = {(1 / ((fumikoStats.otsu255 / 255) * fumikoStats.maxValue || 1e-6)).toFixed(2)})</div>
+                  <div><span style={{ color: '#40c060' }}>■</span> Valley-emphasis: {fumikoStats.valleyEmphasis255} (knee = {((fumikoStats.valleyEmphasis255 / 255) * fumikoStats.maxValue).toFixed(3)}, sensitivity = {(1 / ((fumikoStats.valleyEmphasis255 / 255) * fumikoStats.maxValue || 1e-6)).toFixed(2)})</div>
+                  <div>
+                    <span style={{ color: '#c060e0' }}>■</span> Peak-based: {fumikoStats.peak.threshold255} (knee = {((fumikoStats.peak.threshold255 / 255) * fumikoStats.maxValue).toFixed(3)}, sensitivity = {(1 / ((fumikoStats.peak.threshold255 / 255) * fumikoStats.maxValue || 1e-6)).toFixed(2)})
+                    {' '}— confidence: {fumikoStats.peak.confidence}
+                  </div>
+                  <div style={{ marginTop: 6 }}>Current sensitivity: {lineArtParams.sensitivity.toFixed(2)} (knee = {(1 / lineArtParams.sensitivity).toFixed(3)})</div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    type="text"
+                    placeholder="remark (optional)"
+                    value={fumikoRemark}
+                    onChange={(e) => setFumikoRemark(e.target.value)}
+                    style={{ width: '50%' }}
+                  />
+                  {' '}
+                  <button type="button" onClick={recordFumikoGroundTruth}>
+                    Record ground truth
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => exportFumikoZoneJson(fumikoRecords)} disabled={fumikoRecords.length === 0}>
+                Export Fumiko JSON ({fumikoRecords.length})
+              </button>
+              {' '}
+              <button
+                type="button"
+                onClick={() => {
+                  if (fumikoRecords.length === 0) return
+                  if (!window.confirm(`Clear all ${fumikoRecords.length} Fumiko records? This can't be undone.`)) return
+                  clearFumikoZoneRecords()
+                  setFumikoRecords([])
+                }}
+                disabled={fumikoRecords.length === 0}
+              >
+                Clear all Fumiko records
+              </button>
+            </div>
+            {fumikoRecords.length > 0 && (
+              <table style={{ marginTop: 12, fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>image</th>
+                    <th style={{ textAlign: 'left' }}>sensitivity</th>
+                    <th style={{ textAlign: 'left' }}>blobContrast</th>
+                    <th style={{ textAlign: 'left' }}>otsu</th>
+                    <th style={{ textAlign: 'left' }}>valley</th>
+                    <th style={{ textAlign: 'left' }}>peak</th>
+                    <th style={{ textAlign: 'left' }}>remark</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fumikoRecords.map((r) => (
+                    <tr key={r.timestamp}>
+                      <td>{r.imageId}</td>
+                      <td>{r.sensitivity.toFixed(2)}</td>
+                      <td>{r.blobContrast.toFixed(2)}</td>
+                      <td>{r.otsu255}</td>
+                      <td>{r.valleyEmphasis255}</td>
+                      <td>{r.peakThreshold255} ({r.peakConfidence})</td>
+                      <td>{r.remark ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {lineArtMode === 'pathH' && (
+          <div style={{ marginTop: 16, borderTop: '1px solid #333', paddingTop: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
+              Hinata data-gathering (no algorithm chosen yet) — high-pass diff histogram at the
+              current Radius ({lineArtParams.radius.toFixed(2)}) and Strength ({lineArtParams.highPassStrength.toFixed(2)}).
+              Calibrated against the thresholdEnabled treatment (bg raised to white, lines to
+              black, multiply) — click below to switch the live view into that state first.
+            </div>
+            {(!lineArtParams.thresholdEnabled || lineArtParams.hiToneTarget !== 'off' || lineArtParams.blendMode !== 'multiply') && (
+              <div style={{ marginBottom: 8 }}>
+                <button type="button" onClick={prepareHinataGroundTruthView}>Prepare Ground-Truth View</button>
+              </div>
+            )}
+            <button type="button" onClick={() => void computeHinataStats()} disabled={!currentFile || hinataStatsLoading}>
+              {hinataStatsLoading ? 'Computing…' : 'Compute Hinata Stats'}
+            </button>
+            {hinataStats && (
+              <div style={{ marginTop: 12 }}>
+                <canvas ref={hinataHistCanvasRef} width={512} height={120} style={{ width: '100%', maxWidth: 512, border: '1px solid #444' }} />
+                <div style={{ fontSize: 13, marginTop: 4 }}>
+                  <div>Radius/Strength used: {hinataStats.radiusUsed.toFixed(2)} / {hinataStats.strengthUsed.toFixed(2)}</div>
+                  <div><span style={{ color: '#e08030' }}>■</span> Otsu: {hinataStats.otsu255} (÷255 = {(hinataStats.otsu255 / 255).toFixed(3)})</div>
+                  <div><span style={{ color: '#40c060' }}>■</span> Valley-emphasis: {hinataStats.valleyEmphasis255} (÷255 = {(hinataStats.valleyEmphasis255 / 255).toFixed(3)})</div>
+                  <div>
+                    <span style={{ color: '#c060e0' }}>■</span> Peak-based: {hinataStats.peak.threshold255} (÷255 = {(hinataStats.peak.threshold255 / 255).toFixed(3)})
+                    {' '}— confidence: {hinataStats.peak.confidence}
+                  </div>
+                  <div style={{ marginTop: 6 }}>Current threshold: {lineArtParams.threshold.toFixed(3)}</div>
+                </div>
+                {hinataStale && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#e08030' }}>
+                    Radius/Strength changed since these stats were computed ({hinataStats.radiusUsed.toFixed(2)}/{hinataStats.strengthUsed.toFixed(2)} → {lineArtParams.radius.toFixed(2)}/{lineArtParams.highPassStrength.toFixed(2)}) — recompute before recording.
+                  </div>
+                )}
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    type="text"
+                    placeholder="remark (optional)"
+                    value={hinataRemark}
+                    onChange={(e) => setHinataRemark(e.target.value)}
+                    style={{ width: '50%' }}
+                  />
+                  {' '}
+                  <button type="button" onClick={recordHinataGroundTruth} disabled={hinataStale}>
+                    Record ground truth
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => exportHinataZoneJson(hinataRecords)} disabled={hinataRecords.length === 0}>
+                Export Hinata JSON ({hinataRecords.length})
+              </button>
+              {' '}
+              <button
+                type="button"
+                onClick={() => {
+                  if (hinataRecords.length === 0) return
+                  if (!window.confirm(`Clear all ${hinataRecords.length} Hinata records? This can't be undone.`)) return
+                  clearHinataZoneRecords()
+                  setHinataRecords([])
+                }}
+                disabled={hinataRecords.length === 0}
+              >
+                Clear all Hinata records
+              </button>
+            </div>
+            {hinataRecords.length > 0 && (
+              <table style={{ marginTop: 12, fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>image</th>
+                    <th style={{ textAlign: 'left' }}>threshold</th>
+                    <th style={{ textAlign: 'left' }}>radius</th>
+                    <th style={{ textAlign: 'left' }}>strength</th>
+                    <th style={{ textAlign: 'left' }}>otsu</th>
+                    <th style={{ textAlign: 'left' }}>valley</th>
+                    <th style={{ textAlign: 'left' }}>peak</th>
+                    <th style={{ textAlign: 'left' }}>remark</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hinataRecords.map((r) => (
+                    <tr key={r.timestamp}>
+                      <td>{r.imageId}</td>
+                      <td>{r.threshold.toFixed(3)}</td>
+                      <td>{r.radius.toFixed(2)}</td>
+                      <td>{r.highPassStrength.toFixed(2)}</td>
                       <td>{r.otsu255}</td>
                       <td>{r.valleyEmphasis255}</td>
                       <td>{r.peakThreshold255} ({r.peakConfidence})</td>

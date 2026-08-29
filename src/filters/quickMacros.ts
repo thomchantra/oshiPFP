@@ -1,3 +1,4 @@
+import type { FilterManifestEntry } from './filterTypes'
 import type { LineArtMode, LineArtParams } from '../types'
 
 /** Per-algorithm (not per-filter) mapping of the two quick sliders shown in the carousel-selected
@@ -17,4 +18,12 @@ export const QUICK_MACRO_FIELDS: Record<LineArtMode, { threshold: keyof LineArtP
   pathG: { threshold: 'threshold', thickness: 'blobMaxDt' },
   pathH: { threshold: 'highPassStrength', thickness: 'responsiveGrow' },
   pathI: { threshold: 'responsiveCrossover', thickness: 'responsiveGrow' },
+}
+
+/** The quick Threshold/Thickness field pair for a specific filter — its own `quick` override if it
+ * declares one, else its algo's `QUICK_MACRO_FIELDS` default. Every consumer (edit sheet, main
+ * carousel view, getEditableFields) goes through this so a per-filter override is honoured
+ * everywhere consistently. */
+export function resolveQuickFields(filter: FilterManifestEntry): { threshold: keyof LineArtParams; thickness: keyof LineArtParams } {
+  return filter.quick ?? QUICK_MACRO_FIELDS[filter.algo]
 }

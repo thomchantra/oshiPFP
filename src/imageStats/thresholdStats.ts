@@ -466,3 +466,165 @@ export function computeEdgeStrengthHistogram(
   }
   return { bins, totalPixels }
 }
+
+/** A 256-bin histogram whose domain isn't naturally 0-255 (unlike luminance or Chie's
+ * edgeStrength) — bin 0 represents real value 0, bin 255 represents `maxValue`. Callers convert a
+ * bin index back with `(bin / 255) * maxValue`. */
+export interface ScaledHistogram extends LuminanceHistogram {
+  maxValue: number
+}
+
+function separableBoxBlurLuminance(data: Uint8ClampedArray | Uint8Array, width: number, height: number, radius: number): Float32Array {
+  const lum = new Float32Array(width * height)
+  for (let p = 0; p < width * height; p++) {
+    const i = p * 4
+    lum[p] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+  }
+  const r = Math.max(0, Math.round(radius))
+  if (r === 0) return lum
+
+  const blurredH = new Float32Array(width * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0
+      let count = 0
+      for (let dx = -r; dx <= r; dx++) {
+        const sx = Math.min(width - 1, Math.max(0, x + dx))
+        sum += lum[y * width + sx]
+        count++
+      }
+      blurredH[y * width + x] = sum / count
+    }
+  }
+  const blurred = new Float32Array(width * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0
+      let count = 0
+      for (let dy = -r; dy <= r; dy++) {
+        const sy = Math.min(height - 1, Math.max(0, y + dy))
+        sum += blurredH[sy * width + x]
+        count++
+      }
+      blurred[y * width + x] = sum / count
+    }
+  }
+  return blurred
+}
+
+/**
+ * Fumiko (pathF)'s own detection feature — Sobel gradient magnitude of luminance, the scalar
+ * `uSensitivity` (as `knee = 1/uSensitivity`) is compared against in findEdges.frag.ts. Simulates
+ * that shader's fixed boxBlur(radius=1.2) pre-pass (approximated here as an integer r=1 separable
+ * mean box blur — same "close match, not bit-exact" approximation computeEdgeStrengthHistogram
+ * uses for erosion) then a standard 3x3 Sobel on the blurred luminance, at full resolution (radius
+ * is a fixed shader constant here, not user-tunable, so there's no radius/histogram staleness risk
+ * the way Chie has). The real shader computes gx/gy/mag independently per R/G/B channel and only
+ * reduces to luminance for the final alpha — this collapses to a single luminance-gradient Sobel
+ * up front instead, a deliberate simplification for a first-pass histogram (three-channel-accurate
+ * would need a materially heavier readback for a ground-truth-gathering tool).
+ *
+ * `sensitivity`'s real range (0.5-20, LineArtPanel.tsx) puts `knee` in [0.05, 2.0] — maxValue=2.5
+ * gives that range headroom without wasting most of the histogram on magnitudes no real sensitivity
+ * setting would ever select. Revisit once real ground-truth data shows where mag actually clusters.
+ */
+export function computeSobelMagnitudeHistogram(
+  data: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+): ScaledHistogram {
+  const maxValue = 2.5
+  const totalPixels = width * height
+  const blurred = separableBoxBlurLuminance(data, width, height, 1.2)
+  const bins = new Array(256).fill(0)
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const l = (dx: number, dy: number) => {
+        const sx = Math.min(width - 1, Math.max(0, x + dx))
+        const sy = Math.min(height - 1, Math.max(0, y + dy))
+        return blurred[sy * width + sx] / 255
+      }
+      const tl = l(-1, 1), tm = l(0, 1), tr = l(1, 1)
+      const ml = l(-1, 0), mr = l(1, 0)
+      const bl = l(-1, -1), bm = l(0, -1), br = l(1, -1)
+      const gx = -tl - 2 * ml - bl + tr + 2 * mr + br
+      const gy = -tl - 2 * tm - tr + bl + 2 * bm + br
+      const mag = Math.sqrt(gx * gx + gy * gy)
+      const bin = Math.min(255, Math.max(0, Math.round((Math.min(mag, maxValue) / maxValue) * 255)))
+      bins[bin]++
+    }
+  }
+  return { bins, totalPixels, maxValue }
+}
+
+/**
+ * Hinata (pathH)'s own detection feature — the high-pass diff (highPassDiff.frag.ts:
+ * `(sharp - blurred) * strength + 0.5`, per channel) that `p.threshold` compares against via
+ * softThresholdProgram once `thresholdEnabled` is on. Unlike Fumiko, this domain already lands
+ * naturally in the same [0,255] luminance-of-a-processed-image shape `threshold`'s own 0-1 range
+ * maps onto directly (no ScaledHistogram needed) — so the existing otsuThreshold/
+ * valleyEmphasisThreshold/peakBasedThreshold finders apply unchanged, same reuse Chie's
+ * edgeStrength histogram already established.
+ *
+ * Both `radiusTexels` (the blur scale) and `strength` (the amplification) shape this histogram
+ * directly — unlike Fumiko's fixed blur constant, both are live, user-tunable fields here, so a
+ * caller building ground-truth records must treat *both* as staleness-guard inputs the same way
+ * Chie's `radius` already is (see chieZoneStorage.ts's own doc comment).
+ *
+ * Blur is approximated the same integer-radius way `computeEdgeStrengthHistogram`/
+ * `computeSobelMagnitudeHistogram` already do — not a bit-exact replica of boxBlur.frag.ts's
+ * continuous-radius subsampling.
+ */
+export function computeHighPassDiffHistogram(
+  data: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+  radiusTexels: number,
+  strength: number,
+): LuminanceHistogram {
+  const totalPixels = width * height
+  const r = Math.max(0, Math.round(radiusTexels))
+
+  const blurredRgb = new Float32Array(width * height * 3)
+  for (let channel = 0; channel < 3; channel++) {
+    const plane = new Float32Array(width * height)
+    for (let p = 0; p < width * height; p++) plane[p] = data[p * 4 + channel]
+    const blurredH = new Float32Array(width * height)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let sum = 0
+        let count = 0
+        for (let dx = -r; dx <= r; dx++) {
+          const sx = Math.min(width - 1, Math.max(0, x + dx))
+          sum += plane[y * width + sx]
+          count++
+        }
+        blurredH[y * width + x] = sum / count
+      }
+    }
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let sum = 0
+        let count = 0
+        for (let dy = -r; dy <= r; dy++) {
+          const sy = Math.min(height - 1, Math.max(0, y + dy))
+          sum += blurredH[sy * width + x]
+          count++
+        }
+        blurredRgb[(y * width + x) * 3 + channel] = sum / count
+      }
+    }
+  }
+
+  const bins = new Array(256).fill(0)
+  for (let p = 0; p < width * height; p++) {
+    const i = p * 4
+    const rr = Math.min(255, Math.max(0, (data[i] - blurredRgb[p * 3]) * strength + 127.5))
+    const gg = Math.min(255, Math.max(0, (data[i + 1] - blurredRgb[p * 3 + 1]) * strength + 127.5))
+    const bb = Math.min(255, Math.max(0, (data[i + 2] - blurredRgb[p * 3 + 2]) * strength + 127.5))
+    const luminance = 0.2126 * rr + 0.7152 * gg + 0.0722 * bb
+    bins[Math.min(255, Math.max(0, Math.round(luminance)))]++
+  }
+  return { bins, totalPixels }
+}

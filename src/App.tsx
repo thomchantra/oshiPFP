@@ -26,7 +26,7 @@ import { formatStateDump, parseStateDump } from './debug/dumpState'
 import { PRESET_MANIFEST } from './presets/presetManifest'
 import { applyPreset } from './presets/applyPreset'
 import { FILTER_MANIFEST } from './filters/filterManifest'
-import { getEditableFields } from './filters/macroFields'
+import { getManagedFields } from './filters/macroFields'
 import { applyFilter } from './filters/applyFilter'
 import { useFilterThumbnails } from './filters/useFilterThumbnails'
 import SimplifiedLineArtPanel from './components/SimplifiedLineArtPanel'
@@ -538,25 +538,22 @@ export default function App() {
     setParamsByMode((prev) => ({ ...prev, [lineArtMode]: next }))
   }
 
-  // Keeps filterOverrides in sync with whatever the active filter's own editable fields currently
+  // Keeps filterOverrides in sync with whatever the active filter's own managed fields currently
   // read in paramsByMode — every edit path (quick sliders, the edit sheet, double-tap reset)
   // already flows through handleLineArtChange above, so this one effect covers all of them instead
-  // of each site writing to filterOverrides itself. Whitelisted against getEditableFields(filter) —
-  // the FULL macro surface the Simplified panel can touch for this filter (algo baseline plus any
-  // of its own extraFields) — not just the keys the filter's own JSON happens to declare:
-  // whitelisting against the JSON's own (possibly sparse)
-  // keys let an edit to a field the JSON omitted (e.g. Fill Type on a filter that only declared
-  // threshold/radius/hardness) go uncaptured and leak straight into the shared per-algo
-  // paramsByMode base, permanently bleeding into every other filter on that algo. Every filter's
-  // JSON must supply a value for every field getEditableFields returns for it to actually behave
-  // as advertised — see macroFields.ts's own doc comment.
+  // of each site writing to filterOverrides itself. Whitelisted against getManagedFields(filter) —
+  // the FULL surface a filter owns (rendered controls plus its hidden `lockedFields`), not just the
+  // keys the filter's own JSON happens to declare: an edit to an omitted field would go uncaptured
+  // and leak straight into the shared per-algo paramsByMode base, permanently bleeding into every
+  // other filter on that algo. Every filter's JSON must supply a value for every field
+  // getManagedFields returns — see macroFields.ts's own doc comment.
   useEffect(() => {
     if (!activeFilterId) return
     const filter = FILTER_MANIFEST.find((f) => f.id === activeFilterId)
     if (!filter || filter.algo !== lineArtMode) return
     const current = paramsByMode[lineArtMode]
     const snapshot: Partial<LineArtParams> = {}
-    for (const key of getEditableFields(filter)) {
+    for (const key of getManagedFields(filter)) {
       ;(snapshot as Record<string, unknown>)[key] = current[key]
     }
     setFilterOverrides((prev) => ({ ...prev, [activeFilterId]: snapshot }))

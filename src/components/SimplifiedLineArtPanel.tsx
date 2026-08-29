@@ -1,14 +1,27 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import GradientSlider from './GradientSlider'
 import ToggleSwitch from './ToggleSwitch'
 import Icon from './Icon'
+import IconButton from './IconButton'
+import { ALGO_OPTIONS } from './AlgoGalleryModal'
 import { GradientFillControls, TintColorRow } from './GradientFillControls'
 import { FillTypeRow } from './LineArtPanel'
 import { FILTER_MANIFEST } from '../filters/filterManifest'
-import { QUICK_MACRO_FIELDS } from '../filters/quickMacros'
+import { resolveQuickFields } from '../filters/quickMacros'
 import { MACRO_FIELDS, COLOR_MACRO_FIELDS } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
-import type { FillType, LineArtParams } from '../types'
+import type { FillType, LineArtMode, LineArtParams } from '../types'
+
+/** Algos with at least one authored filter, in ALGO_OPTIONS order — drives the category pill row
+ * (jump-nav + scroll-spy) above the carousel. */
+const CATEGORY_ALGOS = ALGO_OPTIONS.filter((o) => FILTER_MANIFEST.some((f) => f.algo === o.mode))
+
+/** Which manifest entries are the first of their algo — the carousel puts a wider gap before each
+ * (CSS `[data-group-start]`) and the pill row scrolls/snaps to them. */
+const GROUP_START_IDS = new Set(
+  CATEGORY_ALGOS.map((o) => FILTER_MANIFEST.find((f) => f.algo === o.mode)!.id),
+)
 
 /** Gumi-specific: blobMask.frag.ts rejects a pixel once it sits farther than blobMaxDt from any
  * boundary — meant to reject blob *interiors*, but a stroke whose own width (after growth) exceeds
@@ -60,10 +73,55 @@ export default function SimplifiedLineArtPanel({
   const getColor = (key: keyof LineArtParams) => params[key] as [number, number, number]
   const getFillType = (key: keyof LineArtParams) => params[key] as FillType
 
+  // Category pill row <-> carousel: pills jump-scroll the carousel to a group's first chip, and a
+  // manual carousel scroll highlights whichever group's first chip has passed the left edge
+  // (scroll-spy). Refs, not state, for the DOM handles; activeCategory is the only render input.
+  const carouselRef = useRef<HTMLDivElement | null>(null)
+  const groupRefs = useRef<Partial<Record<LineArtMode, HTMLButtonElement | null>>>({})
+  const scrollRafRef = useRef<number | null>(null)
+  const [activeCategory, setActiveCategory] = useState<LineArtMode | null>(null)
+
+  const syncCategoryFromScroll = useCallback(() => {
+    const container = carouselRef.current
+    if (!container) return
+    const slop = 24 // treat a group as "current" once its first chip is within 24px of the edge
+    let current: LineArtMode | null = null
+    for (const o of CATEGORY_ALGOS) {
+      const el = groupRefs.current[o.mode]
+      if (el && el.offsetLeft <= container.scrollLeft + slop) current = o.mode
+    }
+    setActiveCategory(current)
+  }, [])
+
+  const handleCarouselScroll = useCallback(() => {
+    if (scrollRafRef.current != null) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      syncCategoryFromScroll()
+    })
+  }, [syncCategoryFromScroll])
+
+  const jumpToGroup = useCallback((mode: LineArtMode) => {
+    const container = carouselRef.current
+    const el = groupRefs.current[mode]
+    if (!container || !el) return
+    container.scrollTo({ left: Math.max(0, el.offsetLeft - 4), behavior: 'smooth' })
+    setActiveCategory(mode)
+  }, [])
+
+  // Selecting a filter (or clearing to None) keeps the pill highlight in step without waiting for a
+  // scroll event — a filter tap doesn't necessarily move the carousel.
+  useEffect(() => {
+    if (!activeFilterId) { syncCategoryFromScroll(); return }
+    const f = FILTER_MANIFEST.find((x) => x.id === activeFilterId)
+    if (f) setActiveCategory(f.algo)
+  }, [activeFilterId, syncCategoryFromScroll])
+
   if (editSheetOpen && activeFilter) {
     const macroFields = MACRO_FIELDS[activeFilter.algo]
     const colorFields = COLOR_MACRO_FIELDS[activeFilter.algo]
-    const quick = QUICK_MACRO_FIELDS[activeFilter.algo]
+    const quick = resolveQuickFields(activeFilter)
+    const locked = new Set(activeFilter.lockedFields ?? [])
     const hardnessField = macroFields.hardness
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
     const matteOn = params.blendMode === 'overwrite'
@@ -105,7 +163,7 @@ export default function SimplifiedLineArtPanel({
           </div>
           <div className="lineart-divider" />
           <GradientSlider
-            label="Thickness" value={getNum(quick.thickness)} min={0} max={20}
+            label="Thickness" value={getNum(quick.thickness)} min={0} max={10}
             defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
             onChange={(v) => {
               if (activeFilter.algo === 'pathG') {
@@ -122,7 +180,7 @@ export default function SimplifiedLineArtPanel({
               onChange={(v) => setField(hardnessField, v)}
             />
           )}
-          {activeFilter.extraFields?.map((extra) => (
+          {activeFilter.extraFields?.filter((extra) => !locked.has(extra.field)).map((extra) => (
             <GradientSlider
               key={extra.field}
               label={extra.label} value={getNum(extra.field)} min={extra.min} max={extra.max} step={extra.step}
@@ -202,26 +260,39 @@ export default function SimplifiedLineArtPanel({
     )
   }
 
-  const quick = activeFilter ? QUICK_MACRO_FIELDS[activeFilter.algo] : undefined
+  const quick = activeFilter ? resolveQuickFields(activeFilter) : undefined
 
   return (
     <BottomSheet noDrag>
       <div className="lineart-slidergroup-stack">
         {quick && (
-          <>
+          <div className="simplified-quick-row">
             <GradientSlider
               label="Threshold" value={getNum(quick.threshold)} min={0} max={1}
               defaultValue={(activeFilter!.params[quick.threshold] as number) ?? 0}
               onChange={(v) => setField(quick.threshold, v)}
             />
             <GradientSlider
-              label="Thickness" value={getNum(quick.thickness)} min={0} max={20}
+              label="Thickness" value={getNum(quick.thickness)} min={0} max={10}
               defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
               onChange={(v) => setField(quick.thickness, v)}
             />
-          </>
+          </div>
         )}
-        <div className="filter-carousel-row">
+        <div className="simplified-category-row">
+          {CATEGORY_ALGOS.map((o) => (
+            <IconButton
+              key={o.mode}
+              icon={o.icon}
+              variant="secondary"
+              active={activeCategory === o.mode}
+              onClick={() => jumpToGroup(o.mode)}
+            >
+              {o.label}
+            </IconButton>
+          ))}
+        </div>
+        <div className="filter-carousel-row" ref={carouselRef} onScroll={handleCarouselScroll}>
           <FilterChip
             label="None"
             thumbnail={filterThumbnails.none}
@@ -229,17 +300,22 @@ export default function SimplifiedLineArtPanel({
             editable={false}
             onClick={() => onSelectFilter(null)}
           />
-          {FILTER_MANIFEST.map((filter) => (
-            <FilterChip
-              key={filter.id}
-              label={filter.label}
-              thumbnail={filterThumbnails[filter.id]}
-              loading={thumbnailsGenerating && !filterThumbnails[filter.id]}
-              active={activeFilterId === filter.id}
-              editable={activeFilterId === filter.id}
-              onClick={() => (activeFilterId === filter.id ? onOpenEditSheet() : onSelectFilter(filter.id))}
-            />
-          ))}
+          {FILTER_MANIFEST.map((filter) => {
+            const groupStart = GROUP_START_IDS.has(filter.id)
+            return (
+              <FilterChip
+                key={filter.id}
+                label={filter.label}
+                thumbnail={filterThumbnails[filter.id]}
+                loading={thumbnailsGenerating && !filterThumbnails[filter.id]}
+                active={activeFilterId === filter.id}
+                editable={activeFilterId === filter.id}
+                groupStart={groupStart}
+                buttonRef={groupStart ? (el) => { groupRefs.current[filter.algo] = el } : undefined}
+                onClick={() => (activeFilterId === filter.id ? onOpenEditSheet() : onSelectFilter(filter.id))}
+              />
+            )
+          })}
         </div>
       </div>
     </BottomSheet>
@@ -252,6 +328,8 @@ function FilterChip({
   loading,
   active,
   editable,
+  groupStart,
+  buttonRef,
   onClick,
 }: {
   label: string
@@ -259,12 +337,16 @@ function FilterChip({
   loading?: boolean
   active: boolean
   editable: boolean
+  groupStart?: boolean
+  buttonRef?: (el: HTMLButtonElement | null) => void
   onClick: () => void
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       className={`filter-chip${active ? ' active' : ''}`}
+      data-group-start={groupStart ? 'true' : undefined}
       onClick={onClick}
       aria-label={editable ? `Edit ${label}` : `Select ${label}`}
     >

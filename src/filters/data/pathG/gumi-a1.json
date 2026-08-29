@@ -1,7 +1,9 @@
 {
-  "id": "gumi",
+  "id": "gumi-a1",
   "algo": "pathG",
-  "label": "Gumi",
+  "label": "Gumi A1",
+  "alias": "Gumi Line Mode A1",
+  "lockedFields": ["overlayPassthrough", "matteColor"],
   "params": {
     "threshold": 0.35,
     "blobMaxDt": 3,

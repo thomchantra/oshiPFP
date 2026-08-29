@@ -46,10 +46,10 @@ interface GradientSliderProps {
 }
 
 const DIRECTION_DEADZONE_PX = 6
-// Must match .gradient-slider-thumb's width/height in base.css — insets the thumb's travel
-// range so it never bleeds past the track's edges (otherwise clips the knob / causes a
-// horizontal scrollbar at fillPct 0/100).
-const THUMB_SIZE_PX = 20
+// Must match .gradient-slider-thumb's width in base.css — insets the thumb's travel range so it
+// never bleeds past the track's edges (otherwise clips the knob / causes a horizontal scrollbar at
+// fillPct 0/100). The knob is a 10x20 rounded rect, so this is its 10px width, not a square size.
+const THUMB_WIDTH_PX = 10
 
 function snap(raw: number, min: number, max: number, step: number): number {
   const stepped = Math.round((raw - min) / step) * step + min
@@ -191,7 +191,7 @@ export default function GradientSlider({
            mount). */}
         <div
           className="gradient-slider-thumb"
-          style={{ left: `calc((100% - ${THUMB_SIZE_PX}px) * ${fillPct / 100} + ${THUMB_SIZE_PX / 2}px)` }}
+          style={{ left: `calc((100% - ${THUMB_WIDTH_PX}px) * ${fillPct / 100} + ${THUMB_WIDTH_PX / 2}px)` }}
         />
         {curve ? (
           // Tapered sliders drive the native input in slider-position space

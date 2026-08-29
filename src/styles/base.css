@@ -621,8 +621,8 @@ button, input {
   left: 0;
   right: 0;
   top: 50%;
-  height: 10px;
-  margin-top: -6px;
+  height: 20px;
+  margin-top: -10px;
   border-radius: 9999px;
   overflow: hidden;
 }
@@ -632,7 +632,7 @@ button, input {
   top: 0;
   bottom: 0;
   background: var(--accent-title);
-  border-radius: 9999px;
+  border-radius: 0px;
 }
 .gradient-slider-input {
   position: relative;
@@ -659,26 +659,26 @@ button, input {
 .gradient-slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 24px;
   background: transparent;
   border: none;
   box-shadow: none;
 }
 .gradient-slider-input::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 24px;
   background: transparent;
   border: none;
   box-shadow: none;
 }
+/* 10x20 rounded-rect knob (v0.5 slider restyle) — sits on the 20px rail, ends fully rounded. */
 .gradient-slider-thumb {
   position: absolute;
   top: 50%;
-  width: 20px;
-  height: 20px;
-  margin-top: -1px;
-  border-radius: 50%;
+  width: 14px;
+  height: 24px;
+  border-radius: 10px;
   background: var(--white);
   border: 2px solid var(--accent-title);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -824,7 +824,7 @@ button, input {
      of its own (see the comment on .panel-col .tab-nav above), so content
      sat flush against the edge with nothing supplying an inset. Matches
      .tab-nav's own `padding: 0 10px` right above it in the same column. */
-  padding: 0 10px 20px;
+  padding: 10px 10px 20px;
 }
 /* Fixed-height sibling below .bottom-sheet-content, not inside it — see BottomSheet.tsx's `footer`
    prop doc comment for why (position:sticky inside a flex column is unreliable in Safari). */
@@ -871,16 +871,48 @@ button, input {
   .lineart-algoselector-row .icon-button { flex: initial; }
 }
 
-/* Simplified mode's filter carousel (SimplifiedLineArtPanel.tsx) — sized/spaced per
-   docs/v05_frames/carouselselector.svg: 68px chips, 10px gap, 10px corner radius, 12px label. */
-.filter-carousel-row {
+/* Simplified mode's quick controls: Threshold | Thickness side by side (v0.5 layout) — one
+   GradientSlider per column, each keeps its own label+value header row. */
+.simplified-quick-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
+}
+.simplified-quick-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Simplified mode's category pill row (SimplifiedLineArtPanel.tsx) — jump-nav + scroll-spy for the
+   carousel below. Same horizontal-scroll pill strip as .lineart-algoselector-row but tighter (no
+   header/label, reduced pill padding). */
+.simplified-category-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  padding: 4px 0;
+}
+.simplified-category-row .icon-button { min-height: 28px; flex: 0 0 auto; padding: 5px 8px; }
+@media (min-width: 900px) {
+  .simplified-category-row { flex-wrap: wrap; overflow-x: visible; }
+}
+
+/* Simplified mode's filter carousel (SimplifiedLineArtPanel.tsx) — sized per
+   docs/v05_frames/carouselselector.svg: 68px chips, 10px corner radius, 12px label. 5px between
+   chips within an algo group, 10px between groups (the +5px margin on [data-group-start]). */
+.filter-carousel-row {
+  position: relative;
+  display: flex;
+  gap: 5px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
   padding: 2px 0;
 }
+.filter-carousel-row .filter-chip[data-group-start] { margin-left: 5px; }
 .filter-chip {
   display: flex;
   flex-direction: column;
