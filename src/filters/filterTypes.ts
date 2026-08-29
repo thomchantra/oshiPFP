@@ -56,8 +56,8 @@ export interface FilterManifestEntry {
    * Never shown in the UI. */
   alias: string
   /** Per-filter override for the two carousel quick slots, when this filter's Threshold/Thickness
-   * concepts don't map to its algo's default `QUICK_MACRO_FIELDS` pair — e.g. Daiya A1 uses JFA
-   * radius for Thickness, Daiya C1 uses octagon radius, Gumi C2 uses brightness. Falls back to
+   * concepts don't map to its algo's default `QUICK_MACRO_FIELDS` pair — e.g. Gumi Fill's filters
+   * put `gumiFillRadius` in the Thickness slot instead of Line mode's `blobMaxDt`. Falls back to
    * `QUICK_MACRO_FIELDS[algo]` when omitted. `getEditableFields`/`getManagedFields` resolve through
    * `resolveQuickFields(filter)`, so an override here is captured/isolated correctly. */
   quick?: { threshold: keyof LineArtParams; thickness: keyof LineArtParams }
