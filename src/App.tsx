@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import TabNav from './components/TabNav'
 import HeaderBar from './components/HeaderBar'
 import AlgoGalleryModal from './components/AlgoGalleryModal'
@@ -60,6 +60,7 @@ declare global {
       thumbnails: () => Record<string, string>
       thumbnailsGenerating: () => boolean
       regenerateThumbnails: () => void
+      readFinalPixels: () => { data: Uint8ClampedArray; width: number; height: number } | null
     }
   }
 }
@@ -426,12 +427,27 @@ export default function App() {
     onRectChange: pipeline.setCropRect,
   })
 
+  // Regenerate carousel thumbnails when the cropped photo, the Grade tab, or the Tuning stage
+  // (tone shaping / denoise / colour lift) changes — thumbnails render live against all three.
+  // JSON.stringify keeps the effect from firing on unrelated re-renders (the values are small).
+  const thumbRegenSignal = useMemo(
+    () => JSON.stringify([
+      crop.transform,
+      lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
+      colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
+      colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap,
+      colorCurve.channel, colorCurve.curves,
+    ]),
+    [crop.transform, lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
+      colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
+      colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap, colorCurve.channel, colorCurve.curves],
+  )
+
   const { filterThumbnails, thumbnailsGenerating, regenerateThumbnails, refreshFilterThumbnail } = useFilterThumbnails({
     hasImage,
     paramsByMode,
     filterOverrides,
-    liveLineArtParams: lineArtParams,
-    cropSignal: crop.transform,
+    regenSignal: thumbRegenSignal,
     pipeline,
   })
 
@@ -616,6 +632,7 @@ export default function App() {
       thumbnails: () => filterThumbnails,
       thumbnailsGenerating: () => thumbnailsGenerating,
       regenerateThumbnails,
+      readFinalPixels: () => pipeline.readFinalPixels(),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilterId, filterOverrides, editSnapshot, lineArtParams, filterThumbnails, thumbnailsGenerating, regenerateThumbnails])
