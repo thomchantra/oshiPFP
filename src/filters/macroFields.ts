@@ -1,6 +1,8 @@
 import { resolveQuickFields } from './quickMacros'
-import type { FilterManifestEntry } from './filterTypes'
+import type { AlgoMacroFields, ColorMacroFields, FilterManifestEntry } from './filterTypes'
 import type { LineArtMode, LineArtParams } from '../types'
+
+export type { AlgoMacroFields, ColorMacroFields }
 
 /** Universal Brightness macro's own fields (lineBrightness.ts) — algo-independent, so not part of
  * AlgoMacroFields/ColorMacroFields. The Simplified "Matte" pill rides `blendMode`/`opacity` (a
@@ -8,49 +10,27 @@ import type { LineArtMode, LineArtParams } from '../types'
  * (filter.lockedFields), cut from the universal editable surface per the v0.5 scope decision. */
 const BRIGHTNESS_FIELDS: (keyof LineArtParams)[] = ['opacity', 'blendMode']
 
-/** Extends quickMacros.ts's Threshold/Thickness pair with the remaining Invert/Hardness macros,
- * per docs/0.5-simplified-mode-mvp-plan.md's mapping table. `hardness` is omitted for Gumi
- * (parked — dormant gumiSoftness/gumiSoftDetection fields aren't wired to any UI) and for
- * Hinata/Tsukiko's Edge treatment (has no hardness concept at all). */
-export interface AlgoMacroFields {
-  invert: keyof LineArtParams
-  hardness?: keyof LineArtParams
-  /** Fields the algo's own macro sliders set as a side effect (not their own visible row) but
-   * still need whitelisting so they survive filter reselection correctly — e.g. Gumi's Thickness
-   * slider also derives gumiOverdrive (see SimplifiedLineArtPanel.tsx's
-   * GUMI_OVERDRIVE_PER_THICKNESS doc comment for why); without this, gumiOverdrive would silently
-   * reset to the filter JSON's static default instead of the ratio-correct value on reselection,
-   * since the capture effect only ever syncs fields getEditableFields returns. */
-  derivedFields?: (keyof LineArtParams)[]
-}
-
 export const MACRO_FIELDS: Record<LineArtMode, AlgoMacroFields> = {
   pathB: { invert: 'fillInvert', hardness: 'hardness' },
   pathC: { invert: 'fillInvert', hardness: 'hardness' },
   pathD: { invert: 'fillInvert', hardness: 'hardness' },
   pathF: { invert: 'fillInvert', hardness: 'hardness' },
-  pathG: { invert: 'gumiLineInvert', derivedFields: ['gumiOverdrive'] },
+  pathG: { invert: 'gumiLineInvert' },
   pathH: { invert: 'edgeInvertFill' },
   pathI: { invert: 'edgeInvertFill' },
 }
 
-export interface ColorMacroFields {
-  fillType: keyof LineArtParams
-  solidColor: keyof LineArtParams
-  colorContrast: keyof LineArtParams
-  /** Optional — the Image group's EV-stops Exposure slider (before Color Contrast). Present for
-   * Botan/Chie; omitted for algos whose image fill isn't wired to it (Daiya/Fumiko's vivid variant,
-   * Gumi). SimplifiedLineArtPanel.tsx hides the row when absent. */
-  exposure?: keyof LineArtParams
-  gradientPivot: keyof LineArtParams
-  /** Optional — Gumi's Line-mode gradient fill has no live duo-tone field (pipeline.ts's
-   * maskFillColorProgram call site for it hardcodes uGradientDuoTone=0), so its own
-   * COLOR_MACRO_FIELDS entry omits this. SimplifiedLineArtPanel.tsx hides the Duo Tone toggle
-   * entirely when absent, same pattern as AlgoMacroFields.hardness being optional. */
-  gradientDuoTone?: keyof LineArtParams
-  gradientShadow: keyof LineArtParams
-  gradientMid: keyof LineArtParams
-  gradientHighlight: keyof LineArtParams
+/** Invert/Hardness mapping for a specific filter — its `macro` override merged over the algo
+ * default (Gumi Fill filters repoint `invert` to `gumiFillInvert`, etc.). */
+export function resolveMacroFields(filter: FilterManifestEntry): AlgoMacroFields {
+  return { ...MACRO_FIELDS[filter.algo], ...filter.macro }
+}
+
+/** Fill Type / Color group mapping for a specific filter — its `color` override (or `null` to
+ * suppress) wins outright over the algo default. */
+export function resolveColorFields(filter: FilterManifestEntry): ColorMacroFields | undefined {
+  if (filter.color !== undefined) return filter.color ?? undefined
+  return COLOR_MACRO_FIELDS[filter.algo]
 }
 
 /** Color group (Fill Type: Image/Solid/Gradient) has real per-algo shape variance (Gumi Line's own
@@ -122,10 +102,9 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
  * so each filter stays genuinely self-contained (selecting it always resets every managed field,
  * never inherits whatever an earlier session touched). */
 export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtParams)[] {
-  const algo = filter.algo
   const quick = resolveQuickFields(filter)
-  const macro = MACRO_FIELDS[algo]
-  const color = COLOR_MACRO_FIELDS[algo]
+  const macro = resolveMacroFields(filter)
+  const color = resolveColorFields(filter)
   const fields: (keyof LineArtParams)[] = [quick.threshold, quick.thickness, macro.invert, ...BRIGHTNESS_FIELDS]
   if (macro.hardness) fields.push(macro.hardness)
   if (macro.derivedFields) fields.push(...macro.derivedFields)

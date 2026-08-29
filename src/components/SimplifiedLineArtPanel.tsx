@@ -10,7 +10,7 @@ import { GradientFillControls, TintColorRow } from './GradientFillControls'
 import { FillTypeRow } from './LineArtPanel'
 import { FILTER_MANIFEST } from '../filters/filterManifest'
 import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
-import { MACRO_FIELDS, COLOR_MACRO_FIELDS } from '../filters/macroFields'
+import { resolveMacroFields, resolveColorFields } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
 
@@ -23,18 +23,6 @@ const CATEGORY_ALGOS = ALGO_OPTIONS.filter((o) => FILTER_MANIFEST.some((f) => f.
 const GROUP_START_IDS = new Set(
   CATEGORY_ALGOS.map((o) => FILTER_MANIFEST.find((f) => f.algo === o.mode)!.id),
 )
-
-/** Gumi-specific: blobMask.frag.ts rejects a pixel once it sits farther than blobMaxDt from any
- * boundary — meant to reject blob *interiors*, but a stroke whose own width (after growth) exceeds
- * ~2×blobMaxDt has its center rejected too, hollowing out what should be one solid stroke into a
- * double outline with the original photo showing through the middle. gumiOverdrive (a true dilate
- * that runs after blob-rejection) is what fills that hole back in — so Thickness (mapped to
- * blobMaxDt for Gumi, see quickMacros.ts) has to move both together, at a fixed 3:0.5 ratio, to
- * avoid resurfacing this by construction rather than just resizing blobMaxDt alone. No other
- * algo's Thickness macro maps to blobMaxDt (Botan/Daiya/Fumiko all map to `radius`, a real
- * independent morphological grow with no such rejection step), so this coupling is scoped to
- * pathG only. */
-const GUMI_OVERDRIVE_PER_THICKNESS = 0.5 / 3
 
 interface SimplifiedLineArtPanelProps {
   params: LineArtParams
@@ -119,18 +107,21 @@ export default function SimplifiedLineArtPanel({
   }, [activeFilterId, syncCategoryFromScroll])
 
   if (editSheetOpen && activeFilter) {
-    const macroFields = MACRO_FIELDS[activeFilter.algo]
-    const colorFields = COLOR_MACRO_FIELDS[activeFilter.algo]
+    const macroFields = resolveMacroFields(activeFilter)
+    const colorFields = resolveColorFields(activeFilter)
     const quick = resolveQuickFields(activeFilter)
     const quickMeta = resolveQuickMeta(activeFilter)
     const locked = new Set(activeFilter.lockedFields ?? [])
     // Hide the Fill / Color group when it can't meaningfully drive the output: Find Edge mode
-    // bypasses fillType/fillInvert entirely (raw Sobel colour, forced Multiply), and Overlay
-    // Passthrough flattens the result onto the matte. Both fields are baked per-filter (never live
-    // toggles here); `findEdge` is false for every non-Fumiko algo.
+    // bypasses fillType/fillInvert entirely (raw Sobel colour, forced Multiply), Overlay
+    // Passthrough flattens the result onto the matte, and Gumi Fill's Pixel Threshold is a raw
+    // per-pixel test with no fill region to colour. All three fields are baked per-filter (never
+    // live toggles here); each is false/absent for every algo that doesn't use it.
     const findEdgeOn = params.findEdge === true
     const passthroughOn = params.overlayPassthrough === true
-    const hideFillGroup = findEdgeOn || passthroughOn
+    const gumiFillOn = params.gumiFillMode === true
+    const gumiPixelThreshOn = gumiFillOn && params.gumiFillPixelThreshold === true
+    const hideFillGroup = findEdgeOn || passthroughOn || gumiPixelThreshOn
     const hardnessField = macroFields.hardness
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
 
@@ -187,18 +178,14 @@ export default function SimplifiedLineArtPanel({
             </div>
           )}
           <div className="lineart-divider" />
-          <GradientSlider
-            label={quickMeta.thickness.label} value={getNum(quick.thickness)}
-            min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
-            defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
-            onChange={(v) => {
-              if (activeFilter.algo === 'pathG') {
-                onChange({ ...params, [quick.thickness]: v, gumiOverdrive: v * GUMI_OVERDRIVE_PER_THICKNESS })
-                return
-              }
-              setField(quick.thickness, v)
-            }}
-          />
+          {!gumiPixelThreshOn && (
+            <GradientSlider
+              label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+              min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
+              defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
+              onChange={(v) => setField(quick.thickness, v)}
+            />
+          )}
           {hardnessField && (
             <GradientSlider
               label="Hardness" value={getNum(hardnessField)} min={-1} max={1}
@@ -214,6 +201,9 @@ export default function SimplifiedLineArtPanel({
               onChange={(v) => setField(extra.field, v)}
             />
           ))}
+          {/* Gumi Fill mode's edit sheet is Threshold / Invert / Fill Radius / Fill Type only —
+             no Blending Mode (its output isn't composited the same way). */}
+          {!gumiFillOn && (<>
           <div className="lineart-divider" />
           {/* Blending Mode: header row (label + %), a 4-way mode selector, then the value slider —
              bipolar -100..100 for Mult / Add, plain 0..100 for the single-blend tabs. The two
@@ -263,6 +253,7 @@ export default function SimplifiedLineArtPanel({
               setField('opacity', v / 100)
             }}
           />
+          </>)}
           {colorFields && !hideFillGroup && (
             <>
               <div className="lineart-divider" />
@@ -310,6 +301,8 @@ export default function SimplifiedLineArtPanel({
 
   const quick = activeFilter ? resolveQuickFields(activeFilter) : undefined
   const quickMeta = activeFilter ? resolveQuickMeta(activeFilter) : undefined
+  // Gumi Fill + Pixel Threshold: no meaningful 2nd controller (raw per-pixel test) — Threshold only.
+  const carouselThicknessHidden = params.gumiFillMode === true && params.gumiFillPixelThreshold === true
 
   return (
     <BottomSheet noDrag>
@@ -322,12 +315,14 @@ export default function SimplifiedLineArtPanel({
               defaultValue={(activeFilter!.params[quick.threshold] as number) ?? 0}
               onChange={(v) => setField(quick.threshold, v)}
             />
-            <GradientSlider
-              label={quickMeta.thickness.label} value={getNum(quick.thickness)}
-              min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
-              defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
-              onChange={(v) => setField(quick.thickness, v)}
-            />
+            {!carouselThicknessHidden && (
+              <GradientSlider
+                label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+                min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
+                defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
+                onChange={(v) => setField(quick.thickness, v)}
+              />
+            )}
           </div>
         )}
         <div className="simplified-category-row">

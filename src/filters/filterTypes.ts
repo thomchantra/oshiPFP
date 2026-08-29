@@ -1,5 +1,32 @@
 import type { LineArtMode, LineArtParams } from '../types'
 
+/** Per-algo Invert/Hardness macro mapping (extends quickMacros.ts's Threshold/Thickness pair).
+ * `hardness` is omitted for algos with no wired hardness concept (Gumi, Hinata/Tsukiko Edge). */
+export interface AlgoMacroFields {
+  invert: keyof LineArtParams
+  hardness?: keyof LineArtParams
+  /** Fields a macro slider sets as a side effect (no visible row of their own) that still need
+   * capture-effect whitelisting so they survive filter reselection. */
+  derivedFields?: (keyof LineArtParams)[]
+}
+
+/** Per-algo Fill Type / Color group mapping. Botan/Chie/Daiya/Fumiko share one field set; Gumi
+ * Line and Gumi Fill each have their own (`gumiLine*` / `gumiFill*`). */
+export interface ColorMacroFields {
+  fillType: keyof LineArtParams
+  solidColor: keyof LineArtParams
+  colorContrast: keyof LineArtParams
+  /** Optional EV-stops Exposure slider (before Color Contrast) — present only where the image
+   * fill is wired to it. */
+  exposure?: keyof LineArtParams
+  gradientPivot: keyof LineArtParams
+  /** Optional — omitted where the gradient fill has no live Duo Tone field. */
+  gradientDuoTone?: keyof LineArtParams
+  gradientShadow: keyof LineArtParams
+  gradientMid: keyof LineArtParams
+  gradientHighlight: keyof LineArtParams
+}
+
 /** One "filter" — a named, pre-tuned Line Art recipe for the Simplified-mode carousel, distinct
  * from src/presets/ (which is a static before/after demo-photo gallery for the Advanced panel).
  * `params` is a whitelisted subset of LineArtParams: exactly the fields Simplified mode's macro
@@ -34,6 +61,18 @@ export interface FilterManifestEntry {
    * `QUICK_MACRO_FIELDS[algo]` when omitted. `getEditableFields`/`getManagedFields` resolve through
    * `resolveQuickFields(filter)`, so an override here is captured/isolated correctly. */
   quick?: { threshold: keyof LineArtParams; thickness: keyof LineArtParams }
+  /** Per-filter override for the quick slots' label/range — for a sub-mode whose slot means
+   * something different from the algo default (e.g. Gumi Fill's "Fill Radius"). Merged over
+   * `QUICK_MACRO_META[algo]` in `resolveQuickMeta`. */
+  quickMeta?: { threshold?: { label?: string; min?: number; max?: number; step?: number }; thickness?: { label?: string; min?: number; max?: number; step?: number } }
+  /** Per-filter override for the Invert/Hardness macro mapping — for a sub-mode that drives
+   * different fields (e.g. Gumi Fill's Invert is `gumiFillInvert`, not Line's `gumiLineInvert`).
+   * Merged over `MACRO_FIELDS[algo]`. */
+  macro?: Partial<AlgoMacroFields>
+  /** Per-filter override for the Fill Type / Color group mapping — for a sub-mode with its own
+   * fill fields (Gumi Fill's `gumiFill*`). Replaces `COLOR_MACRO_FIELDS[algo]` wholesale; `null`
+   * suppresses the group entirely. */
+  color?: ColorMacroFields | null
   /** Fields this filter pins to a fixed value (taken from `params`) and hides from the edit sheet —
    * for otherwise-editable controls that are situational and cut from the UI surface per the v0.5
    * scope decision (overlayPassthrough/matteColor, and the algo-level invert/behaviour forks like

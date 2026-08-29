@@ -1,0 +1,33 @@
+{
+  "id": "gumi-c2",
+  "algo": "pathG",
+  "label": "Gumi C2",
+  "alias": "Gumi Fill Mode Pixel Threshold C2",
+  "quick": { "threshold": "threshold", "thickness": "gumiFillRadius" },
+  "quickMeta": { "thickness": { "label": "Fill Radius", "min": 0, "max": 20 } },
+  "macro": { "invert": "gumiFillInvert" },
+  "color": null,
+  "lockedFields": [
+    "gumiFillMode", "gumiFillPixelThreshold", "gumiFillType", "gumiFillSolidColor",
+    "gumiFillColorContrast", "gumiFillGradientPivot", "gumiGradientShadow", "gumiGradientMid",
+    "gumiGradientHighlight", "overlayPassthrough", "matteColor"
+  ],
+  "params": {
+    "threshold": 0.5,
+    "gumiFillRadius": 8,
+    "gumiFillInvert": false,
+    "gumiFillMode": true,
+    "gumiFillPixelThreshold": true,
+    "opacity": 1,
+    "blendMode": "multiply",
+    "overlayPassthrough": false,
+    "matteColor": [1, 1, 1],
+    "gumiFillType": "image",
+    "gumiFillSolidColor": [0, 0, 0],
+    "gumiFillColorContrast": 1,
+    "gumiFillGradientPivot": 0,
+    "gumiGradientShadow": [0, 0, 0],
+    "gumiGradientMid": [0.5, 0.5, 0.5],
+    "gumiGradientHighlight": [1, 1, 1]
+  }
+}

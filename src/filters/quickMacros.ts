@@ -41,14 +41,20 @@ const QUICK_MACRO_META: Partial<Record<LineArtMode, { threshold?: Partial<QuickS
     threshold: { label: 'Sensitivity', min: 0.5, max: 20 },
     thickness: { label: 'Radius', min: 0, max: 3 },
   },
+  // Gumi Line: the "thickness" slot is Maximum Blob Size (see QUICK_MACRO_FIELDS comment). Line
+  // Overdrive is a separate slider (extraFields) now, not fused into this one.
+  pathG: {
+    thickness: { label: 'Max Thickness', min: 1, max: 10 },
+  },
 }
 
-/** Label + slider range for a filter's two quick slots — the per-algo override merged onto the
- * shared defaults. Pair with `resolveQuickFields` (which field each slot writes). */
+/** Label + slider range for a filter's two quick slots — the per-filter `quickMeta` override (for
+ * a sub-mode like Gumi Fill) merged over the per-algo override merged over the shared defaults.
+ * Pair with `resolveQuickFields` (which field each slot writes). */
 export function resolveQuickMeta(filter: FilterManifestEntry): { threshold: QuickSlotMeta; thickness: QuickSlotMeta } {
   const m = QUICK_MACRO_META[filter.algo]
   return {
-    threshold: { ...DEFAULT_THRESHOLD_META, ...m?.threshold },
-    thickness: { ...DEFAULT_THICKNESS_META, ...m?.thickness },
+    threshold: { ...DEFAULT_THRESHOLD_META, ...m?.threshold, ...filter.quickMeta?.threshold },
+    thickness: { ...DEFAULT_THICKNESS_META, ...m?.thickness, ...filter.quickMeta?.thickness },
   }
 }
