@@ -1,0 +1,165 @@
+{
+  "id": "hinata-a1",
+  "algo": "pathH",
+  "label": "Hinata A1",
+  "alias": "Hinata Edge Mode Image Ink A1",
+  "quick": {
+    "threshold": "highPassStrength",
+    "thickness": "responsiveGrow"
+  },
+  "quickMeta": {
+    "threshold": {
+      "label": "High Pass",
+      "min": 0,
+      "max": 10
+    },
+    "thickness": {
+      "label": "Grow",
+      "min": 0,
+      "max": 10
+    }
+  },
+  "macro": {
+    "invert": "edgeInvertFill"
+  },
+  "color": null,
+  "extraFields": [
+    {
+      "field": "radius",
+      "label": "Blur (px)",
+      "min": 0,
+      "max": 20,
+      "step": 0.01
+    },
+    {
+      "field": "responsiveGrowBias",
+      "label": "Grow Bias",
+      "min": -1,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "field": [
+        "edgeInkOverDarkColorContrast",
+        "edgeInkOverLightColorContrast"
+      ],
+      "label": "Color Contrast",
+      "min": 0.2,
+      "max": 3,
+      "step": 0.01
+    },
+    {
+      "field": [
+        "edgeInkOverDarkExposure",
+        "edgeInkOverLightExposure"
+      ],
+      "label": "Exposure",
+      "min": -1,
+      "max": 1,
+      "step": 0.01
+    }
+  ],
+  "lockedFields": [
+    "highPassResponsiveColor",
+    "thresholdEnabled",
+    "hiToneTarget",
+    "overlayPassthrough",
+    "matteColor",
+    "responsiveCrossover",
+    "edgeDuoTone",
+    "edgeInkOverDarkFillType",
+    "edgeInkOverDarkSolidColor",
+    "edgeInkOverLightFillType",
+    "edgeInkOverLightSolidColor",
+    "hiRawDarkenLighten",
+    "hiRawContrast",
+    "threshold",
+    "hiThresholdContrast",
+    "hiThresholdInvert",
+    "fillInvert",
+    "fillType",
+    "tintColor",
+    "colorContrast",
+    "colorExposure",
+    "gradientShadow",
+    "gradientMid",
+    "gradientHighlight",
+    "gradientPivot",
+    "gradientDuoTone",
+    "hiToneGain",
+    "hiToneContrast",
+    "hiToneSaturation",
+    "hiToneHueInvert"
+  ],
+  "params": {
+    "opacity": 1,
+    "blendMode": "overwrite",
+    "highPassResponsiveColor": true,
+    "thresholdEnabled": false,
+    "hiToneTarget": "off",
+    "overlayPassthrough": false,
+    "matteColor": [
+      1,
+      1,
+      1
+    ],
+    "highPassStrength": 4,
+    "radius": 2,
+    "responsiveCrossover": 0.5,
+    "responsiveGrow": 0.5,
+    "responsiveGrowBias": 0,
+    "edgeInvertFill": false,
+    "edgeDuoTone": false,
+    "edgeInkOverDarkFillType": "image",
+    "edgeInkOverDarkSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "edgeInkOverDarkColorContrast": 1,
+    "edgeInkOverDarkExposure": 0,
+    "edgeInkOverLightFillType": "image",
+    "edgeInkOverLightSolidColor": [
+      0,
+      0,
+      0
+    ],
+    "edgeInkOverLightColorContrast": 1,
+    "edgeInkOverLightExposure": 0,
+    "hiRawDarkenLighten": 0,
+    "hiRawContrast": 1,
+    "threshold": 0.48,
+    "hiThresholdContrast": 1,
+    "hiThresholdInvert": false,
+    "fillInvert": false,
+    "fillType": "solid",
+    "tintColor": [
+      0,
+      0,
+      0
+    ],
+    "colorContrast": 1,
+    "colorExposure": 0,
+    "gradientShadow": [
+      0,
+      0,
+      0
+    ],
+    "gradientMid": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "gradientHighlight": [
+      1,
+      1,
+      1
+    ],
+    "gradientPivot": 0,
+    "gradientDuoTone": false,
+    "hiToneGain": 1,
+    "hiToneContrast": 1,
+    "hiToneSaturation": 1,
+    "hiToneHueInvert": false
+  }
+}

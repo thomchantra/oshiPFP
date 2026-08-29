@@ -1,9 +1,11 @@
 import type { LineArtMode, LineArtParams } from '../types'
 
 /** Per-algo Invert/Hardness macro mapping (extends quickMacros.ts's Threshold/Thickness pair).
- * `hardness` is omitted for algos with no wired hardness concept (Gumi, Hinata/Tsukiko Edge). */
+ * `hardness` is omitted for algos with no wired hardness concept (Gumi, Hinata/Tsukiko Edge).
+ * `invert` is omitted for treatments with no invert concept at all (Hinata Emboss) — the
+ * "Invert Filter" row is then simply not rendered. */
 export interface AlgoMacroFields {
-  invert: keyof LineArtParams
+  invert?: keyof LineArtParams
   hardness?: keyof LineArtParams
   /** Fields a macro slider sets as a side effect (no visible row of their own) that still need
    * capture-effect whitelisting so they survive filter reselection. */
@@ -87,5 +89,13 @@ export interface FilterManifestEntry {
    * sliders in SimplifiedLineArtPanel.tsx's edit sheet, below the algo's standard controls. A
    * field listed here still needs a value in `params`, same self-containment rule as every other
    * editable field (see this interface's own doc comment above). */
-  extraFields?: { field: keyof LineArtParams; label: string; min: number; max: number; step?: number }[]
+  /** `field` may be an array — one slider writing the same value to several params at once (e.g.
+   * Hinata Edge image ink's single "Color Contrast" / "Exposure" slider driving both the
+   * dark-region and light-region ink field). The slider reads/resets from `field[0]`. */
+  extraFields?: { field: keyof LineArtParams | (keyof LineArtParams)[]; label: string; min: number; max: number; step?: number }[]
+  /** Like `extraFields` but for `[r,g,b]` colour fields — rendered as a `TintColorRow` in the edit
+   * sheet, below the numeric extras. Used for a filter whose one colour control isn't the shared
+   * Fill Type / Color group (e.g. Hinata Edge's solid-ink variant, whose only colour knob is the
+   * ink swatch — `edgeInkOverDarkSolidColor`). Same self-containment rule: a value in `params`. */
+  extraColorFields?: { field: keyof LineArtParams; label: string }[]
 }

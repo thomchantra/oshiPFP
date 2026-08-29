@@ -16,8 +16,11 @@ export const MACRO_FIELDS: Record<LineArtMode, AlgoMacroFields> = {
   pathD: { invert: 'fillInvert', hardness: 'hardness' },
   pathF: { invert: 'fillInvert', hardness: 'hardness' },
   pathG: { invert: 'gumiLineInvert' },
-  pathH: { invert: 'edgeInvertFill' },
-  pathI: { invert: 'edgeInvertFill' },
+  // Hinata/Tsukiko have no single shared invert — each Output Treatment maps the "Invert Filter"
+  // row to its own field (Edge → edgeInvertFill, Erode → hiThresholdInvert, Tone → hiToneHueInvert,
+  // Emboss → none) via the per-filter `macro.invert` override. No sensible algo-level default.
+  pathH: {},
+  pathI: {},
 }
 
 /** Invert/Hardness mapping for a specific filter — its `macro` override merged over the algo
@@ -80,11 +83,40 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
     gradientMid: 'gradientMid',
     gradientHighlight: 'gradientHighlight',
   },
+  // Hinata Erode's post-threshold fill runs through maskFillColorProgram with the same shared fill
+  // fields as Botan (see pipeline.ts's Erode branch / LineArtPanel's `active === 'erode'` block).
+  // No Exposure row there, so no `exposure` key. Only Erode filters reference this — Edge/Emboss/
+  // Tone filters set `color: null`.
+  pathH: {
+    fillType: 'fillType',
+    solidColor: 'tintColor',
+    colorContrast: 'colorContrast',
+    exposure: 'colorExposure',
+    gradientPivot: 'gradientPivot',
+    gradientDuoTone: 'gradientDuoTone',
+    gradientShadow: 'gradientShadow',
+    gradientMid: 'gradientMid',
+    gradientHighlight: 'gradientHighlight',
+  },
+  // Tsukiko Erode shares Hinata Erode's fill path exactly (maskFillColorProgram, p.fillType/
+  // p.tintColor/p.colorContrast/p.colorExposure/gradient*). Emboss/Tone filters set color: null.
+  pathI: {
+    fillType: 'fillType',
+    solidColor: 'tintColor',
+    colorContrast: 'colorContrast',
+    exposure: 'colorExposure',
+    gradientPivot: 'gradientPivot',
+    gradientDuoTone: 'gradientDuoTone',
+    gradientShadow: 'gradientShadow',
+    gradientMid: 'gradientMid',
+    gradientHighlight: 'gradientHighlight',
+  },
   // No gradientDuoTone — see ColorMacroFields.gradientDuoTone's own doc comment.
   pathG: {
     fillType: 'gumiLineFillType',
     solidColor: 'gumiLineSolidColor',
     colorContrast: 'gumiLineColorContrast',
+    exposure: 'gumiLineColorExposure',
     gradientPivot: 'gumiLineGradientPivot',
     gradientShadow: 'gumiGradientShadow',
     gradientMid: 'gumiGradientMid',
@@ -105,7 +137,8 @@ export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtPa
   const quick = resolveQuickFields(filter)
   const macro = resolveMacroFields(filter)
   const color = resolveColorFields(filter)
-  const fields: (keyof LineArtParams)[] = [quick.threshold, quick.thickness, macro.invert, ...BRIGHTNESS_FIELDS]
+  const fields: (keyof LineArtParams)[] = [quick.threshold, quick.thickness, ...BRIGHTNESS_FIELDS]
+  if (macro.invert) fields.push(macro.invert)
   if (macro.hardness) fields.push(macro.hardness)
   if (macro.derivedFields) fields.push(...macro.derivedFields)
   if (color) {
@@ -113,7 +146,8 @@ export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtPa
     if (color.exposure) fields.push(color.exposure)
     if (color.gradientDuoTone) fields.push(color.gradientDuoTone)
   }
-  if (filter.extraFields) fields.push(...filter.extraFields.map((f) => f.field))
+  if (filter.extraFields) fields.push(...filter.extraFields.flatMap((f) => (Array.isArray(f.field) ? f.field : [f.field])))
+  if (filter.extraColorFields) fields.push(...filter.extraColorFields.map((f) => f.field))
   return fields
 }
 

@@ -10,9 +10,9 @@
   "lockedFields": [
     "gumiFillMode", "gumiFillPixelThreshold", "gumiFillType", "gumiFillSolidColor",
     "gumiFillColorContrast", "gumiFillGradientPivot", "gumiGradientShadow", "gumiGradientMid",
-    "gumiGradientHighlight", "blobMaxDt", "radius", "gumiOverdrive", "gumiBlobGamma",
+    "gumiGradientHighlight", "gumiFillColorExposure", "blobMaxDt", "radius", "gumiOverdrive", "gumiBlobGamma",
     "gumiLineInvert", "gumiLineFillType", "gumiLineSolidColor", "gumiLineColorContrast",
-    "gumiLineGradientPivot", "overlayPassthrough", "matteColor"
+    "gumiLineColorExposure", "gumiLineGradientPivot", "overlayPassthrough", "matteColor"
   ],
   "params": {
     "threshold": 0.5,
@@ -27,6 +27,7 @@
     "gumiFillType": "image",
     "gumiFillSolidColor": [0, 0, 0],
     "gumiFillColorContrast": 1,
+    "gumiFillColorExposure": 0,
     "gumiFillGradientPivot": 0,
     "gumiGradientShadow": [0, 0, 0],
     "gumiGradientMid": [0.5, 0.5, 0.5],
@@ -39,6 +40,7 @@
     "gumiLineFillType": "solid",
     "gumiLineSolidColor": [0, 0, 0],
     "gumiLineColorContrast": 1,
+    "gumiLineColorExposure": 0,
     "gumiLineGradientPivot": 0
   }
 }

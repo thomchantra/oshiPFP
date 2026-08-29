@@ -422,6 +422,12 @@ export interface LineArtParams {
   gumiLineGradientPivot: number
   gumiFillColorContrast: number
   gumiFillGradientPivot: number
+  /** Image-fill exposure in EV stops (pow(2, ev)) for Gumi Line / Fill mode — same convention and
+   * shared `fillTypeColor.frag` `uColorExposure` path as the top-level `colorExposure`, but kept
+   * per-context like the `gumi*ColorContrast` pair above (all Gumi fill contexts can be live at
+   * once). 0 = identity. */
+  gumiLineColorExposure: number
+  gumiFillColorExposure: number
   gumiDualBlackColorContrast: number
   gumiDualWhiteColorContrast: number
 

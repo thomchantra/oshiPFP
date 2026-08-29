@@ -176,6 +176,8 @@ const IDENTITY_LINE_ART: LineArtParams = {
   gumiLineGradientPivot: 0,
   gumiFillColorContrast: 1,
   gumiFillGradientPivot: 0,
+  gumiLineColorExposure: 0,
+  gumiFillColorExposure: 0,
   gumiDualBlackColorContrast: 1,
   gumiDualWhiteColorContrast: 1,
   thresholdEnabled: false,
@@ -2650,7 +2652,7 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividBoost'), 1)
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uVividDeadzone'), 1)
           gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorContrast'), p.gumiFillColorContrast)
-          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorExposure'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.fillMaskProgram, 'uColorExposure'), p.gumiFillColorExposure)
         })
         outputTarget = this.gumiBlobTarget
       } else {
@@ -2698,7 +2700,7 @@ export class Pipeline {
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividBoost'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uVividDeadzone'), 1)
           gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorContrast'), p.gumiLineColorContrast)
-          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorExposure'), 0)
+          gl.uniform1f(gl.getUniformLocation(this.maskFillColorProgram, 'uColorExposure'), p.gumiLineColorExposure)
         })
         this.traceSampleGrid('gl:gumiLineColorTarget-final(Gumi)', this.gumiLineColorTarget, {
           mode: p.mode,
@@ -2993,7 +2995,7 @@ export class Pipeline {
             vividBoost: 1,
             vividDeadzone: 1,
             colorContrast: p.colorContrast,
-            colorExposure: 0,
+            colorExposure: p.colorExposure,
           })
         })
         outputTarget = this.hiThreshFillColorTarget

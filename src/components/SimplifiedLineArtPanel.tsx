@@ -12,6 +12,7 @@ import { FILTER_MANIFEST } from '../filters/filterManifest'
 import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
 import { resolveMacroFields, resolveColorFields } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
+import { toneBlendToParams, paramsToToneBlend, formatToneBlend } from '../lineart/hinataToneBlend'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
 
 /** Algos with at least one authored filter, in ALGO_OPTIONS order — drives the category pill row
@@ -23,6 +24,15 @@ const CATEGORY_ALGOS = ALGO_OPTIONS.filter((o) => FILTER_MANIFEST.some((f) => f.
 const GROUP_START_IDS = new Set(
   CATEGORY_ALGOS.map((o) => FILTER_MANIFEST.find((f) => f.algo === o.mode)!.id),
 )
+
+/** Per-invert-field label for the "Invert Filter" toggle row — some algos/treatments name the
+ * concept differently (Hinata Edge "Fill Gaps Instead", Erode "Invert Erosion", Tone "Invert
+ * Hue"). Anything not listed falls back to the generic "Invert Filter". */
+const INVERT_LABELS: Partial<Record<string, string>> = {
+  edgeInvertFill: 'Fill Gaps Instead',
+  hiThresholdInvert: 'Invert Erosion',
+  hiToneHueInvert: 'Invert Hue',
+}
 
 interface SimplifiedLineArtPanelProps {
   params: LineArtParams
@@ -135,6 +145,10 @@ export default function SimplifiedLineArtPanel({
     const gumiPixelThreshOn = gumiFillOn && params.gumiFillPixelThreshold === true
     const hideFillGroup = findEdgeOn || passthroughOn || gumiPixelThreshOn
     const hardnessField = macroFields.hardness
+    const invertLabel = macroFields.invert ? (INVERT_LABELS[macroFields.invert] ?? 'Invert Filter') : 'Invert Filter'
+    // Hinata Tone's Multiply/Screen bipolar control replaces the flat Invert row's neighbours —
+    // shown when the filter opts in via macro.derivedFields (Edge/Emboss/Erode never do).
+    const hinataToneOn = activeFilter.macro?.derivedFields?.includes('hiToneTarget') === true
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
 
     // Blending Mode macro: "Mult / Add" is the one bipolar tab (sign picks the darken/brighten
@@ -172,21 +186,21 @@ export default function SimplifiedLineArtPanel({
             defaultValue={(activeFilter.params[quick.threshold] as number) ?? 0}
             onChange={(v) => setField(quick.threshold, v)}
           />
-          {!findEdgeOn && (
+          {!findEdgeOn && macroFields.invert && (
             <div
               className="lineart-toggle-row"
               role="button"
               tabIndex={0}
-              onClick={() => setField(macroFields.invert, !getBool(macroFields.invert))}
+              onClick={() => setField(macroFields.invert!, !getBool(macroFields.invert!))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  setField(macroFields.invert, !getBool(macroFields.invert))
+                  setField(macroFields.invert!, !getBool(macroFields.invert!))
                 }
               }}
             >
-              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>Invert Filter</span>
-              <ToggleSwitch on={getBool(macroFields.invert)} label="Invert Filter" />
+              <span className="font-param-label" style={{ color: 'var(--accent-dark)' }}>{invertLabel}</span>
+              <ToggleSwitch on={getBool(macroFields.invert)} label={invertLabel} />
             </div>
           )}
           <div className="lineart-divider" />
@@ -205,12 +219,38 @@ export default function SimplifiedLineArtPanel({
               onChange={(v) => setField(hardnessField, v)}
             />
           )}
-          {activeFilter.extraFields?.filter((extra) => !locked.has(extra.field)).map((extra) => (
+          {hinataToneOn && (
             <GradientSlider
+              label="Tone (Multiply / Screen)"
+              value={paramsToToneBlend(params.hiToneTarget, params.hiToneGain)}
+              min={-100} max={100}
+              defaultValue={paramsToToneBlend(
+                (activeFilter.params.hiToneTarget as LineArtParams['hiToneTarget']) ?? 'off',
+                (activeFilter.params.hiToneGain as number) ?? 1,
+              )}
+              formatValue={formatToneBlend}
+              onChange={(v) => onChange({ ...params, ...toneBlendToParams(v) })}
+            />
+          )}
+          {activeFilter.extraFields?.map((extra) => {
+            // `field` may be an array (one slider → several params); read/reset from the first.
+            const fields = Array.isArray(extra.field) ? extra.field : [extra.field]
+            if (fields.some((f) => locked.has(f))) return null
+            return (
+              <GradientSlider
+                key={fields[0]}
+                label={extra.label} value={getNum(fields[0])} min={extra.min} max={extra.max} step={extra.step}
+                defaultValue={(activeFilter.params[fields[0]] as number) ?? extra.min}
+                onChange={(v) => onChange(fields.reduce((acc, f) => ({ ...acc, [f]: v }), { ...params }) as LineArtParams)}
+              />
+            )
+          })}
+          {activeFilter.extraColorFields?.filter((extra) => !locked.has(extra.field)).map((extra) => (
+            <TintColorRow
               key={extra.field}
-              label={extra.label} value={getNum(extra.field)} min={extra.min} max={extra.max} step={extra.step}
-              defaultValue={(activeFilter.params[extra.field] as number) ?? extra.min}
-              onChange={(v) => setField(extra.field, v)}
+              label={extra.label}
+              tintColor={getColor(extra.field)}
+              onChange={(rgb) => setField(extra.field, rgb)}
             />
           ))}
           {/* Gumi Fill mode's edit sheet is Threshold / Invert / Fill Radius / Fill Type only —
@@ -300,10 +340,23 @@ export default function SimplifiedLineArtPanel({
               )}
             </>
           )}
-          {!colorFields && !hideFillGroup && (
+          {/* `color: null` in the JSON = this filter deliberately has no fill group (Hinata Edge/
+             Emboss/Tone); only show the "not wired yet" note for an algo genuinely missing a
+             COLOR_MACRO_FIELDS entry. */}
+          {!colorFields && !hideFillGroup && activeFilter.color !== null && (
             <>
               <div className="lineart-divider" />
               <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>Color — coming soon for this algorithm</p>
+            </>
+          )}
+          {/* Overlay Passthrough flattens the result onto a solid matte instead of compositing —
+             the matte colour is the one thing still worth exposing in that mode (the fill group is
+             hidden, see hideFillGroup). Every passthrough filter bakes matteColor in lockedFields
+             so it's captured/isolated per-filter. */}
+          {passthroughOn && (
+            <>
+              <div className="lineart-divider" />
+              <TintColorRow label="Matte Color" tintColor={params.matteColor} onChange={(rgb) => setField('matteColor', rgb)} />
             </>
           )}
         </div>

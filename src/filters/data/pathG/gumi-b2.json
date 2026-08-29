@@ -5,7 +5,7 @@
   "alias": "Gumi Line Mode Invert-Fill Add B2",
   "lockedFields": [
     "gumiFillMode", "gumiFillPixelThreshold", "gumiFillRadius", "gumiFillInvert", "gumiFillType",
-    "gumiFillSolidColor", "gumiFillColorContrast", "gumiFillGradientPivot",
+    "gumiFillSolidColor", "gumiFillColorContrast", "gumiFillGradientPivot", "gumiFillColorExposure",
     "overlayPassthrough", "matteColor"
   ],
   "params": {
@@ -22,6 +22,7 @@
     "gumiLineFillType": "solid",
     "gumiLineSolidColor": [0.196, 0.196, 1],
     "gumiLineColorContrast": 1,
+    "gumiLineColorExposure": 0,
     "gumiLineGradientPivot": 0,
     "gumiGradientShadow": [0, 0, 0],
     "gumiGradientMid": [0.5, 0.5, 0.5],
@@ -33,6 +34,7 @@
     "gumiFillType": "image",
     "gumiFillSolidColor": [0, 0, 0],
     "gumiFillColorContrast": 1,
+    "gumiFillColorExposure": 0,
     "gumiFillGradientPivot": 0
   },
   "extraFields": [
