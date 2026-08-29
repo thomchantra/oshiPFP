@@ -34,6 +34,10 @@ interface GradientSliderProps {
   formatValue?: (value: number) => string
   /** Rendered between the label and the numeric value, e.g. the Luminance Ramp eyedropper's icon+swatch — see LineArtPanel.tsx. */
   rightAccessory?: ReactNode
+  /** Skips the label/value header row entirely (track only) — for a caller that renders its own
+   * header above the slider, e.g. Simplified mode's Blending Mode row (label + value + a segmented
+   * mode selector sit above the track). `label` is still used for the input's aria-label. */
+  hideLabel?: boolean
   /** Greys the row out and ignores pointer/keyboard input — for params that are currently a structural no-op (e.g. Gumi's Floor/Ceiling when Feather is 0, see LineArtPanel.tsx) rather than just "not yet touched." */
   disabled?: boolean
   /** Optional reference marker(s) drawn as thin red lines on the track, in the same value-space
@@ -83,6 +87,7 @@ export default function GradientSlider({
   curve,
   formatValue,
   rightAccessory,
+  hideLabel,
   disabled,
   markers,
   onChange,
@@ -148,13 +153,15 @@ export default function GradientSlider({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
-      <div className="field-row-label">
-        <span className="font-param-label">{label}</span>
-        <span className="field-row-right">
-          {rightAccessory}
-          <span className="value font-value">{formatValue ? formatValue(value) : value.toFixed(2)}</span>
-        </span>
-      </div>
+      {!hideLabel && (
+        <div className="field-row-label">
+          <span className="font-param-label">{label}</span>
+          <span className="field-row-right">
+            {rightAccessory}
+            <span className="value font-value">{formatValue ? formatValue(value) : value.toFixed(2)}</span>
+          </span>
+        </div>
+      )}
       <div className="gradient-slider-wrap">
         <div
           className="gradient-slider-track"

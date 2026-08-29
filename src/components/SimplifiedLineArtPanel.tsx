@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BottomSheet from './BottomSheet'
 import GradientSlider from './GradientSlider'
+import SegmentedControl from './SegmentedControl'
 import ToggleSwitch from './ToggleSwitch'
 import Icon from './Icon'
 import IconButton from './IconButton'
@@ -124,7 +125,20 @@ export default function SimplifiedLineArtPanel({
     const locked = new Set(activeFilter.lockedFields ?? [])
     const hardnessField = macroFields.hardness
     const fillType = colorFields ? getFillType(colorFields.fillType) : undefined
-    const matteOn = params.blendMode === 'overwrite'
+
+    // Blending Mode macro: "Mult / Add" is the one bipolar tab (sign picks the darken/brighten
+    // branch, magnitude is opacity incl. the >1 overdrive-stacking range); Overwrite / Overlay /
+    // Diff are each a plain 0-100% opacity of that blend. Any exotic blendMode set via Advanced
+    // falls back to the bipolar tab (shown at +magnitude — see opacityBlendToBrightness).
+    const blendTab: 'bipolar' | 'overwrite' | 'overlay' | 'difference' =
+      params.blendMode === 'overwrite' ? 'overwrite'
+        : params.blendMode === 'overlay' ? 'overlay'
+          : params.blendMode === 'difference' ? 'difference'
+            : 'bipolar'
+    const bipolarBlend = blendTab === 'bipolar'
+    const blendValue = bipolarBlend
+      ? opacityBlendToBrightness(params.opacity, params.blendMode)
+      : params.opacity * 100
 
     return (
       <BottomSheet
@@ -189,37 +203,52 @@ export default function SimplifiedLineArtPanel({
             />
           ))}
           <div className="lineart-divider" />
+          {/* Blending Mode: header row (label + %), a 4-way mode selector, then the value slider —
+             bipolar -100..100 for Mult / Add, plain 0..100 for the single-blend tabs. The two
+             fields it drives (blendMode/opacity) are already in BRIGHTNESS_FIELDS, so no
+             macroFields change; every mode here is already implemented in composite.frag.ts. */}
+          <div className="field-row-label">
+            <span className="font-param-label">Blending Mode</span>
+            <span className="field-row-right">
+              <span className="value font-value">{`${Math.round(blendValue)}%`}</span>
+            </span>
+          </div>
+          <div className="blend-mode-segmented">
+            <SegmentedControl
+              options={[
+                { value: 'bipolar', label: 'Mult/Add' },
+                { value: 'overwrite', label: 'Overwrite' },
+                { value: 'overlay', label: 'Overlay' },
+                { value: 'difference', label: 'Difference' },
+              ]}
+              value={blendTab}
+              onChange={(tab) => {
+                if (tab === blendTab) return
+                const mode: LineArtParams['blendMode'] =
+                  tab === 'bipolar' ? 'multiply' : tab === 'overwrite' ? 'overwrite' : tab === 'overlay' ? 'overlay' : 'difference'
+                // Fresh start in the picked mode — same predictable reset the old Matte toggle did.
+                onChange({ ...params, blendMode: mode, opacity: 1 })
+              }}
+            />
+          </div>
           <GradientSlider
-            label={matteOn ? 'Opacity' : 'Brightness'}
-            rightAccessory={
-              <button
-                type="button"
-                className={`pill-toggle-btn font-button-label${matteOn ? ' active' : ''}`}
-                onClick={() => {
-                  // Matte: single 'overwrite' blend mode (standard alpha compositing — ink where
-                  // detected, base photo shows through elsewhere) with a plain 0-100% opacity
-                  // slider, instead of the bipolar Multiply/Add "Brightness" scheme. Deliberately
-                  // NOT the same thing as Advanced mode's overlayPassthrough/matteColor toggle
-                  // (that one flattens onto a solid backing color, bypassing composite entirely,
-                  // which is why Brightness read as a no-op there) — this reuses the exact same
-                  // single-layer compositeProgram call site every other blend mode already goes
-                  // through, just with blendMode fixed to 'overwrite' and opacity capped at 1
-                  // (never entering the >1 overdrive-stacking range), so no new GL call site.
-                  if (matteOn) { onChange({ ...params, blendMode: 'multiply', opacity: 1 }); return }
-                  onChange({ ...params, blendMode: 'overwrite', opacity: 1 })
-                }}
-              >
-                Matte
-              </button>
-            }
-            value={matteOn ? params.opacity * 100 : opacityBlendToBrightness(params.opacity, params.blendMode)}
-            min={matteOn ? 0 : -100}
+            label="Blending Mode"
+            hideLabel
+            value={blendValue}
+            min={bipolarBlend ? -100 : 0}
             max={100}
-            defaultValue={matteOn ? 100 : 0}
+            // Double-tap reset -> this filter's own saved opacity/blendMode (same rule as every
+            // other slider here). Bipolar tab: the saved multiply/add brightness; single-blend
+            // tabs: the saved opacity magnitude.
+            defaultValue={
+              bipolarBlend
+                ? opacityBlendToBrightness(activeFilter.params.opacity ?? 1, activeFilter.params.blendMode ?? 'multiply')
+                : (activeFilter.params.opacity ?? 1) * 100
+            }
             formatValue={(v) => `${Math.round(v)}%`}
             onChange={(v) => {
-              if (matteOn) { setField('opacity', v / 100); return }
-              onChange({ ...params, ...brightnessToOpacityBlend(v) })
+              if (bipolarBlend) { onChange({ ...params, ...brightnessToOpacityBlend(v) }); return }
+              setField('opacity', v / 100)
             }}
           />
           {colorFields && (
