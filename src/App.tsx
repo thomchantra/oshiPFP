@@ -432,13 +432,14 @@ export default function App() {
   // JSON.stringify keeps the effect from firing on unrelated re-renders (the values are small).
   const thumbRegenSignal = useMemo(
     () => JSON.stringify([
+      pipeline.sourceEpoch,
       crop.transform,
       lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
       colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
       colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap,
       colorCurve.channel, colorCurve.curves,
     ]),
-    [crop.transform, lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
+    [pipeline.sourceEpoch, crop.transform, lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
       colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
       colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap, colorCurve.channel, colorCurve.curves],
   )

@@ -6,7 +6,7 @@
   "lockedFields": ["overlayPassthrough", "matteColor"],
   "params": {
     "threshold": 0.4,
-    "radius": 4,
+    "radius": 2,
     "hardness": 0.3,
     "fillInvert": false,
     "opacity": 1,

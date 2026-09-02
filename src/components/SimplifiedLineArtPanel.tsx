@@ -13,7 +13,6 @@ import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
 import { resolveMacroFields, resolveColorFields } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import { toneBlendToParams, paramsToToneBlend, formatToneBlend } from '../lineart/hinataToneBlend'
-import { HUE_BAND_SWATCHES } from '../color/hslPalette'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
 
 /** Algos with at least one authored filter, in ALGO_OPTIONS order — drives the category pill row
@@ -35,17 +34,14 @@ const INVERT_LABELS: Partial<Record<string, string>> = {
   hiToneHueInvert: 'Invert Hue',
 }
 
-/** Per-algo carousel colour code — the Color Lift rainbow palette, one hue per algo group, washed
- * faintly over each filter chip and the active category pill so the groups read apart at a glance. */
-const tintHex = (k: string) => HUE_BAND_SWATCHES.find((s) => s.key === k)!.hex
-const ALGO_TINT: Partial<Record<LineArtMode, string>> = {
-  pathB: tintHex('red'),
-  pathC: tintHex('orange'),
-  pathF: tintHex('yellow'),
-  pathG: tintHex('green'),
-  pathH: tintHex('blue'),
-  pathI: tintHex('purple'),
-}
+/** Per-algo carousel colour code — solid palette from docs/v05_frames/colorcode{Light,Dark}mode.svg,
+ * defined as `--algo-active-<mode>` / `--algo-inactive-<mode>` token pairs in tokens.css (theme-aware).
+ * A chip/pill exposes the two it needs as `--chip-active`/`--chip-inactive`/`--pill-active`; base.css
+ * does the rest. */
+const algoTintStyle = (mode: LineArtMode): CSSProperties => ({
+  ['--chip-active' as string]: `var(--algo-active-${mode})`,
+  ['--chip-inactive' as string]: `var(--algo-inactive-${mode})`,
+})
 
 /** Carousel chips lean on the category-pill colour code for grouping, so the chip label only needs
  * the variant tag ("A1", "C2") — drop the leading algo name from `filter.label`. */
@@ -433,7 +429,7 @@ export default function SimplifiedLineArtPanel({
               icon={o.icon}
               variant="secondary"
               active={activeCategory === o.mode}
-              style={ALGO_TINT[o.mode] ? ({ ['--pill-tint' as string]: ALGO_TINT[o.mode] } as CSSProperties) : undefined}
+              style={{ ['--pill-active' as string]: `var(--algo-active-${o.mode})` } as CSSProperties}
               onClick={() => jumpToGroup(o.mode)}
             >
               {o.label}
@@ -455,7 +451,7 @@ export default function SimplifiedLineArtPanel({
                 key={filter.id}
                 label={filter.label}
                 displayLabel={chipShortLabel(filter.label)}
-                tint={ALGO_TINT[filter.algo]}
+                tintStyle={algoTintStyle(filter.algo)}
                 thumbnail={filterThumbnails[filter.id]}
                 loading={thumbnailsGenerating && !filterThumbnails[filter.id]}
                 active={activeFilterId === filter.id}
@@ -475,7 +471,7 @@ export default function SimplifiedLineArtPanel({
 function FilterChip({
   label,
   displayLabel,
-  tint,
+  tintStyle,
   thumbnail,
   loading,
   active,
@@ -487,8 +483,9 @@ function FilterChip({
   label: string
   /** Visible chip text — the trimmed variant tag ("A1"). `label` stays the full name for aria. */
   displayLabel?: string
-  /** Per-algo colour code hex, exposed as `--chip-tint` for the faint chip wash (base.css). */
-  tint?: string
+  /** Inline `--chip-active` / `--chip-inactive` custom props for this chip's algo (base.css does
+   * the rest). Omitted for the "None" chip so it falls back to the neutral --white-50. */
+  tintStyle?: CSSProperties
   thumbnail: string | undefined
   loading?: boolean
   active: boolean
@@ -503,7 +500,7 @@ function FilterChip({
       type="button"
       className={`filter-chip${active ? ' active' : ''}`}
       data-group-start={groupStart ? 'true' : undefined}
-      style={tint ? ({ ['--chip-tint' as string]: tint } as CSSProperties) : undefined}
+      style={tintStyle}
       onClick={onClick}
       aria-label={editable ? `Edit ${label}` : `Select ${label}`}
     >

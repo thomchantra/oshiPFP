@@ -47,6 +47,17 @@
      the override in html.dark below. */
   --tab-active-bg:   var(--accent-dark);
   --tab-active-text: var(--white);
+
+  /* Simplified-mode carousel per-algo colour code (docs/v05_frames/colorcodeLightmode.svg).
+     -active  = solid fill for the active category pill + the whole selected filter chip.
+     -inactive = solid fill for a resting filter chip's thumb/label background. */
+  --algo-active-pathB: #d74444;  --algo-inactive-pathB: #ffb7b7;
+  --algo-active-pathC: #da771a;  --algo-inactive-pathC: #ffc38a;
+  --algo-active-pathD: #da5c88;  --algo-inactive-pathD: #e1a9bd;
+  --algo-active-pathF: #7b9c61;  --algo-inactive-pathF: #bbd1aa;
+  --algo-active-pathG: #4fb29c;  --algo-inactive-pathG: #b9e4db;
+  --algo-active-pathH: #2f49a6;  --algo-inactive-pathH: #c4cded;
+  --algo-active-pathI: #a3319f;  --algo-inactive-pathI: #ddbbdc;
 }
 
 /* Dark mode — from Figma's dark-mode color mapping (node 34:3725). Named
@@ -74,4 +85,13 @@ html.dark {
 
   --tab-active-bg:   var(--accent-title);
   --tab-active-text: #000000;
+
+  /* docs/v05_frames/colorcodeDarkmode.svg */
+  --algo-active-pathB: #ff6d6d;  --algo-inactive-pathB: #602424;
+  --algo-active-pathC: #ffb672;  --algo-inactive-pathC: #583c22;
+  --algo-active-pathD: #ff83ae;  --algo-inactive-pathD: #6b3246;
+  --algo-active-pathF: #c3fe95;  --algo-inactive-pathF: #415531;
+  --algo-active-pathG: #6effe0;  --algo-inactive-pathG: #335e55;
+  --algo-active-pathH: #86a0ff;  --algo-inactive-pathH: #444e75;
+  --algo-active-pathI: #ffa8fc;  --algo-inactive-pathI: #713e6f;
 }

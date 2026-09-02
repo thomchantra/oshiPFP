@@ -900,9 +900,9 @@ button, input {
   padding: 4px 0;
 }
 .simplified-category-row .icon-button { min-height: 28px; flex: 0 0 auto; padding: 5px 8px; }
-/* Active category pill carries a 20% dose of its group's colour code (--pill-tint set inline),
-   congruent with the filter-chip wash below. Plain accent-title fallback for no color-mix support. */
-.simplified-category-row .icon-button.active { background: var(--accent-title); background: color-mix(in srgb, var(--pill-tint, transparent) 20%, var(--accent-title)); }
+/* Active category pill = its algo's solid colour code (--pill-active set inline, per theme via
+   tokens.css). Inactive pill keeps the plain .icon-button-secondary look. */
+.simplified-category-row .icon-button.active { background: var(--pill-active, var(--accent-title)); }
 @media (min-width: 900px) {
   .simplified-category-row { flex-wrap: wrap; overflow-x: visible; }
 }
@@ -933,18 +933,19 @@ button, input {
   cursor: pointer;
   touch-action: manipulation;
 }
-/* Inset outline (not border) so the active ring doesn't shift the chip's own box size — matches
-   the mockup's inset stroke rect (rx scaled down from 10 to ~8.5 to follow the inset). Active ring
-   picks up a stronger dose of the group tint so the coding stays congruent when selected. */
-.filter-chip.active { outline: 3px solid var(--accent-title); outline: 3px solid color-mix(in srgb, var(--chip-tint, transparent) 35%, var(--accent-title)); outline-offset: -1.5px; border-radius: 8.5px; }
+/* Selected chip: the whole chip becomes one solid fill in its algo's active colour (--chip-active,
+   set inline per theme via tokens.css) — no outline, no separate label strip (see the .active
+   overrides on -thumb / -edit-icon / -label below). */
+.filter-chip.active { background: var(--chip-active, var(--accent-title)); }
+.filter-chip.active .filter-chip-thumb,
+.filter-chip.active .filter-chip-edit-icon { background: transparent; }
 .filter-chip-thumb {
   width: 68px;
   height: 63px;
-  background: var(--white-50);
-  /* Per-algo colour code (--chip-tint set inline from ALGO_TINT) tints the chip's *background fill*
-     only — the thumb bg behind a loading placeholder and the label strip below — never the live
-     preview image itself (it sits on top, opaque). */
-  background: color-mix(in srgb, var(--chip-tint, transparent) 22%, var(--white-50));
+  /* Resting chip: thumb + label background is the algo's inactive colour code (--chip-inactive,
+     set inline per theme). The preview image sits on top opaque, so this only shows behind a
+     loading placeholder / for the untinted "None" chip (falls back to --white-50). */
+  background: var(--chip-inactive, var(--white-50));
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -962,8 +963,7 @@ button, input {
   justify-content: center;
   font-size: 12px;
   color: var(--accent-dark);
-  background: var(--white-50);
-  background: color-mix(in srgb, var(--chip-tint, transparent) 22%, var(--white-50));
+  background: var(--chip-inactive, var(--white-50));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -971,8 +971,7 @@ button, input {
 }
 .filter-chip.active .filter-chip-label {
   color: var(--bg-light);
-  background: var(--accent-title);
-  background: color-mix(in srgb, var(--chip-tint, transparent) 20%, var(--accent-title));
+  background: transparent;
 }
 /* 30x30 rounded-square icon buttons, per docs/v05_frames/oshiPFP-mobile-editpresetstate.svg —
    filled (not the plain transparent .theme-btn circle) so Discard/Commit read as distinct actions,

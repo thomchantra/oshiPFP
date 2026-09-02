@@ -8,6 +8,10 @@ export function usePipeline() {
   const [error, setError] = useState<string | null>(null)
   const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null)
   const [fileInfo, setFileInfo] = useState<{ name: string; type: string; size: number } | null>(null)
+  // Monotonic counter, bumped on every successful load (and reset). The only value that changes
+  // when the source photo is swapped for a *different* image whose crop transform happens to land
+  // identical — consumers keying off "the photo changed" (filter-thumbnail regen) depend on it.
+  const [sourceEpoch, setSourceEpoch] = useState(0)
   const [cropSize, setCropSize] = useState<{ width: number; height: number } | null>(null)
 
   useEffect(() => {
@@ -30,6 +34,7 @@ export function usePipeline() {
       const size = await pipelineRef.current.loadFile(file)
       setSourceSize(size)
       setFileInfo({ name: file.name, type: file.type, size: file.size })
+      setSourceEpoch((n) => n + 1)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -42,6 +47,7 @@ export function usePipeline() {
     pipelineRef.current?.clearSource()
     setSourceSize(null)
     setFileInfo(null)
+    setSourceEpoch((n) => n + 1)
     setCropSize(null)
     setError(null)
   }, [])
@@ -146,6 +152,7 @@ export function usePipeline() {
     canvasRef,
     error,
     sourceSize,
+    sourceEpoch,
     cropSize,
     fileInfo,
     loadFile,
