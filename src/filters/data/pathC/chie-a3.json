@@ -5,22 +5,22 @@
   "alias": "Chie Erosion Gate Gradient Map A3",
   "lockedFields": ["overlayPassthrough", "matteColor"],
   "params": {
-    "gateThreshold": 0.1,
-    "radius": 1.5,
+    "gateThreshold": 0.2,
+    "radius": 2,
     "hardness": 1,
     "fillInvert": false,
     "opacity": 1,
-    "blendMode": "multiply",
+    "blendMode": "overwrite",
     "overlayPassthrough": false,
     "matteColor": [1, 1, 1],
     "fillType": "gradient",
     "tintColor": [0, 0, 0],
     "colorContrast": 1,
     "colorExposure": 0,
-    "gradientShadow": [0, 0, 1],
+    "gradientShadow": [0.47, 0.03, 0.03],
     "gradientMid": [1, 0, 1],
-    "gradientHighlight": [1, 0, 0],
+    "gradientHighlight": [1, 0.63, 0],
     "gradientPivot": -0.5,
-    "gradientDuoTone": false
+    "gradientDuoTone": true
   }
 }

@@ -102,7 +102,7 @@
       1
     ],
     "highPassStrength": 4,
-    "radius": 2,
+    "radius": 8,
     "responsiveCrossover": 0.5,
     "responsiveGrow": 0.5,
     "responsiveGrowBias": 0,

@@ -101,26 +101,26 @@
       1,
       1
     ],
-    "highPassStrength": 4,
-    "radius": 2,
+    "highPassStrength": 6.5,
+    "radius": 1,
     "responsiveCrossover": 0.5,
     "responsiveGrow": 0.5,
-    "responsiveGrowBias": 0,
+    "responsiveGrowBias": 0.8,
     "edgeInvertFill": false,
     "edgeDuoTone": true,
     "edgeInkOverDarkFillType": "solid",
     "edgeInkOverDarkSolidColor": [
       0,
-      0,
-      0
+      0.03,
+      0.34
     ],
     "edgeInkOverDarkColorContrast": 1,
     "edgeInkOverDarkExposure": 0,
     "edgeInkOverLightFillType": "solid",
     "edgeInkOverLightSolidColor": [
-      0,
-      0,
-      0
+      0.14,
+      0.713,
+      1
     ],
     "edgeInkOverLightColorContrast": 1,
     "edgeInkOverLightExposure": 0,

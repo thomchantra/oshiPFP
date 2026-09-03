@@ -98,10 +98,13 @@ export default function BottomSheet({ children, maxHeightFraction = MAX_HEIGHT_F
   }
 
   if (isDesktop || noDrag) {
+    // Desktop: the footer (e.g. the filter edit-sheet's Discard/Commit row) pins to the TOP of the
+    // panel instead of the bottom — it's a non-scrolling flex sibling either way, only the DOM
+    // order differs. Mobile keeps it bottom-pinned (the drag-handle branch below).
     return (
       <div className="bottom-sheet bottom-sheet-desktop">
+        {footer && <div className="bottom-sheet-footer bottom-sheet-footer-top">{footer}</div>}
         <div className="bottom-sheet-content">{children}</div>
-        {footer && <div className="bottom-sheet-footer">{footer}</div>}
       </div>
     )
   }

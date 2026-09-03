@@ -79,7 +79,7 @@
       1
     ],
     "highPassStrength": 4,
-    "radius": 1.5,
+    "radius": 5,
     "responsiveCrossover": 0.5,
     "responsiveGrow": 0.5,
     "responsiveGrowBias": 0,
@@ -103,7 +103,7 @@
     "edgeInkOverLightExposure": 0,
     "hiRawDarkenLighten": 0,
     "hiRawContrast": 1,
-    "threshold": 0.48,
+    "threshold": 0.3,
     "hiThresholdContrast": 1,
     "hiThresholdInvert": false,
     "fillInvert": false,

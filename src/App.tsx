@@ -146,6 +146,9 @@ export default function App() {
   // persisted to the (read-only) filter JSON. See src/filters/filterTypes.ts.
   const [filterOverrides, setFilterOverrides] = useState<Record<string, Partial<LineArtParams>>>({})
   const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
+  // Bumped by the dev-only "Reload filter JSONs" header button — folded into thumbRegenSignal so a
+  // manifest refresh re-runs thumbnail generation. See handleRefreshFilters.
+  const [filterDevNonce, setFilterDevNonce] = useState(0)
   const [editSnapshot, setEditSnapshot] = useState<Partial<LineArtParams> | null>(null)
   // "Lab" is the front-facing name for the Advanced/Simplified Line Art toggle (HeaderBar's new
   // button) — true shows today's full LineArtPanel, false (default — Simplified is the intended
@@ -430,16 +433,24 @@ export default function App() {
   // Regenerate carousel thumbnails when the cropped photo, the Grade tab, or the Tuning stage
   // (tone shaping / denoise / colour lift) changes — thumbnails render live against all three.
   // JSON.stringify keeps the effect from firing on unrelated re-renders (the values are small).
+  // Filter-carousel thumbnail resolution: 128px longest side on mobile, larger on desktop where the
+  // 3-col grid cells are bigger. Only sizes renderThumbnail's final downscale (its detection chain
+  // is always native-res) — see useFilterThumbnails. Crossing the 900px breakpoint changes this,
+  // which flows into thumbRegenSignal below and re-runs generation at the new size.
+  const thumbLongestSide = isDesktop ? 256 : 128
+
   const thumbRegenSignal = useMemo(
     () => JSON.stringify([
       pipeline.sourceEpoch,
+      thumbLongestSide,
+      filterDevNonce,
       crop.transform,
       lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
       colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
       colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap,
       colorCurve.channel, colorCurve.curves,
     ]),
-    [pipeline.sourceEpoch, crop.transform, lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
+    [pipeline.sourceEpoch, thumbLongestSide, filterDevNonce, crop.transform, lineArtParams.toneShaping, lineArtParams.denoise, lineArtParams.colorLift,
       colorAdjustments.light, colorAdjustments.colorAdjust, colorAdjustments.invert,
       colorAdjustments.hslByBand, colorAdjustments.gradeGradientMap, colorCurve.channel, colorCurve.curves],
   )
@@ -448,6 +459,7 @@ export default function App() {
     hasImage,
     paramsByMode,
     filterOverrides,
+    thumbLongestSide,
     regenSignal: thumbRegenSignal,
     pipeline,
   })
@@ -643,6 +655,19 @@ export default function App() {
     setLineArtDisplayMode('composite')
   }
 
+  // Dev-only "Reload filter JSONs" (HeaderBar, gated on devMode like Dump/Load State). Re-pulls the
+  // whole filter system as if freshly loaded — drops every session param override, deselects, and
+  // regenerates all thumbnails — WITHOUT clearing the loaded image. Pairs with Vite HMR reloading
+  // an edited filter JSON into FILTER_MANIFEST, so a curation pass doesn't need a full page reload.
+  const handleRefreshFilters = () => {
+    setParamsByMode(buildInitialParamsByMode())
+    setFilterOverrides({})
+    setActiveFilterId(null)
+    setEditSnapshot(null)
+    setFilterEditSheetOpen(false)
+    setFilterDevNonce((n) => n + 1)
+  }
+
   // "Reset oshiPFP" — clears the loaded image and every tuned param back to defaults without a
   // page reload. Deliberately does NOT touch `theme` — a display preference, not app data. Every
   // other hook holding its own state exposes its own reset() rather than this function reaching
@@ -699,6 +724,7 @@ export default function App() {
         dualPanePriorityIndex={gradeDualPaneActive ? 1 : DUAL_PANE_PRIORITY_INDEX[dualPaneMode]}
         onDumpState={handleDumpState}
         onLoadState={handleLoadState}
+        onRefreshFilters={handleRefreshFilters}
         onReset={resetApp}
         devMode={devMode}
         onUnlockDevMode={() => setDevMode(true)}

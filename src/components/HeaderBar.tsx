@@ -41,6 +41,10 @@ interface HeaderBarProps {
    * a post-deploy round-trip check: dump on one build, load the same file back in on another,
    * dump again, diff. Same gating as Dump State, sits right next to it. */
   onLoadState: (file: File) => void
+  /** Dev-only "Reload filter JSONs" — re-pulls the Simplified-mode filter system from
+   * FILTER_MANIFEST (session overrides dropped, thumbnails regenerated) without clearing the
+   * loaded image, for iterating on filter JSON curation against a live HMR reload. */
+  onRefreshFilters: () => void
   /** Whether the secret dev-mode entrance has been unlocked (see AvatarCornerPreview) — gates
    * this header's Dump State button and AvatarCornerPreview's own smiley->nerd icon swap. */
   devMode: boolean
@@ -79,6 +83,7 @@ export default function HeaderBar({
   dualPanePriorityIndex,
   onDumpState,
   onLoadState,
+  onRefreshFilters,
   onReset,
   devMode,
   onUnlockDevMode,
@@ -170,6 +175,17 @@ export default function HeaderBar({
               onClick={() => stateFileInputRef.current?.click()}
             >
               <Icon name="upload" size={16} color="var(--accent-title)" />
+            </button>
+          )}
+          {devMode && (
+            <button
+              type="button"
+              className="theme-btn"
+              aria-label="Reload filter JSONs, keeping the loaded image (dev mode)"
+              title="Reload filter JSONs (dev mode)"
+              onClick={onRefreshFilters}
+            >
+              <Icon name="lineart" size={16} color="var(--accent-title)" />
             </button>
           )}
           <input ref={stateFileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleStateFileChange} />

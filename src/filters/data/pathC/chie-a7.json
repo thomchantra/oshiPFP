@@ -1,16 +1,16 @@
 {
-  "id": "chie-a1",
+  "id": "chie-a7",
   "algo": "pathC",
-  "label": "Chie A1",
-  "alias": "Chie Erosion Gate A1",
+  "label": "Chie A7",
+  "alias": "Chie Erosion Gate Gradient Map A7",
   "lockedFields": ["overlayPassthrough", "matteColor"],
   "params": {
-    "gateThreshold": 0.1,
-    "radius": 1,
-    "hardness": 0.7,
-    "fillInvert": false,
+    "gateThreshold": 0.2,
+    "radius": 2,
+    "hardness": 0.6,
+    "fillInvert": true,
     "opacity": 1,
-    "blendMode": "multiply",
+    "blendMode": "overwrite",
     "overlayPassthrough": false,
     "matteColor": [1, 1, 1],
     "fillType": "solid",
@@ -18,9 +18,9 @@
     "colorContrast": 1,
     "colorExposure": 0,
     "gradientShadow": [0, 0, 0],
-    "gradientMid": [0.5, 0.5, 0.5],
+    "gradientMid": [0.258, 0.407, 1],
     "gradientHighlight": [1, 1, 1],
-    "gradientPivot": 0,
+    "gradientPivot": 0.3,
     "gradientDuoTone": false
   }
 }

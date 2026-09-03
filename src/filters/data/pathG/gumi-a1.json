@@ -9,13 +9,13 @@
     "overlayPassthrough", "matteColor"
   ],
   "params": {
-    "threshold": 0.3,
-    "blobMaxDt": 3,
-    "gumiOverdrive": 0.3,
+    "threshold": 0.6,
+    "blobMaxDt": 1.2,
+    "gumiOverdrive": 0.2,
     "gumiLineInvert": false,
     "radius": 0,
     "gumiBlobGamma": 1,
-    "opacity": 1,
+    "opacity": 3,
     "blendMode": "multiply",
     "overlayPassthrough": false,
     "matteColor": [1, 1, 1],

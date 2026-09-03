@@ -6,7 +6,7 @@
   "lockedFields": ["findEdge", "saturation", "vividDeadzone", "vividBoost", "overlayPassthrough", "matteColor"],
   "params": {
     "sensitivity": 10,
-    "radius": 0.2,
+    "radius": 1,
     "hardness": 0,
     "fillInvert": false,
     "findEdge": false,

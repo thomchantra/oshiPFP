@@ -3,12 +3,15 @@ import { toImageData } from '../export/exportPica'
 import { FILTER_MANIFEST } from './filterManifest'
 import type { LineArtMode, LineArtParams } from '../types'
 
-const THUMB_LONGEST_SIDE = 128
-
 export interface UseFilterThumbnailsArgs {
   hasImage: boolean
   paramsByMode: Record<LineArtMode, LineArtParams>
   filterOverrides: Record<string, Partial<LineArtParams>>
+  /** Longest-side pixel size for the rendered thumbnails — 128 on mobile, larger on desktop where
+   * the grid cells are bigger. Only sizes the final downscale of `renderThumbnail`'s already
+   * native-res chain (no shader/detection change). A change here re-runs generation, so it must
+   * also be folded into `regenSignal` by the caller. */
+  thumbLongestSide: number
   /** Any value that should trigger a regeneration when it changes — the cropped photo changed, or
    * the Grade tab / Tuning (denoise / tone lift) changed (thumbnails render live against all of
    * those). Kept as a single opaque dependency so this hook doesn't need to know App.tsx's
@@ -35,7 +38,7 @@ function pixelsToDataUrl(pixels: { data: Uint8ClampedArray; width: number; heigh
  * generating thumbnails causes zero visible flicker regardless of what's selected or which tab is
  * open. Covers all 7 algorithms (the detection chain is isolated by target-field swap, not a
  * per-algo copy). */
-export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, regenSignal, pipeline }: UseFilterThumbnailsArgs) {
+export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, thumbLongestSide, regenSignal, pipeline }: UseFilterThumbnailsArgs) {
   const [filterThumbnails, setFilterThumbnails] = useState<Record<string, string>>({})
   const [thumbnailsGenerating, setThumbnailsGenerating] = useState(false)
   const generationIdRef = useRef(0)
@@ -50,7 +53,7 @@ export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, r
     setThumbnailsGenerating(true)
     const results: Record<string, string> = {}
 
-    const nonePixels = pipeline.renderNoneThumbnail(THUMB_LONGEST_SIDE, THUMB_LONGEST_SIDE)
+    const nonePixels = pipeline.renderNoneThumbnail(thumbLongestSide, thumbLongestSide)
     if (generationIdRef.current !== myId) return
     if (nonePixels) results.none = pixelsToDataUrl(nonePixels)
 
@@ -63,7 +66,7 @@ export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, r
         ...filter.params,
         ...(overrides[filter.id] ?? {}),
       }
-      const pixels = pipeline.renderThumbnail(params, THUMB_LONGEST_SIDE, THUMB_LONGEST_SIDE)
+      const pixels = pipeline.renderThumbnail(params, thumbLongestSide, thumbLongestSide)
       if (generationIdRef.current !== myId) return
       if (pixels) results[filter.id] = pixelsToDataUrl(pixels)
       // Yield to the event loop between filters so a burst of native-res chains doesn't jank a
@@ -101,7 +104,7 @@ export function useFilterThumbnails({ hasImage, paramsByMode, filterOverrides, r
       ...filter.params,
       ...(overrides[filterId] ?? {}),
     }
-    const pixels = pipeline.renderThumbnail(params, THUMB_LONGEST_SIDE, THUMB_LONGEST_SIDE)
+    const pixels = pipeline.renderThumbnail(params, thumbLongestSide, thumbLongestSide)
     if (!pixels) return
     setFilterThumbnails((prev) => ({ ...prev, [filterId]: pixelsToDataUrl(pixels) }))
   }

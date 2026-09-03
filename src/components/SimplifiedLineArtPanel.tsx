@@ -13,11 +13,26 @@ import { resolveQuickFields, resolveQuickMeta } from '../filters/quickMacros'
 import { resolveMacroFields, resolveColorFields } from '../filters/macroFields'
 import { brightnessToOpacityBlend, opacityBlendToBrightness } from '../lineart/lineBrightness'
 import { toneBlendToParams, paramsToToneBlend, formatToneBlend } from '../lineart/hinataToneBlend'
+import { useIsDesktop } from '../hooks/useIsDesktop'
 import type { FillType, LineArtMode, LineArtParams } from '../types'
 
 /** Algos with at least one authored filter, in ALGO_OPTIONS order — drives the category pill row
  * (jump-nav + scroll-spy) above the carousel. */
 const CATEGORY_ALGOS = ALGO_OPTIONS.filter((o) => FILTER_MANIFEST.some((f) => f.algo === o.mode))
+
+/** Nearest scrollable ancestor — the carousel's scrollport differs by layout: mobile is the
+ * horizontal `.filter-carousel-row` itself, desktop is the vertical `.bottom-sheet-content` that
+ * wraps the whole panel (the grid carousel has no inner scroll of its own). Used as the
+ * IntersectionObserver root and the scroll-position-preservation target. */
+function getScrollParent(el: HTMLElement): HTMLElement {
+  let node = el.parentElement
+  while (node) {
+    const oy = getComputedStyle(node).overflowY
+    if (oy === 'auto' || oy === 'scroll') return node
+    node = node.parentElement
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+}
 
 /** Which manifest entries are the first of their algo — the carousel puts a wider gap before each
  * (CSS `[data-group-start]`) and the pill row scrolls/snaps to them. */
@@ -43,8 +58,9 @@ const algoTintStyle = (mode: LineArtMode): CSSProperties => ({
   ['--chip-inactive' as string]: `var(--algo-inactive-${mode})`,
 })
 
-/** Carousel chips lean on the category-pill colour code for grouping, so the chip label only needs
- * the variant tag ("A1", "C2") — drop the leading algo name from `filter.label`. */
+/** Mobile chips are narrow and lean on the category-pill colour code for grouping, so the label is
+ * trimmed to just the variant tag ("A1", "C2"). Desktop's bigger grid cells show `filter.label` in
+ * full ("Botan A1"). */
 const chipShortLabel = (label: string) => label.split(' ').slice(1).join(' ') || label
 
 interface SimplifiedLineArtPanelProps {
@@ -85,80 +101,98 @@ export default function SimplifiedLineArtPanel({
   const getColor = (key: keyof LineArtParams) => params[key] as [number, number, number]
   const getFillType = (key: keyof LineArtParams) => params[key] as FillType
 
-  // Category pill row <-> carousel: pills jump-scroll the carousel to a group's first chip, and a
-  // manual carousel scroll highlights whichever group's first chip has passed the left edge
-  // (scroll-spy). Refs, not state, for the DOM handles; activeCategory is the only render input.
+  // Category pill row <-> carousel. Pills jump-scroll to a group's first chip (jumpToGroup); an
+  // IntersectionObserver on the group-start chips highlights whichever group currently sits in the
+  // top/left band of the scrollport (scroll-spy). The observer root is the actual scrollport for
+  // the layout — see getScrollParent — so this works whether the carousel scrolls itself (mobile,
+  // horizontal) or rides the panel's own scroll (desktop grid, vertical). Refs, not state, for the
+  // DOM handles; activeCategory is the only render input.
+  const isDesktop = useIsDesktop()
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const groupRefs = useRef<Partial<Record<LineArtMode, HTMLButtonElement | null>>>({})
-  const scrollRafRef = useRef<number | null>(null)
-  // While a category-pill jump-scroll is animating, the pill highlight is pinned to the tapped
-  // target and the scroll-spy is suppressed — otherwise the spy walks the highlight through every
-  // group the smooth-scroll passes over (visible flicker/trailing). Cleared on `scrollend` (with a
-  // timeout fallback for browsers that don't fire it).
+  // While a pill jump-scroll animates, the highlight is pinned to the tapped target so the spy
+  // doesn't walk it through every group the smooth-scroll passes over. Released on a timer.
   const jumpLockRef = useRef<LineArtMode | null>(null)
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Carousel scroll position survives the edit-sheet round trip — the main-view carousel unmounts
-  // while the sheet is open (early return below), so without this it re-mounts scrolled to 0.
+  // Scroll position survives the edit-sheet round trip — the main carousel unmounts while the sheet
+  // is open (early return below), so without this it re-mounts scrolled to 0.
   const carouselScrollRef = useRef(0)
   const [activeCategory, setActiveCategory] = useState<LineArtMode | null>(null)
 
-  const syncCategoryFromScroll = useCallback(() => {
-    if (jumpLockRef.current != null) return // pinned to the jump target until the scroll settles
+  // Scroll-spy: which group-start chips are currently in the scrollport's leading band.
+  useEffect(() => {
+    if (editSheetOpen) return
     const container = carouselRef.current
     if (!container) return
-    const slop = 24 // treat a group as "current" once its first chip is within 24px of the edge
-    let current: LineArtMode | null = null
+    const root = isDesktop ? getScrollParent(container) : container
+    const visible = new Set<LineArtMode>()
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const mode = CATEGORY_ALGOS.find((o) => groupRefs.current[o.mode] === e.target)?.mode
+          if (!mode) continue
+          if (e.isIntersecting) visible.add(mode)
+          else visible.delete(mode)
+        }
+        if (jumpLockRef.current != null) return
+        let current: LineArtMode | null = null
+        for (const o of CATEGORY_ALGOS) if (visible.has(o.mode)) current = o.mode
+        if (current) setActiveCategory(current)
+      },
+      // Shrink the root to a thin leading band so "in view" means "at the start of the scrollport",
+      // not "anywhere on screen". Desktop: band starts ~150px down, clear of the sticky head (quick
+      // controls + pills); mobile: a left-edge band on the horizontal strip.
+      { root, rootMargin: isDesktop ? '-150px 0px -72% 0px' : '0px -82% 0px 0px', threshold: 0 },
+    )
     for (const o of CATEGORY_ALGOS) {
       const el = groupRefs.current[o.mode]
-      if (el && el.offsetLeft <= container.scrollLeft + slop) current = o.mode
+      if (el) io.observe(el)
     }
-    setActiveCategory(current)
-  }, [])
+    return () => io.disconnect()
+  }, [editSheetOpen, isDesktop])
 
-  const handleCarouselScroll = useCallback(() => {
-    if (carouselRef.current) carouselScrollRef.current = carouselRef.current.scrollLeft
-    if (scrollRafRef.current != null) return
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null
-      syncCategoryFromScroll()
-    })
-  }, [syncCategoryFromScroll])
+  // Track + restore scroll position across the edit-sheet round trip, on whichever element is the
+  // real scrollport for this layout.
+  useEffect(() => {
+    if (editSheetOpen) return
+    const container = carouselRef.current
+    if (!container) return
+    const scroller = isDesktop ? getScrollParent(container) : container
+    const onScroll = () => { carouselScrollRef.current = isDesktop ? scroller.scrollTop : scroller.scrollLeft }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [editSheetOpen, isDesktop])
 
-  // Restore the saved scroll position each time the main-view carousel (re)mounts — i.e. when the
-  // edit sheet closes. Layout effect so it lands before paint (no visible jump to 0 then back).
   useLayoutEffect(() => {
     if (editSheetOpen) return
     const container = carouselRef.current
-    if (container) container.scrollLeft = carouselScrollRef.current
-  }, [editSheetOpen])
+    if (!container) return
+    const scroller = isDesktop ? getScrollParent(container) : container
+    if (isDesktop) scroller.scrollTop = carouselScrollRef.current
+    else scroller.scrollLeft = carouselScrollRef.current
+  }, [editSheetOpen, isDesktop])
 
   const jumpToGroup = useCallback((mode: LineArtMode) => {
-    const container = carouselRef.current
     const el = groupRefs.current[mode]
-    if (!container || !el) return
+    if (!el) return
     jumpLockRef.current = mode
     setActiveCategory(mode)
-    container.scrollTo({ left: Math.max(0, el.offsetLeft - 4), behavior: 'smooth' })
-    const release = () => {
-      if (jumpTimerRef.current) { clearTimeout(jumpTimerRef.current); jumpTimerRef.current = null }
-      container.removeEventListener('scrollend', release)
-      jumpLockRef.current = null
-      syncCategoryFromScroll()
-    }
+    // scrollIntoView walks every scroll ancestor as needed — no need to know which one moves.
+    el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
-    container.addEventListener('scrollend', release)
-    jumpTimerRef.current = setTimeout(release, 700) // fallback: Safari < 18.2 has no scrollend
-  }, [syncCategoryFromScroll])
+    jumpTimerRef.current = setTimeout(() => { jumpLockRef.current = null }, 700)
+  }, [])
 
   useEffect(() => () => { if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current) }, [])
 
-  // Selecting a filter (or clearing to None) keeps the pill highlight in step without waiting for a
-  // scroll event — a filter tap doesn't necessarily move the carousel.
+  // Selecting a filter snaps the pill highlight to its algo without waiting for a scroll event (a
+  // filter tap doesn't necessarily move the carousel). Clearing to None hands the highlight back to
+  // the scroll-spy observer.
   useEffect(() => {
-    if (!activeFilterId) { syncCategoryFromScroll(); return }
+    if (!activeFilterId) return
     const f = FILTER_MANIFEST.find((x) => x.id === activeFilterId)
     if (f) setActiveCategory(f.algo)
-  }, [activeFilterId, syncCategoryFromScroll])
+  }, [activeFilterId])
 
   if (editSheetOpen && activeFilter) {
     const macroFields = resolveMacroFields(activeFilter)
@@ -404,39 +438,43 @@ export default function SimplifiedLineArtPanel({
   return (
     <BottomSheet noDrag>
       <div className="lineart-slidergroup-stack">
-        {quick && quickMeta && (
-          <div className="simplified-quick-row">
-            <GradientSlider
-              label={quickMeta.threshold.label} value={getNum(quick.threshold)}
-              min={quickMeta.threshold.min} max={quickMeta.threshold.max} step={quickMeta.threshold.step}
-              defaultValue={(activeFilter!.params[quick.threshold] as number) ?? 0}
-              onChange={(v) => setField(quick.threshold, v)}
-            />
-            {!carouselThicknessHidden && (
+        {/* Quick controls + pills pin together at the top of the panel scroll on desktop (see
+           .simplified-sticky-head in base.css); plain passthrough wrapper on mobile. */}
+        <div className="simplified-sticky-head">
+          {quick && quickMeta && (
+            <div className="simplified-quick-row">
               <GradientSlider
-                label={quickMeta.thickness.label} value={getNum(quick.thickness)}
-                min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
-                defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
-                onChange={(v) => setField(quick.thickness, v)}
+                label={quickMeta.threshold.label} value={getNum(quick.threshold)}
+                min={quickMeta.threshold.min} max={quickMeta.threshold.max} step={quickMeta.threshold.step}
+                defaultValue={(activeFilter!.params[quick.threshold] as number) ?? 0}
+                onChange={(v) => setField(quick.threshold, v)}
               />
-            )}
+              {!carouselThicknessHidden && (
+                <GradientSlider
+                  label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+                  min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
+                  defaultValue={(activeFilter!.params[quick.thickness] as number) ?? 1}
+                  onChange={(v) => setField(quick.thickness, v)}
+                />
+              )}
+            </div>
+          )}
+          <div className="simplified-category-row">
+            {CATEGORY_ALGOS.map((o) => (
+              <IconButton
+                key={o.mode}
+                icon={o.icon}
+                variant="secondary"
+                active={activeCategory === o.mode}
+                style={{ ['--pill-active' as string]: `var(--algo-active-${o.mode})` } as CSSProperties}
+                onClick={() => jumpToGroup(o.mode)}
+              >
+                {o.label}
+              </IconButton>
+            ))}
           </div>
-        )}
-        <div className="simplified-category-row">
-          {CATEGORY_ALGOS.map((o) => (
-            <IconButton
-              key={o.mode}
-              icon={o.icon}
-              variant="secondary"
-              active={activeCategory === o.mode}
-              style={{ ['--pill-active' as string]: `var(--algo-active-${o.mode})` } as CSSProperties}
-              onClick={() => jumpToGroup(o.mode)}
-            >
-              {o.label}
-            </IconButton>
-          ))}
         </div>
-        <div className="filter-carousel-row" ref={carouselRef} onScroll={handleCarouselScroll}>
+        <div className="filter-carousel-row" ref={carouselRef}>
           <FilterChip
             label="None"
             thumbnail={filterThumbnails.none}
@@ -450,7 +488,7 @@ export default function SimplifiedLineArtPanel({
               <FilterChip
                 key={filter.id}
                 label={filter.label}
-                displayLabel={chipShortLabel(filter.label)}
+                displayLabel={isDesktop ? filter.label : chipShortLabel(filter.label)}
                 tintStyle={algoTintStyle(filter.algo)}
                 thumbnail={filterThumbnails[filter.id]}
                 loading={thumbnailsGenerating && !filterThumbnails[filter.id]}

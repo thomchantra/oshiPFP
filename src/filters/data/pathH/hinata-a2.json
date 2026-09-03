@@ -106,7 +106,7 @@
     "highPassStrength": 4,
     "radius": 2,
     "responsiveCrossover": 0.5,
-    "responsiveGrow": 0.5,
+    "responsiveGrow": 1.5,
     "responsiveGrowBias": 0,
     "edgeInvertFill": false,
     "edgeDuoTone": false,
@@ -138,7 +138,7 @@
       0,
       0
     ],
-    "colorContrast": 1,
+    "colorContrast": 1.5,
     "colorExposure": 0,
     "gradientShadow": [
       0,

@@ -1,0 +1,26 @@
+{
+  "id": "botan-a5",
+  "algo": "pathB",
+  "label": "Botan A5",
+  "alias": "Botan Distance Grow A5",
+  "lockedFields": ["overlayPassthrough", "matteColor"],
+  "params": {
+    "threshold": 0.25,
+    "radius": 0,
+    "hardness": 1.0,
+    "fillInvert": true,
+    "opacity": 1,
+    "blendMode": "overwrite",
+    "overlayPassthrough": false,
+    "matteColor": [1, 1, 1],
+    "fillType": "gradient",
+    "tintColor": [0.98, 0.607, 0.09],
+    "colorContrast": 1.0,
+    "colorExposure": 0.0,
+    "gradientShadow": [0, 0.164, 1],
+    "gradientMid": [1, 0, 1],
+    "gradientHighlight": [1, 0.866, 0],
+    "gradientPivot": 0,
+    "gradientDuoTone": false
+  }
+}
