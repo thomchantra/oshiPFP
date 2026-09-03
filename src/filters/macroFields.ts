@@ -124,6 +124,9 @@ export const COLOR_MACRO_FIELDS: Partial<Record<LineArtMode, ColorMacroFields>> 
   },
 }
 
+/** Algos whose Simplified edit sheet shows the pre-detection Denoise group (see getEditableFields). */
+const DENOISE_ALGOS = new Set<LineArtMode>(['pathH', 'pathI'])
+
 /** The set of LineArtParams fields the Simplified panel renders as controls for a filter — quick
  * Threshold/Thickness (per-filter `quick` override or algo default) + Invert/Hardness + universal
  * Brightness + Color group (if present) + the filter's own `extraFields`. Pair with
@@ -148,6 +151,11 @@ export function getEditableFields(filter: FilterManifestEntry): (keyof LineArtPa
   }
   if (filter.extraFields) fields.push(...filter.extraFields.flatMap((f) => (Array.isArray(f.field) ? f.field : [f.field])))
   if (filter.extraColorFields) fields.push(...filter.extraColorFields.map((f) => f.field))
+  // Hinata/Tsukiko expose the pre-detection denoiser (Intensity/Threshold) as a fixed group in
+  // the edit sheet — rendered as a special case in SimplifiedLineArtPanel (nested `denoise` object,
+  // not a flat field), captured/isolated per-filter via this entry. Every pathH/pathI filter JSON
+  // must carry a `denoise` value (self-containment guard).
+  if (DENOISE_ALGOS.has(filter.algo)) fields.push('denoise')
   return fields
 }
 

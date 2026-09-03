@@ -589,6 +589,15 @@ export class Pipeline {
    */
   private daiyaSeedDirty = true
   private daiyaSeedTarget: TargetTexture | null = null
+  /**
+   * Gates runDenoise's 121-tap range filter (the single most expensive pre-detection pass, and it
+   * runs at native resolution). Only its own inputs matter: the denoise params themselves, plus
+   * anything upstream that changes its source texture (tone-shaping, colour lift, enhance, crop,
+   * dimensions). A pure detection-param drag (threshold/radius/fill/...) must NOT invalidate this,
+   * or the cache buys nothing while tuning — which is exactly the "denoise is laggy to use" report.
+   * See setLineArtParams for the precise trigger set.
+   */
+  private denoiseDirty = true
   /** Notified with cropTarget's pixel dimensions whenever a crop recompute resolves — cheap (no GPU readback, just the already-known width/height), lets the Export tab show/compute against the real crop output size without needing a full readFinalPixels() call just to read two numbers. */
   private onCropSizeChange: ((size: { width: number; height: number }) => void) | null = null
 
@@ -694,6 +703,7 @@ export class Pipeline {
     // daiyaSeedTarget is likewise never disposed separately — same alias rule as botanSeedTarget.
     this.daiyaSeedTarget = null
     this.daiyaSeedDirty = true
+    this.denoiseDirty = true
     for (const key of [
       'cropTarget', 'resizeTarget', 'smoothTarget', 'sharpenBlurHTarget', 'sharpenBlurVTarget', 'sharpenTarget', 'enhanceTarget',
       'correctedTarget', 'toneExposureTarget', 'colorLiftTarget', 'denoisedTarget', 'maskTarget',
@@ -857,6 +867,7 @@ export class Pipeline {
     this.exportPreviewDirty = true
     this.botanSeedDirty = true
     this.daiyaSeedDirty = true
+    this.denoiseDirty = true
     this.scheduleRender()
   }
 
@@ -915,6 +926,7 @@ export class Pipeline {
     // Enhancement runs before Botan's/Daiya's detection source, same as a crop change.
     this.botanSeedDirty = true
     this.daiyaSeedDirty = true
+    this.denoiseDirty = true
     this.scheduleRender()
   }
 
@@ -928,12 +940,11 @@ export class Pipeline {
       botanSeedDirtyBefore: this.botanSeedDirty,
       daiyaSeedDirtyBefore: this.daiyaSeedDirty,
     })
-    if (
+    // Inputs to runDenoise's cache: the denoise params plus every upstream pass that rewrites its
+    // source (tone-shaping, colour lift). Deliberately excludes threshold/daiyaInvertSeed and all
+    // pure detection/fill params — invalidating denoise on those would defeat the cache while tuning.
+    const denoiseInputChanged =
       params.mode !== prev.mode ||
-      params.threshold !== prev.threshold ||
-      // daiyaInvertSeed flips thresholdProgram's polarity feeding into Daiya's JFA seed
-      // (distanceSeedProgram), so it must invalidate the cached seed here too.
-      params.daiyaInvertSeed !== prev.daiyaInvertSeed ||
       params.toneShaping.exposure !== prev.toneShaping.exposure ||
       params.toneShaping.contrast !== prev.toneShaping.contrast ||
       params.toneShaping.mode !== prev.toneShaping.mode ||
@@ -952,6 +963,15 @@ export class Pipeline {
       params.colorLift.blue !== prev.colorLift.blue ||
       params.colorLift.purple !== prev.colorLift.purple ||
       params.colorLift.magenta !== prev.colorLift.magenta
+
+    if (denoiseInputChanged) this.denoiseDirty = true
+
+    if (
+      denoiseInputChanged ||
+      params.threshold !== prev.threshold ||
+      // daiyaInvertSeed flips thresholdProgram's polarity feeding into Daiya's JFA seed
+      // (distanceSeedProgram), so it must invalidate the cached seed here too.
+      params.daiyaInvertSeed !== prev.daiyaInvertSeed
     ) {
       this.botanSeedDirty = true
       this.daiyaSeedDirty = true
@@ -1269,6 +1289,17 @@ export class Pipeline {
   private runDenoise(base: TargetTexture, width: number, height: number): TargetTexture {
     if (this.lineArt.denoise.intensity <= 0) return base
     const gl = this.gl
+    // Reuse the cached result unless an input changed (denoiseDirty) or the target is absent/resized.
+    // Upstream passes rewrite `base` every frame with identical content when denoise inputs are
+    // unchanged, so a stale-content read isn't possible here.
+    const stale =
+      this.denoiseDirty || !this.denoisedTarget ||
+      this.denoisedTarget.width !== width || this.denoisedTarget.height !== height
+    if (!stale) {
+      trace('render:denoise-cached', { width, height })
+      return this.denoisedTarget!
+    }
+    trace('render:denoise-recompute', { width, height, dirty: this.denoiseDirty })
     this.denoisedTarget = this.ensureTarget(this.denoisedTarget, width, height)
     const kernelSize = Math.min(5, Math.max(1, Math.floor(this.lineArt.denoise.intensity * 5)))
     this.runPass(this.denoiseProgram, this.denoisedTarget, width, height, () => {
@@ -1279,6 +1310,7 @@ export class Pipeline {
       gl.uniform1i(gl.getUniformLocation(this.denoiseProgram, 'uKernelSize'), kernelSize)
       gl.uniform1f(gl.getUniformLocation(this.denoiseProgram, 'uThreshold'), this.lineArt.denoise.threshold)
     })
+    this.denoiseDirty = false
     return this.denoisedTarget
   }
 
@@ -3484,6 +3516,7 @@ export class Pipeline {
       this.resizeDirty = true
       this.botanSeedDirty = true
       this.daiyaSeedDirty = true
+      this.denoiseDirty = true
     }
     if (!this.cropTarget) return
 
@@ -3520,6 +3553,7 @@ export class Pipeline {
       this.enhanceDirty = true
       this.botanSeedDirty = true
       this.daiyaSeedDirty = true
+      this.denoiseDirty = true
       // Fired here (post-resize), not in the cropDirty block above — Export's
       // "Original" resolution mode means "the resize module's output," not
       // the raw crop, so cropSize downstream (ExportPanel etc.) needs to
@@ -3790,8 +3824,10 @@ export class Pipeline {
     }
     const savedBotanSeedDirty = this.botanSeedDirty
     const savedDaiyaSeedDirty = this.daiyaSeedDirty
+    const savedDenoiseDirty = this.denoiseDirty
     this.botanSeedDirty = true
     this.daiyaSeedDirty = true
+    this.denoiseDirty = true
     try {
       return fn()
     } finally {
@@ -3801,7 +3837,18 @@ export class Pipeline {
       }
       this.botanSeedDirty = savedBotanSeedDirty
       this.daiyaSeedDirty = savedDaiyaSeedDirty
+      this.denoiseDirty = savedDenoiseDirty
     }
+  }
+
+  /** Fit the source photo's aspect ratio inside a `boxW`x`boxH` bound (longest side == the box) so
+   * a non-square photo's thumbnail isn't squished into a square buffer — the carousel chip then
+   * centre-crops the correctly-proportioned image via CSS `object-fit: cover`. */
+  private thumbFitDims(boxW: number, boxH: number): { w: number; h: number } {
+    const src = this.enhanceTarget
+    if (!src) return { w: boxW, h: boxH }
+    const scale = Math.min(boxW / src.width, boxH / src.height)
+    return { w: Math.max(1, Math.round(src.width * scale)), h: Math.max(1, Math.round(src.height * scale)) }
   }
 
   /**
@@ -3825,6 +3872,9 @@ export class Pipeline {
     const gl = this.gl
     const base = this.enhanceTarget
     const { width, height } = base
+    // Aspect-correct output box — a portrait/landscape photo keeps its proportions instead of
+    // being squished into an outWidth x outHeight square.
+    const { w: outW, h: outH } = this.thumbFitDims(outWidth, outHeight)
     const savedLineArt = this.lineArt
     this.lineArt = p
     try {
@@ -3846,9 +3896,9 @@ export class Pipeline {
         let curW = width
         let curH = height
         let usingA = true
-        while (curW > outWidth * 2 || curH > outHeight * 2) {
-          const nw = Math.max(outWidth, Math.round(curW / 2))
-          const nh = Math.max(outHeight, Math.round(curH / 2))
+        while (curW > outW * 2 || curH > outH * 2) {
+          const nw = Math.max(outW, Math.round(curW / 2))
+          const nh = Math.max(outH, Math.round(curH / 2))
           let dst: TargetTexture
           if (usingA) {
             this.thumbDownscaleTargetA = this.ensureTarget(this.thumbDownscaleTargetA, nw, nh)
@@ -3863,8 +3913,8 @@ export class Pipeline {
           curH = nh
           usingA = !usingA
         }
-        this.thumbColorSmallTarget = this.ensureTarget(this.thumbColorSmallTarget, outWidth, outHeight)
-        blit(src, this.thumbColorSmallTarget, outWidth, outHeight)
+        this.thumbColorSmallTarget = this.ensureTarget(this.thumbColorSmallTarget, outW, outH)
+        blit(src, this.thumbColorSmallTarget, outW, outH)
         return this.readTargetPixels(this.thumbColorSmallTarget)
       })
     } finally {
@@ -4004,21 +4054,23 @@ export class Pipeline {
     return this.readTargetPixels(this.gumiTopHatResultTarget)
   }
 
-  /** "None" chip's own thumbnail — the plain unprocessed photo, matching LineArtDisplayMode
-   * 'original' (see resolveLineArtDisplay's `if (mode === 'original') return base`). No shader
-   * chain needed, just a downsampling copy of `enhanceTarget` via the existing blitProgram — same
-   * isolation rules as renderThumbnail() above (dedicated `thumbNoneTarget`, never touches canvas
-   * or live/dirty state). */
+  /** "None" chip's own thumbnail — the unprocessed photo (no line-art), matching LineArtDisplayMode
+   * 'original', but still run through the live Grade chain so it stays consistent with every other
+   * carousel thumbnail (invert/curve/HSL show here too). Downsampling copy of `enhanceTarget` →
+   * runColorChain('thumb'). Aspect-fit into the requested box (no squish). Same isolation rules as
+   * renderThumbnail() (dedicated `thumb*` fields, never touches canvas or live/dirty state). */
   renderNoneThumbnail(width: number, height: number): { data: Uint8ClampedArray; width: number; height: number } | null {
     if (!this.enhanceTarget) return null
     const gl = this.gl
-    this.thumbNoneTarget = this.ensureTarget(this.thumbNoneTarget, width, height)
-    this.runPass(this.blitProgram, this.thumbNoneTarget, width, height, () => {
+    const { w: outW, h: outH } = this.thumbFitDims(width, height)
+    this.thumbNoneTarget = this.ensureTarget(this.thumbNoneTarget, outW, outH)
+    this.runPass(this.blitProgram, this.thumbNoneTarget, outW, outH, () => {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, this.enhanceTarget!.texture)
       gl.uniform1i(gl.getUniformLocation(this.blitProgram, 'uSource'), 0)
     })
-    return this.readTargetPixels(this.thumbNoneTarget)
+    const graded = this.runColorChain(this.thumbNoneTarget, outW, outH, 'thumb')
+    return this.readTargetPixels(graded)
   }
 
   /**

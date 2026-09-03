@@ -121,7 +121,7 @@ export default function HeaderBar({
 
   return (
     <div className="header-bar">
-      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} initialTab={aboutInitialTab} theme={theme} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} initialTab={aboutInitialTab} theme={theme} labMode={labMode} />
       <Modal open={resetConfirmOpen} onClose={() => setResetConfirmOpen(false)} title="Confirm Reset oshiPFP?">
         <div className="confirm-modal-actions">
           <button type="button" className="confirm-reset-btn" onClick={confirmReset}>Reset</button>

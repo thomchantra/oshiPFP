@@ -75,6 +75,10 @@
     "hiToneHueInvert"
   ],
   "params": {
+    "denoise": {
+      "intensity": 0,
+      "threshold": 0
+    },
     "opacity": 1,
     "blendMode": "overlay",
     "highPassResponsiveColor": false,

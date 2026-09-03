@@ -28,8 +28,9 @@ button, input {
 }
 
 .font-title {
-  font-family: 'Dela Gothic One', sans-serif;
-  font-size: 20px;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
 }
 .font-param-label {
   font-family: 'Fredoka', sans-serif;
@@ -1405,6 +1406,25 @@ button, input {
    existing flex-wrap for the pill row itself; this class only adds the modal-specific spacing
    below it, before the gallery/info content. */
 .algo-modal-tabs { margin-bottom: 16px; }
+
+/* Help tab's topic picker — same icon-pill language as the Line Art algo selector, but always
+   wrapping (no horizontal scroll strip) since the modal body can grow to fit. */
+.help-topic-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.help-topic-row .icon-button { flex: 0 0 auto; min-height: 30px; }
+.help-topic-body { min-height: 120px; }
+
+/* Dashed rule between version blocks in the Changelog tab. */
+.changelog-version-rule {
+  border: 0;
+  border-top: 1.5px dashed var(--accent-lighter);
+  margin: 4px 0 20px;
+}
 /* Demo preset gallery card (src/presets/presetManifest.ts-driven) — images + attribute strip
    bleed edge-to-edge against .modal-body's 16px padding via negative margins; safe since
    .modal-card has overflow:hidden and clips to its own border-radius. */

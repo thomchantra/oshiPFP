@@ -9,8 +9,12 @@ import curve from '../assets/icons/curve.svg'
 import diamond from '../assets/icons/diamond.svg'
 import download from '../assets/icons/download.svg'
 import dualpane from '../assets/icons/dualpane.svg'
+import edit from '../assets/icons/edit.svg'
+import eye from '../assets/icons/eye.svg'
 import eyedropper from '../assets/icons/eyedropper.svg'
 import flask from '../assets/icons/flask.svg'
+import hand from '../assets/icons/hand.svg'
+import layer from '../assets/icons/layer.svg'
 import lineart from '../assets/icons/lineart.svg'
 import moon from '../assets/icons/moon.svg'
 import nerd from '../assets/icons/nerd.svg'
@@ -26,6 +30,7 @@ import square from '../assets/icons/square.svg'
 import squarefill from '../assets/icons/squarefill.svg'
 import sun from '../assets/icons/sun.svg'
 import upload from '../assets/icons/upload.svg'
+import wrench from '../assets/icons/wrench.svg'
 
 const ICONS = {
   bear,
@@ -39,8 +44,12 @@ const ICONS = {
   diamond,
   download,
   dualpane,
+  edit,
+  eye,
   eyedropper,
   flask,
+  hand,
+  layer,
   lineart,
   moon,
   nerd,
@@ -56,6 +65,7 @@ const ICONS = {
   squarefill,
   sun,
   upload,
+  wrench,
 } as const
 
 export type IconName = keyof typeof ICONS

@@ -201,15 +201,14 @@ export default function SimplifiedLineArtPanel({
     const quickMeta = resolveQuickMeta(activeFilter)
     const locked = new Set(activeFilter.lockedFields ?? [])
     // Hide the Fill / Color group when it can't meaningfully drive the output: Find Edge mode
-    // bypasses fillType/fillInvert entirely (raw Sobel colour, forced Multiply), Overlay
-    // Passthrough flattens the result onto the matte, and Gumi Fill's Pixel Threshold is a raw
-    // per-pixel test with no fill region to colour. All three fields are baked per-filter (never
-    // live toggles here); each is false/absent for every algo that doesn't use it.
+    // bypasses fillType/fillInvert entirely (raw Sobel colour, forced Multiply) and Overlay
+    // Passthrough flattens the result onto the matte. Both are baked per-filter (never live toggles
+    // here); each is false/absent for every algo that doesn't use it.
     const findEdgeOn = params.findEdge === true
     const passthroughOn = params.overlayPassthrough === true
     const gumiFillOn = params.gumiFillMode === true
     const gumiPixelThreshOn = gumiFillOn && params.gumiFillPixelThreshold === true
-    const hideFillGroup = findEdgeOn || passthroughOn || gumiPixelThreshOn
+    const hideFillGroup = findEdgeOn || passthroughOn
     const hardnessField = macroFields.hardness
     const invertLabel = macroFields.invert ? (INVERT_LABELS[macroFields.invert] ?? 'Invert Filter') : 'Invert Filter'
     // Hinata Tone's Multiply/Screen bipolar control replaces the flat Invert row's neighbours —
@@ -269,14 +268,38 @@ export default function SimplifiedLineArtPanel({
               <ToggleSwitch on={getBool(macroFields.invert)} label={invertLabel} />
             </div>
           )}
-          <div className="lineart-divider" />
+          {/* Pre-detection Denoise group — Hinata/Tsukiko only (macroFields.ts DENOISE_ALGOS). Nested
+             `denoise` object, so rendered as an explicit special case rather than through extraFields;
+             captured/isolated per-filter via getEditableFields pushing 'denoise'. Sits directly under
+             the Threshold/Invert group — it's a pre-processing knob, ahead of the detection controls. */}
+          {(activeFilter.algo === 'pathH' || activeFilter.algo === 'pathI') && (
+            <>
+              <div className="lineart-divider" />
+              <GradientSlider
+                label="Denoise Intensity" value={params.denoise.intensity} min={0} max={1}
+                defaultValue={activeFilter.params.denoise?.intensity ?? 0}
+                onChange={(v) => onChange({ ...params, denoise: { ...params.denoise, intensity: v } })}
+              />
+              <GradientSlider
+                label="Denoise Threshold" value={params.denoise.threshold} min={0} max={1}
+                defaultValue={activeFilter.params.denoise?.threshold ?? 0}
+                onChange={(v) => onChange({ ...params, denoise: { ...params.denoise, threshold: v } })}
+              />
+            </>
+          )}
+          {/* Divider + thickness slider move together — thickness is only hidden for Gumi Fill's
+             Pixel Threshold sub-mode, where keeping the standalone divider would double up against
+             the next group's own leading divider. */}
           {!gumiPixelThreshOn && (
-            <GradientSlider
-              label={quickMeta.thickness.label} value={getNum(quick.thickness)}
-              min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
-              defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
-              onChange={(v) => setField(quick.thickness, v)}
-            />
+            <>
+              <div className="lineart-divider" />
+              <GradientSlider
+                label={quickMeta.thickness.label} value={getNum(quick.thickness)}
+                min={quickMeta.thickness.min} max={quickMeta.thickness.max} step={quickMeta.thickness.step}
+                defaultValue={(activeFilter.params[quick.thickness] as number) ?? 1}
+                onChange={(v) => setField(quick.thickness, v)}
+              />
+            </>
           )}
           {hardnessField && (
             <GradientSlider
@@ -319,9 +342,10 @@ export default function SimplifiedLineArtPanel({
               onChange={(rgb) => setField(extra.field, rgb)}
             />
           ))}
-          {/* Gumi Fill mode's edit sheet is Threshold / Invert / Fill Radius / Fill Type only —
-             no Blending Mode (its output isn't composited the same way). */}
-          {!gumiFillOn && (<>
+          {/* Blending Mode is hidden only where it's a genuine no-op: Find Edge forces Multiply on
+             raw Sobel colour, and Overlay Passthrough flattens onto the matte before compositing.
+             Every other treatment (Gumi Fill included) composites normally. */}
+          {!findEdgeOn && !passthroughOn && (<>
           <div className="lineart-divider" />
           {/* Blending Mode: header row (label + %), a 4-way mode selector, then the value slider —
              bipolar -100..100 for Mult / Add, plain 0..100 for the single-blend tabs. The two
@@ -412,7 +436,7 @@ export default function SimplifiedLineArtPanel({
           {!colorFields && !hideFillGroup && activeFilter.color !== null && (
             <>
               <div className="lineart-divider" />
-              <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>Color — coming soon for this algorithm</p>
+              <p className="font-value" style={{ color: 'var(--accent-dark)', opacity: 0.7 }}>Color: coming soon for this algorithm</p>
             </>
           )}
           {/* Overlay Passthrough flattens the result onto a solid matte instead of compositing —
@@ -494,6 +518,7 @@ export default function SimplifiedLineArtPanel({
                 loading={thumbnailsGenerating && !filterThumbnails[filter.id]}
                 active={activeFilterId === filter.id}
                 editable={activeFilterId === filter.id}
+                editIconSize={isDesktop ? 52 : 30}
                 groupStart={groupStart}
                 buttonRef={groupStart ? (el) => { groupRefs.current[filter.algo] = el } : undefined}
                 onClick={() => (activeFilterId === filter.id ? onOpenEditSheet() : onSelectFilter(filter.id))}
@@ -514,6 +539,7 @@ function FilterChip({
   loading,
   active,
   editable,
+  editIconSize = 30,
   groupStart,
   buttonRef,
   onClick,
@@ -521,6 +547,8 @@ function FilterChip({
   label: string
   /** Visible chip text — the trimmed variant tag ("A1"). `label` stays the full name for aria. */
   displayLabel?: string
+  /** Slider glyph size on the active (edit) chip — larger on desktop where the chip thumb scales up. */
+  editIconSize?: number
   /** Inline `--chip-active` / `--chip-inactive` custom props for this chip's algo (base.css does
    * the rest). Omitted for the "None" chip so it falls back to the neutral --white-50. */
   tintStyle?: CSSProperties
@@ -544,7 +572,7 @@ function FilterChip({
     >
       <span className="filter-chip-thumb">
         {editable ? (
-          <span className="filter-chip-edit-icon"><Icon name="slider" size={30} color="var(--bg-light)" /></span>
+          <span className="filter-chip-edit-icon"><Icon name="slider" size={editIconSize} color="var(--bg-light)" /></span>
         ) : thumbnail ? (
           <img src={thumbnail} alt={label} />
         ) : loading ? (

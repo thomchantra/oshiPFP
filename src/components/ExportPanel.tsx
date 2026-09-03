@@ -123,7 +123,7 @@ export default function ExportPanel({
     const pixels = readExportPixels(exportDisplayMode, exportColorGrade, exportColorGradeIntensity)
     if (!pixels || !target) {
       setStatus('error')
-      setErrorMessage('No image loaded yet — upload one from the Crop tab first.')
+      setErrorMessage('No image loaded yet. Upload one from the Crop tab first.')
       return
     }
     setStatus('exporting')

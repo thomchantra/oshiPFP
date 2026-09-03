@@ -17,7 +17,7 @@ export default function IconToggle2<T extends string>({ options, value, onChange
   }
 
   return (
-    <button type="button" className="icon-toggle-2" aria-label={`${label} — tap to switch`} onClick={cycle}>
+    <button type="button" className="icon-toggle-2" aria-label={`${label}, tap to switch`} onClick={cycle}>
       {options.map((opt) => (
         <span key={opt.value} className={`icon-toggle-2-btn${opt.value === value ? ' active' : ''}`}>
           <Icon name={opt.icon} size={20} color={opt.value === value ? 'var(--accent-dark)' : 'var(--white-50)'} />

@@ -22,7 +22,7 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
     technique: 'Distance Transform',
     icon: 'rose',
     blurb:
-      "Grows line art evenly outward in every direction, inflating it — the further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.",
+      "Grows line art evenly outward in every direction, inflating it. The further from a line, the less it's affected. Gives smooth, rounded, chunky outlines.",
   },
   {
     mode: 'pathC',
@@ -62,7 +62,7 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
     technique: 'High Pass + Output Treatments',
     icon: 'sun',
     blurb:
-      "Subtracts a blurred version of the image from itself to isolate high-frequency detail, then resolves it through one of 4 output treatments — Edge, Emboss, Erode, or Tone — each reading closer to a soft, painterly response than a hard line.",
+      "Subtracts a blurred version of the image from itself to isolate high-frequency detail, then resolves it through one of 4 output treatments (Edge, Emboss, Erode, or Tone), each reading closer to a soft, painterly response than a hard line.",
   },
   {
     mode: 'pathI',
@@ -70,7 +70,7 @@ const ALGO_INFO: { mode: LineArtMode; label: string; technique: string; icon: 'r
     technique: 'Laplacian + Output Treatments',
     icon: 'moon',
     blurb:
-      "A single-pass second-order edge kernel — grittier and more detail-sensitive than High Pass — with the same 4 Edge/Emboss/Erode/Tone output treatments as Hinata, plus optional pre-blur/post-sharpen to tune noise vs. definition.",
+      "A single-pass second-order edge kernel, grittier and more detail-sensitive than High Pass, with the same 4 Edge/Emboss/Erode/Tone output treatments as Hinata, plus optional pre-blur/post-sharpen to tune noise vs. definition.",
   },
 ]
 

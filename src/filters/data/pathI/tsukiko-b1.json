@@ -9,7 +9,7 @@
   "extraFields": [
     {
       "field": "laplacianPreBlur",
-      "label": "Denoise",
+      "label": "Pre-Blur (px)",
       "min": 0,
       "max": 10,
       "step": 0.1
@@ -51,6 +51,10 @@
     "hiToneHueInvert"
   ],
   "params": {
+    "denoise": {
+      "intensity": 0.2,
+      "threshold": 0.25
+    },
     "opacity": 1,
     "blendMode": "multiply",
     "highPassResponsiveColor": false,
@@ -62,13 +66,13 @@
       1,
       1
     ],
-    "laplacianStrength": 4,
+    "laplacianStrength": 5,
     "laplacianPreBlur": 1,
     "laplacianSharpenAmount": 0.3,
     "laplacianGrow": 0,
     "hiRawDarkenLighten": 0,
     "hiRawContrast": 1,
-    "threshold": 0.48,
+    "threshold": 0.3,
     "hiThresholdContrast": 1,
     "hiThresholdInvert": false,
     "fillInvert": false,

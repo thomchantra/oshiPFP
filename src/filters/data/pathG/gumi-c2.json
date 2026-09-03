@@ -6,18 +6,25 @@
   "quick": { "threshold": "threshold", "thickness": "gumiFillRadius" },
   "quickMeta": { "thickness": { "label": "Fill Radius", "min": 0, "max": 20 } },
   "macro": { "invert": "gumiFillInvert" },
-  "color": null,
+  "color": {
+    "fillType": "gumiFillType",
+    "solidColor": "gumiFillSolidColor",
+    "colorContrast": "gumiFillColorContrast",
+    "exposure": "gumiFillColorExposure",
+    "gradientPivot": "gumiFillGradientPivot",
+    "gradientShadow": "gumiGradientShadow",
+    "gradientMid": "gumiGradientMid",
+    "gradientHighlight": "gumiGradientHighlight"
+  },
   "lockedFields": [
-    "gumiFillMode", "gumiFillPixelThreshold", "gumiFillType", "gumiFillSolidColor",
-    "gumiFillColorContrast", "gumiFillGradientPivot", "gumiGradientShadow", "gumiGradientMid",
-    "gumiGradientHighlight", "gumiFillColorExposure", "blobMaxDt", "radius", "gumiOverdrive", "gumiBlobGamma",
+    "gumiFillMode", "gumiFillPixelThreshold", "blobMaxDt", "radius", "gumiOverdrive", "gumiBlobGamma",
     "gumiLineInvert", "gumiLineFillType", "gumiLineSolidColor", "gumiLineColorContrast",
     "gumiLineColorExposure", "gumiLineGradientPivot", "overlayPassthrough", "matteColor"
   ],
   "params": {
     "threshold": 0.5,
     "gumiFillRadius": 8,
-    "gumiFillInvert": false,
+    "gumiFillInvert": true,
     "gumiFillMode": true,
     "gumiFillPixelThreshold": true,
     "opacity": 1,

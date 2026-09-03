@@ -90,6 +90,10 @@
     "hiToneHueInvert"
   ],
   "params": {
+    "denoise": {
+      "intensity": 0.2,
+      "threshold": 0.25
+    },
     "opacity": 1,
     "blendMode": "multiply",
     "highPassResponsiveColor": true,
